@@ -87,7 +87,6 @@ function App() {
     });
 
     socketManager.onQueueLeft(() => {
-      console.log('[SOCKET] queue_left');
       // Если уже в battle (матч нашёлся раньше отмены) - игнорируем
       if (screen === 'battle') {
         return;
@@ -109,11 +108,20 @@ function App() {
     });
 
     socketManager.onPrepStart((payload: PrepStartPayload) => {
+      // Устанавливаем currentMatchId если его еще нет (окно пропустило match_found)
+      if (currentMatchId === null && payload.matchId) {
+        setCurrentMatchId(payload.matchId);
+      }
+      
       // Игнорируем prep_start от старых матчей
       if (payload.matchId && currentMatchId !== null && payload.matchId !== currentMatchId) {
         return;
       }
-      setLastPrepStart(payload);
+      
+      // Пробрасываем payload в Battle если мы в battle
+      if (screen === 'battle') {
+        setLastPrepStart(payload);
+      }
     });
 
     socketManager.onMatchEnd((payload: MatchEndPayload) => {

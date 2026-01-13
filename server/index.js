@@ -735,6 +735,9 @@ function startPrepPhase(match) {
   // Отправляем prep_start
   emitToBoth(match, 'prep_start', (socketId) => {
     const sessionId = getSessionIdBySocket(socketId);
+    const accountId = getAccountIdBySessionId(sessionId);
+    const playerTokens = accountId ? (db.getTokens(accountId) !== null ? db.getTokens(accountId) : START_TOKENS) : START_TOKENS;
+    
     if (sessionId === match.sessions[0]) {
       return {
         matchId: match.id,
@@ -743,6 +746,8 @@ function startPrepPhase(match) {
         deadlineTs: deadlineTs,
         yourHp: p1Data.hp,
         oppHp: p2Data.hp,
+        pot: match.pot,
+        yourTokens: playerTokens,
         cards: [...CARDS]
       };
     } else {
@@ -753,6 +758,8 @@ function startPrepPhase(match) {
         deadlineTs: deadlineTs,
         yourHp: p2Data.hp,
         oppHp: p1Data.hp,
+        pot: match.pot,
+        yourTokens: playerTokens,
         cards: [...CARDS]
       };
     }

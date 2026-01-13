@@ -15,6 +15,8 @@ export type PrepStartPayload = {
   deadlineTs: number;
   yourHp: number;
   oppHp: number;
+  pot: number;
+  yourTokens: number;
   cards: Card[];
 };
 

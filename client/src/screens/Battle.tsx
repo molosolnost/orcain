@@ -66,6 +66,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     setDeadlineTs(lastPrepStart.deadlineTs);
     setYourHp(lastPrepStart.yourHp);
     setOppHp(lastPrepStart.oppHp);
+    setPot(lastPrepStart.pot);
     setSuddenDeath(lastPrepStart.suddenDeath);
     setAvailableCards([...lastPrepStart.cards]);
     
@@ -98,21 +99,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setRoundIndex(1);
     });
 
-    socketManager.onPrepStart((payload: PrepStartPayload) => {
-      setState('prep');
-      setNowTs(Date.now());
-      setDeadlineTs(payload.deadlineTs);
-      setPhase('PREP');
-      setYourHp(payload.yourHp);
-      setOppHp(payload.oppHp);
-      setSlots([null, null, null]);
-      setAvailableCards([...payload.cards]);
-      setConfirmed(false);
-      setRoundIndex(payload.roundIndex);
-      setSuddenDeath(payload.suddenDeath);
-      setRevealedCards([]);
-      setCurrentStepIndex(null);
-    });
+    // Убрана прямая подписка на prep_start - теперь получаем через props (lastPrepStart)
 
     socketManager.onConfirmOk(() => {
       setConfirmed(true);
@@ -143,7 +130,6 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     });
 
     return () => {
-      socketManager.off('prep_start');
       socketManager.off('confirm_ok');
       socketManager.off('step_reveal');
       socketManager.off('round_end');
