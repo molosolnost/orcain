@@ -316,7 +316,63 @@ function startPlay(match) {
     // Проверяем, что матч всё ещё в playing/prep и не двигается
     if (currentMatch.state === 'playing' || currentMatch.state === 'prep') {
       log(`[WATCHDOG_TIMEOUT] match=${currentMatch.id} state=${currentMatch.state}`);
-      endMatch(currentMatch, 'timeout');
+      
+      let loserSessionId = null;
+      
+      if (currentMatch.state === 'prep') {
+        // В prep: loser = тот, кто НЕ confirmed
+        const p1Data = getPlayerData(currentMatch.sessions[0]);
+        const p2Data = getPlayerData(currentMatch.sessions[1]);
+        
+        if (!p1Data.confirmed && !p2Data.confirmed) {
+          // Оба не confirmed - выбираем первого как loser (случайно)
+          loserSessionId = currentMatch.sessions[0];
+          log(`[WATCHDOG] state=prep both unconfirmed, loser=${loserSessionId}`);
+        } else if (!p1Data.confirmed) {
+          loserSessionId = currentMatch.sessions[0];
+          log(`[WATCHDOG] state=prep p1 unconfirmed, loser=${loserSessionId}`);
+        } else if (!p2Data.confirmed) {
+          loserSessionId = currentMatch.sessions[1];
+          log(`[WATCHDOG] state=prep p2 unconfirmed, loser=${loserSessionId}`);
+        }
+      } else if (currentMatch.state === 'playing') {
+        // В playing: loser = тот, кто paused/disconnected
+        if (currentMatch.paused && currentMatch.pauseReason === 'disconnect') {
+          // Находим кто disconnected (по grace timer или по отсутствию socket)
+          const timer1 = disconnectTimerBySessionId.get(currentMatch.sessions[0]);
+          const timer2 = disconnectTimerBySessionId.get(currentMatch.sessions[1]);
+          
+          if (timer1) {
+            loserSessionId = currentMatch.sessions[0];
+            log(`[WATCHDOG] state=playing p1 disconnected, loser=${loserSessionId}`);
+          } else if (timer2) {
+            loserSessionId = currentMatch.sessions[1];
+            log(`[WATCHDOG] state=playing p2 disconnected, loser=${loserSessionId}`);
+          }
+        }
+      }
+      
+      if (loserSessionId) {
+        endMatchForfeit(currentMatch, loserSessionId, 'timeout');
+      } else {
+        // Не можем определить loser - форсируем продолжение (для prep)
+        if (currentMatch.state === 'prep') {
+          log(`[WATCHDOG] state=prep force continue`);
+          const p1Data = getPlayerData(currentMatch.sessions[0]);
+          const p2Data = getPlayerData(currentMatch.sessions[1]);
+          
+          if (!p1Data.confirmed) {
+            p1Data.layout = generateRandomLayout();
+            p1Data.confirmed = true;
+          }
+          if (!p2Data.confirmed) {
+            p2Data.layout = generateRandomLayout();
+            p2Data.confirmed = true;
+          }
+          
+          startPlay(currentMatch);
+        }
+      }
     }
   }, PLAY_STEP_TIMEOUT_MS);
   
@@ -447,7 +503,56 @@ function resumePlay(match) {
     if (!currentMatch) return;
     if (currentMatch.state === 'playing' || currentMatch.state === 'prep') {
       log(`[WATCHDOG_TIMEOUT] match=${currentMatch.id} state=${currentMatch.state}`);
-      endMatch(currentMatch, 'timeout');
+      
+      let loserSessionId = null;
+      
+      if (currentMatch.state === 'prep') {
+        const p1Data = getPlayerData(currentMatch.sessions[0]);
+        const p2Data = getPlayerData(currentMatch.sessions[1]);
+        
+        if (!p1Data.confirmed && !p2Data.confirmed) {
+          loserSessionId = currentMatch.sessions[0];
+          log(`[WATCHDOG] state=prep both unconfirmed, loser=${loserSessionId}`);
+        } else if (!p1Data.confirmed) {
+          loserSessionId = currentMatch.sessions[0];
+          log(`[WATCHDOG] state=prep p1 unconfirmed, loser=${loserSessionId}`);
+        } else if (!p2Data.confirmed) {
+          loserSessionId = currentMatch.sessions[1];
+          log(`[WATCHDOG] state=prep p2 unconfirmed, loser=${loserSessionId}`);
+        }
+      } else if (currentMatch.state === 'playing') {
+        if (currentMatch.paused && currentMatch.pauseReason === 'disconnect') {
+          const timer1 = disconnectTimerBySessionId.get(currentMatch.sessions[0]);
+          const timer2 = disconnectTimerBySessionId.get(currentMatch.sessions[1]);
+          
+          if (timer1) {
+            loserSessionId = currentMatch.sessions[0];
+            log(`[WATCHDOG] state=playing p1 disconnected, loser=${loserSessionId}`);
+          } else if (timer2) {
+            loserSessionId = currentMatch.sessions[1];
+            log(`[WATCHDOG] state=playing p2 disconnected, loser=${loserSessionId}`);
+          }
+        }
+      }
+      
+      if (loserSessionId) {
+        endMatchForfeit(currentMatch, loserSessionId, 'timeout');
+      } else if (currentMatch.state === 'prep') {
+        log(`[WATCHDOG] state=prep force continue`);
+        const p1Data = getPlayerData(currentMatch.sessions[0]);
+        const p2Data = getPlayerData(currentMatch.sessions[1]);
+        
+        if (!p1Data.confirmed) {
+          p1Data.layout = generateRandomLayout();
+          p1Data.confirmed = true;
+        }
+        if (!p2Data.confirmed) {
+          p2Data.layout = generateRandomLayout();
+          p2Data.confirmed = true;
+        }
+        
+        startPlay(currentMatch);
+      }
     }
   }, PLAY_STEP_TIMEOUT_MS);
   
@@ -537,7 +642,63 @@ function startPrepPhase(match) {
     // Проверяем, что матч всё ещё в playing/prep и не двигается
     if (currentMatch.state === 'playing' || currentMatch.state === 'prep') {
       log(`[WATCHDOG_TIMEOUT] match=${currentMatch.id} state=${currentMatch.state}`);
-      endMatch(currentMatch, 'timeout');
+      
+      let loserSessionId = null;
+      
+      if (currentMatch.state === 'prep') {
+        // В prep: loser = тот, кто НЕ confirmed
+        const p1Data = getPlayerData(currentMatch.sessions[0]);
+        const p2Data = getPlayerData(currentMatch.sessions[1]);
+        
+        if (!p1Data.confirmed && !p2Data.confirmed) {
+          // Оба не confirmed - выбираем первого как loser (случайно)
+          loserSessionId = currentMatch.sessions[0];
+          log(`[WATCHDOG] state=prep both unconfirmed, loser=${loserSessionId}`);
+        } else if (!p1Data.confirmed) {
+          loserSessionId = currentMatch.sessions[0];
+          log(`[WATCHDOG] state=prep p1 unconfirmed, loser=${loserSessionId}`);
+        } else if (!p2Data.confirmed) {
+          loserSessionId = currentMatch.sessions[1];
+          log(`[WATCHDOG] state=prep p2 unconfirmed, loser=${loserSessionId}`);
+        }
+      } else if (currentMatch.state === 'playing') {
+        // В playing: loser = тот, кто paused/disconnected
+        if (currentMatch.paused && currentMatch.pauseReason === 'disconnect') {
+          // Находим кто disconnected (по grace timer или по отсутствию socket)
+          const timer1 = disconnectTimerBySessionId.get(currentMatch.sessions[0]);
+          const timer2 = disconnectTimerBySessionId.get(currentMatch.sessions[1]);
+          
+          if (timer1) {
+            loserSessionId = currentMatch.sessions[0];
+            log(`[WATCHDOG] state=playing p1 disconnected, loser=${loserSessionId}`);
+          } else if (timer2) {
+            loserSessionId = currentMatch.sessions[1];
+            log(`[WATCHDOG] state=playing p2 disconnected, loser=${loserSessionId}`);
+          }
+        }
+      }
+      
+      if (loserSessionId) {
+        endMatchForfeit(currentMatch, loserSessionId, 'timeout');
+      } else {
+        // Не можем определить loser - форсируем продолжение (для prep)
+        if (currentMatch.state === 'prep') {
+          log(`[WATCHDOG] state=prep force continue`);
+          const p1Data = getPlayerData(currentMatch.sessions[0]);
+          const p2Data = getPlayerData(currentMatch.sessions[1]);
+          
+          if (!p1Data.confirmed) {
+            p1Data.layout = generateRandomLayout();
+            p1Data.confirmed = true;
+          }
+          if (!p2Data.confirmed) {
+            p2Data.layout = generateRandomLayout();
+            p2Data.confirmed = true;
+          }
+          
+          startPlay(currentMatch);
+        }
+      }
     }
   }, PLAY_STEP_TIMEOUT_MS);
   
@@ -584,32 +745,150 @@ function startPrepPhase(match) {
   // Таймер: при истечении для каждого НЕ confirmed генерируем случайную раскладку и ставим confirmed=true
   match.prepTimer = setTimeout(() => {
     const currentMatch = matchesById.get(match.id);
-    // Защита от таймера после confirm: проверяем state и roundInProgress
-    if (currentMatch && currentMatch.state === 'prep' && !currentMatch.roundInProgress) {
-      // Защита от undefined sessions
-      if (!currentMatch.sessions || currentMatch.sessions.length < 2) return;
-      const sid1 = currentMatch.sessions[0];
-      const sid2 = currentMatch.sessions[1];
-      const p1 = getPlayerData(sid1);
-      const p2 = getPlayerData(sid2);
-      if (!p1 || !p2) return;
-      
-      // Для каждого игрока, кто НЕ confirmed: генерируем случайную раскладку и ставим confirmed=true
-      if (!p1.confirmed) {
-        p1.layout = generateRandomLayout();
-        p1.confirmed = true;
-        log(`[DEFAULT] match=${currentMatch.id} sessionId=${sid1} layout=${JSON.stringify(p1.layout)}`);
-      }
-      if (!p2.confirmed) {
-        p2.layout = generateRandomLayout();
-        p2.confirmed = true;
-        log(`[DEFAULT] match=${currentMatch.id} sessionId=${sid2} layout=${JSON.stringify(p2.layout)}`);
-      }
-
-      // После истечения таймера ВСЕГДА стартуем playRound()
+    if (!currentMatch) return; // Матч уже завершён
+    
+    // Защита от undefined sessions
+    if (!currentMatch.sessions || currentMatch.sessions.length < 2) return;
+    const sid1 = currentMatch.sessions[0];
+    const sid2 = currentMatch.sessions[1];
+    const p1 = getPlayerData(sid1);
+    const p2 = getPlayerData(sid2);
+    if (!p1 || !p2) return;
+    
+    // ВСЕГДА генерируем layouts для тех, кто не confirmed (даже если state изменился)
+    let generated = false;
+    if (!p1.confirmed) {
+      p1.layout = generateRandomLayout();
+      p1.confirmed = true;
+      generated = true;
+      log(`[PREP_TIMEOUT] match=${currentMatch.id} sessionId=${sid1} layout=${JSON.stringify(p1.layout)}`);
+    }
+    if (!p2.confirmed) {
+      p2.layout = generateRandomLayout();
+      p2.confirmed = true;
+      generated = true;
+      log(`[PREP_TIMEOUT] match=${currentMatch.id} sessionId=${sid2} layout=${JSON.stringify(p2.layout)}`);
+    }
+    
+    // ВСЕГДА запускаем playRound если матч ещё в prep (или если мы сгенерировали layouts)
+    if (currentMatch.state === 'prep' && generated) {
+      log(`[PREP_TIMEOUT] match=${currentMatch.id} starting play`);
       startPlay(currentMatch);
     }
   }, PREP_TIME_MS);
+}
+
+function endMatchForfeit(match, loserSessionId, reason) {
+  match.state = 'ended';
+  match.roundInProgress = false;
+  match.paused = false;
+  match.pauseReason = null;
+  
+  // Очистка таймеров
+  if (match.prepTimer) {
+    clearTimeout(match.prepTimer);
+    match.prepTimer = null;
+  }
+  
+  if (match.stepTimer) {
+    clearTimeout(match.stepTimer);
+    match.stepTimer = null;
+  }
+  
+  if (match.watchdogTimer) {
+    clearTimeout(match.watchdogTimer);
+    match.watchdogTimer = null;
+    log(`[WATCHDOG_CLEAR] match=${match.id}`);
+  }
+  
+  // Очистка grace timers для обоих игроков
+  if (match.sessions && match.sessions.length >= 2) {
+    const timer1 = disconnectTimerBySessionId.get(match.sessions[0]);
+    if (timer1) {
+      clearTimeout(timer1);
+      disconnectTimerBySessionId.delete(match.sessions[0]);
+    }
+    const timer2 = disconnectTimerBySessionId.get(match.sessions[1]);
+    if (timer2) {
+      clearTimeout(timer2);
+      disconnectTimerBySessionId.delete(match.sessions[1]);
+    }
+  }
+  
+  // Аборт playRound если он идёт
+  match.playAbortToken++;
+
+  const p1Data = getPlayerData(match.sessions[0]);
+  const p2Data = getPlayerData(match.sessions[1]);
+
+  // Winner = другой игрок (не loser)
+  const winnerSessionId = loserSessionId === match.sessions[0] ? match.sessions[1] : match.sessions[0];
+  
+  log(`[FORFEIT] match=${match.id} loser=${loserSessionId} winner=${winnerSessionId} reason=${reason}`);
+
+  // WinnerAccountId получает +match.pot (по accountId, не sessionId)
+  const winnerAccountId = getAccountIdBySessionId(winnerSessionId);
+  if (winnerAccountId) {
+    db.addTokens(winnerAccountId, match.pot);
+  }
+
+  // Лог в endMatch
+  log(`[END] match=${match.id} winner=${winnerSessionId} finalHp=${p1Data.hp}-${p2Data.hp}`);
+  
+  // Получаем токены по accountId для отправки
+  const acc1AccountId = getAccountIdBySessionId(match.sessions[0]);
+  const acc2AccountId = getAccountIdBySessionId(match.sessions[1]);
+  const acc1Tokens = acc1AccountId ? db.getTokens(acc1AccountId) : START_TOKENS;
+  const acc2Tokens = acc2AccountId ? db.getTokens(acc2AccountId) : START_TOKENS;
+  log(`[TOKENS] end winner=${winnerSessionId} acc1tokens=${acc1Tokens} acc2tokens=${acc2Tokens}`);
+
+  // Отправляем каждому winner: sessionId===winnerSessionId ? "YOU" : "OPPONENT"
+  emitToBoth(match, 'match_end', (socketId) => {
+    const sessionId = getSessionIdBySocket(socketId);
+    const isWinner = sessionId === winnerSessionId;
+    const accountId = getAccountIdBySessionId(sessionId);
+    const tokens = accountId ? (db.getTokens(accountId) !== null ? db.getTokens(accountId) : START_TOKENS) : START_TOKENS;
+    
+    if (sessionId === match.sessions[0]) {
+      return {
+        winner: isWinner ? 'YOU' : 'OPPONENT',
+        yourHp: p1Data.hp,
+        oppHp: p2Data.hp,
+        yourTokens: tokens,
+        reason: reason
+      };
+    } else {
+      return {
+        winner: isWinner ? 'YOU' : 'OPPONENT',
+        yourHp: p2Data.hp,
+        oppHp: p1Data.hp,
+        yourTokens: tokens,
+        reason: reason
+      };
+    }
+  });
+  
+  log(`[FORCE_END] match=${match.id} reason=${reason}`);
+
+  // Очистка: не удаляем players, только сбрасываем matchId/layout/confirmed, hp оставляем
+  p1Data.matchId = null;
+  p1Data.confirmed = false;
+  p1Data.layout = null;
+  p1Data.hp = START_HP; // Сбрасываем HP на 10 после матча
+
+  p2Data.matchId = null;
+  p2Data.confirmed = false;
+  p2Data.layout = null;
+  p2Data.hp = START_HP; // Сбрасываем HP на 10 после матча
+
+  // Удаляем матч из хранилищ
+  matchesById.delete(match.id);
+  matchIdBySocket.delete(match.player1);
+  matchIdBySocket.delete(match.player2);
+  
+  // Socket.IO автоматически очистит room при disconnect всех участников
+  // Но можно явно покинуть room если нужно
+  // io.socketsLeave(match.id);
 }
 
 function endMatch(match, reason = 'normal') {
@@ -750,43 +1029,43 @@ function handleDisconnect(socketId) {
   
   const match = getMatchBySessionId(sessionId);
   if (match) {
-    // Если матч в состоянии PLAY - паузим его
-    if (match.state === 'playing' && match.roundInProgress) {
-      log(`[PAUSE] match=${match.id} sessionId=${sessionId} step=${match.currentStepIndex}`);
-      match.paused = true;
-      match.pauseReason = 'disconnect';
-      
-      // Очищаем stepTimer если есть
-      if (match.stepTimer) {
-        clearTimeout(match.stepTimer);
-        match.stepTimer = null;
+    // Если матч в состоянии playing или prep - ставим grace timer
+    if (match.state === 'playing' || match.state === 'prep') {
+      // Если матч в состоянии PLAY - паузим его
+      if (match.state === 'playing' && match.roundInProgress) {
+        log(`[PAUSE] match=${match.id} sessionId=${sessionId} step=${match.currentStepIndex}`);
+        match.paused = true;
+        match.pauseReason = 'disconnect';
+        
+        // Очищаем stepTimer если есть
+        if (match.stepTimer) {
+          clearTimeout(match.stepTimer);
+          match.stepTimer = null;
+        }
+        
+        // Увеличиваем playAbortToken для остановки текущего scheduleStep
+        match.playAbortToken++;
       }
       
-      // Увеличиваем playAbortToken для остановки текущего scheduleStep
-      match.playAbortToken++;
+      // Игрок в матче - ставим grace timer
+      const existingTimer = disconnectTimerBySessionId.get(sessionId);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+      }
+      
+      const timer = setTimeout(() => {
+        // Grace period истёк, disconnected игрок проигрывает
+        const currentMatch = getMatchBySessionId(sessionId);
+        if (!currentMatch) return; // Матч уже завершён
+        
+        // Завершаем матч с forfeit: disconnected игрок = loser
+        endMatchForfeit(currentMatch, sessionId, 'disconnect');
+        
+        disconnectTimerBySessionId.delete(sessionId);
+      }, DISCONNECT_GRACE_MS);
+      
+      disconnectTimerBySessionId.set(sessionId, timer);
     }
-    
-    // Игрок в матче - ставим таймер 5 секунд
-    const existingTimer = disconnectTimerBySessionId.get(sessionId);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
-    }
-    
-    const timer = setTimeout(() => {
-      // Grace period истёк, оппонент побеждает
-      const currentMatch = getMatchBySessionId(sessionId);
-      if (!currentMatch) return; // Матч уже завершён
-      
-      const oppSessionId = getOpponentSessionId(currentMatch, sessionId);
-      if (!oppSessionId) return;
-      
-      // Завершаем матч с reason="disconnect"
-      endMatch(currentMatch, 'disconnect');
-      
-      disconnectTimerBySessionId.delete(sessionId);
-    }, DISCONNECT_GRACE_MS);
-    
-    disconnectTimerBySessionId.set(sessionId, timer);
     
     // Обновляем socketIds в матче (удаляем отключившийся)
     const socketIndex = match.socketIds.indexOf(socketId);
