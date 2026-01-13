@@ -40,3 +40,6 @@ export type MatchEndPayload = {
   yourTokens: number;
 };
 
+export type HelloOkPayload = {
+  tokens: number;
+};
