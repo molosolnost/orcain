@@ -88,7 +88,10 @@ class SocketManager {
   }
 
   onMatchEnd(callback: (payload: MatchEndPayload) => void) {
-    this.socket?.on('match_end', callback);
+    this.socket?.on('match_end', (payload: MatchEndPayload) => {
+      console.log("[MATCH_END_PAYLOAD]", payload);
+      callback(payload);
+    });
   }
 
   onSyncState(callback: (payload: { inMatch: boolean; matchId?: string; phase?: string; roundIndex?: number; suddenDeath?: boolean; yourHp?: number; oppHp?: number; deadlineTs?: number }) => void) {

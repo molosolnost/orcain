@@ -214,10 +214,26 @@ function emitToBoth(match, event, payloadForSidFn) {
   const socket2 = match.socketIds[1] || match.player2;
   
   if (socket1) {
-    emitToPlayer(match, socket1, event, payloadForSidFn(socket1));
+    const payload1 = payloadForSidFn(socket1);
+    // Лог для match_end с полной информацией
+    if (event === 'match_end') {
+      const sessionId1 = getSessionIdBySocket(socket1);
+      const winnerPlayerId = payload1.winner === 'YOU' ? sessionId1 : (sessionId1 === match.sessions[0] ? match.sessions[1] : match.sessions[0]);
+      const loserPlayerId = payload1.winner === 'YOU' ? (sessionId1 === match.sessions[0] ? match.sessions[1] : match.sessions[0]) : sessionId1;
+      log(`[MATCH_END_EMIT] matchId=${match.id} reason=${payload1.reason || 'MISSING'} to=${sessionId1} winnerPlayerId=${winnerPlayerId} loserPlayerId=${loserPlayerId} winner=${payload1.winner}`);
+    }
+    emitToPlayer(match, socket1, event, payload1);
   }
   if (socket2) {
-    emitToPlayer(match, socket2, event, payloadForSidFn(socket2));
+    const payload2 = payloadForSidFn(socket2);
+    // Лог для match_end с полной информацией
+    if (event === 'match_end') {
+      const sessionId2 = getSessionIdBySocket(socket2);
+      const winnerPlayerId = payload2.winner === 'YOU' ? sessionId2 : (sessionId2 === match.sessions[0] ? match.sessions[1] : match.sessions[0]);
+      const loserPlayerId = payload2.winner === 'YOU' ? (sessionId2 === match.sessions[0] ? match.sessions[1] : match.sessions[0]) : sessionId2;
+      log(`[MATCH_END_EMIT] matchId=${match.id} reason=${payload2.reason || 'MISSING'} to=${sessionId2} winnerPlayerId=${winnerPlayerId} loserPlayerId=${loserPlayerId} winner=${payload2.winner}`);
+    }
+    emitToPlayer(match, socket2, event, payload2);
   }
 }
 
@@ -793,10 +809,8 @@ function endMatchForfeit(match, loserSessionId, reason) {
   const acc2Tokens = acc2AccountId ? db.getTokens(acc2AccountId) : START_TOKENS;
   log(`[TOKENS] end winner=${winnerSessionId} acc1tokens=${acc1Tokens} acc2tokens=${acc2Tokens}`);
 
-  // Лог перед отправкой match_end
-  log(`[MATCH_END_EMIT] matchId=${match.id} reason=${reason} winner=${winnerSessionId} loser=${loserSessionId}`);
-
   // Отправляем каждому winner: sessionId===winnerSessionId ? "YOU" : "OPPONENT"
+  // Логи будут внутри emitToBoth для каждого получателя
   emitToBoth(match, 'match_end', (socketId) => {
     const sessionId = getSessionIdBySocket(socketId);
     const isWinner = sessionId === winnerSessionId;
@@ -912,10 +926,8 @@ function endMatch(match, reason = 'normal') {
   const acc2Tokens = acc2AccountId ? db.getTokens(acc2AccountId) : START_TOKENS;
   log(`[TOKENS] end winner=${winnerSessionId} acc1tokens=${acc1Tokens} acc2tokens=${acc2Tokens}`);
 
-  // Лог перед отправкой match_end
-  log(`[MATCH_END_EMIT] matchId=${match.id} reason=${reason} winner=${winnerSessionId}`);
-
   // Отправляем каждому winner: sessionId===winnerSessionId ? "YOU" : "OPPONENT"
+  // Логи будут внутри emitToBoth для каждого получателя
   emitToBoth(match, 'match_end', (socketId) => {
     const sessionId = getSessionIdBySocket(socketId);
     const isWinner = sessionId === winnerSessionId;

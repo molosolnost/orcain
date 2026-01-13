@@ -85,13 +85,13 @@ export default function Battle({ onBackToMenu, tokens }: BattleProps) {
     });
 
     socketManager.onMatchEnd((payload: MatchEndPayload) => {
-      console.log("[MATCH_END_PAYLOAD]", payload);
       setState('ended');
       setPhase('END');
       setYourHp(payload.yourHp);
       setOppHp(payload.oppHp);
       setMatchResult(payload.winner);
-      setMatchEndReason(payload.reason || 'normal');
+      // Сохраняем reason из payload (обязательное поле)
+      setMatchEndReason(payload.reason);
       setCurrentStepIndex(null);
     });
 
