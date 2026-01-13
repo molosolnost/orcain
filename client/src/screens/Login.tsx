@@ -1,11 +1,18 @@
+import { useState } from 'react';
+
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://orcain-server.onrender.com';
 
 interface LoginProps {
-  onLogin: (accountId: string, authToken: string, tokens: number) => void;
+  onLoginSuccess: (data: { authToken: string; tokens: number }) => void;
 }
 
-export default function Login({ onLogin }: LoginProps) {
+export default function Login({ onLoginSuccess }: LoginProps) {
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
   const handleCreateAccount = async () => {
+    setLoading(true);
+    setError(null);
     try {
       const response = await fetch(`${API_BASE}/auth/guest`, {
         method: 'POST',
@@ -19,15 +26,21 @@ export default function Login({ onLogin }: LoginProps) {
       }
 
       const data = await response.json();
+      const { accountId, authToken, tokens } = data;
+      
+      console.log("[LOGIN] guest ok", { accountId, authToken, tokens });
       
       // Сохраняем authToken и accountId в localStorage
-      localStorage.setItem('orcain_authToken', data.authToken);
-      localStorage.setItem('orcain_accountId', data.accountId);
+      localStorage.setItem('orcain_authToken', authToken);
+      localStorage.setItem('orcain_accountId', accountId);
       
-      onLogin(data.accountId, data.authToken, data.tokens);
+      // Вызываем callback для обновления App (accountId сохраняется в localStorage, не передаём в callback)
+      onLoginSuccess({ authToken, tokens });
     } catch (error) {
       console.error('Error creating account:', error);
-      alert('Failed to create account. Please try again.');
+      setError('Failed to create account. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -43,14 +56,21 @@ export default function Login({ onLogin }: LoginProps) {
       <h1 style={{ fontSize: '48px', margin: 0 }}>ORCAIN</h1>
       <button 
         onClick={handleCreateAccount}
+        disabled={loading}
         style={{
           padding: '12px 24px',
           fontSize: '18px',
-          cursor: 'pointer'
+          cursor: loading ? 'not-allowed' : 'pointer',
+          opacity: loading ? 0.7 : 1
         }}
       >
-        Create account
+        {loading ? 'Creating account...' : 'Create account'}
       </button>
+      {error && (
+        <div style={{ color: 'red', marginTop: '10px' }}>
+          {error}
+        </div>
+      )}
     </div>
   );
 }

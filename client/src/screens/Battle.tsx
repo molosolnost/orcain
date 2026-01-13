@@ -156,14 +156,6 @@ export default function Battle({ onBackToMenu, tokens }: BattleProps) {
     socketManager.layoutConfirm(layout);
   };
 
-  // const getCardCount = (card: Card) => {
-  //   return slots.filter(c => c === card).length;
-  // };
-
-  // const isCardAvailable = (card: Card) => {
-  //   const inSlots = getCardCount(card);
-  //   return inSlots < 1; // У нас 4 карты, но только 1 каждого типа доступна
-  // };
 
   // Функция для получения цвета карты
   const getCardColor = (card: Card) => {

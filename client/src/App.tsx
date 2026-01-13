@@ -99,8 +99,9 @@ function App() {
     // Сокет должен жить всю сессию вкладки, не отключаем при cleanup
   }, [authToken]);
 
-  const handleLoginSuccess = ({ authToken: token, tokens: initialTokens }: { authToken: string; accountId: string; tokens: number }) => {
+  const handleLoginSuccess = ({ authToken: token, tokens: initialTokens }: { authToken: string; tokens: number }) => {
     // Обновляем state authToken, что вызовет переподключение через useEffect
+    // accountId сохраняется в localStorage через Login компонент, здесь не используется
     setAuthToken(token);
     setTokens(initialTokens);
   };
