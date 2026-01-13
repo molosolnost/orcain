@@ -1018,6 +1018,11 @@ app.get('/health', (req, res) => {
   res.json({ ok: true });
 });
 
+// Health check for Render
+app.get('/healthz', (req, res) => {
+  res.status(200).send('ok');
+});
+
 // Auth endpoints
 app.post('/auth/guest', (req, res) => {
   try {
@@ -1051,7 +1056,7 @@ app.get('/auth/me', (req, res) => {
   });
 });
 
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
