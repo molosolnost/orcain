@@ -879,7 +879,7 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
   }
 
   // Лог в endMatch
-  log(`[END] match=${match.id} winner=${winnerSessionId} finalHp=${p1Data.hp}-${p2Data.hp}`);
+  log(`[END] match=${match.id} winner=${winnerSessionId} finalHp=${p1Hp}-${p2Hp}`);
   
   // Получаем токены по accountId для отправки
   const acc1AccountId = getAccountIdBySessionId(match.sessions[0]);
@@ -888,8 +888,8 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
   const acc2Tokens = acc2AccountId ? db.getTokens(acc2AccountId) : START_TOKENS;
   log(`[TOKENS] end winner=${winnerSessionId} acc1tokens=${acc1Tokens} acc2tokens=${acc2Tokens}`);
 
-  // Отправляем каждому winner: sessionId===winnerSessionId ? "YOU" : "OPPONENT"
-  // Логи будут внутри emitToBoth для каждого получателя
+  // Определяем loserSessionId для единого payload (уже есть как аргумент)
+  // Отправляем одинаковый payload для обоих игроков с winnerId/loserId
   // Гарантируем, что reason всегда присутствует
   const finalReason = reason || 'normal';
   emitToBoth(match, 'match_end', (socketId) => {
@@ -898,23 +898,16 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
     const accountId = getAccountIdBySessionId(sessionId);
     const tokens = accountId ? (db.getTokens(accountId) !== null ? db.getTokens(accountId) : START_TOKENS) : START_TOKENS;
     
-    if (sessionId === match.sessions[0]) {
-      return {
-        winner: isWinner ? 'YOU' : 'OPPONENT',
-        yourHp: p1Data.hp,
-        oppHp: p2Data.hp,
-        yourTokens: tokens,
-        reason: finalReason
-      };
-    } else {
-      return {
-        winner: isWinner ? 'YOU' : 'OPPONENT',
-        yourHp: p2Data.hp,
-        oppHp: p1Data.hp,
-        yourTokens: tokens,
-        reason: finalReason
-      };
-    }
+    // Единый payload для обоих игроков с winnerId/loserId
+    return {
+      winner: isWinner ? 'YOU' : 'OPPONENT',
+      winnerId: winnerSessionId,
+      loserId: loserSessionId,
+      yourHp: sessionId === match.sessions[0] ? p1Hp : p2Hp,
+      oppHp: sessionId === match.sessions[0] ? p2Hp : p1Hp,
+      yourTokens: tokens,
+      reason: finalReason
+    };
   });
   
   log(`[FORCE_END] match=${match.id} reason=${finalReason}`);
@@ -1007,8 +1000,10 @@ function endMatch(match, reason = 'normal') {
   const acc2Tokens = acc2AccountId ? db.getTokens(acc2AccountId) : START_TOKENS;
   log(`[TOKENS] end winner=${winnerSessionId} acc1tokens=${acc1Tokens} acc2tokens=${acc2Tokens}`);
 
-  // Отправляем каждому winner: sessionId===winnerSessionId ? "YOU" : "OPPONENT"
-  // Логи будут внутри emitToBoth для каждого получателя
+  // Определяем loserSessionId для единого payload
+  const loserSessionId = winnerSessionId === match.sessions[0] ? match.sessions[1] : match.sessions[0];
+
+  // Отправляем одинаковый payload для обоих игроков с winnerId/loserId
   // Гарантируем, что reason всегда присутствует
   const finalReason = reason || 'normal';
   emitToBoth(match, 'match_end', (socketId) => {
@@ -1017,23 +1012,16 @@ function endMatch(match, reason = 'normal') {
     const accountId = getAccountIdBySessionId(sessionId);
     const tokens = accountId ? (db.getTokens(accountId) !== null ? db.getTokens(accountId) : START_TOKENS) : START_TOKENS;
     
-    if (sessionId === match.sessions[0]) {
-      return {
-        winner: isWinner ? 'YOU' : 'OPPONENT',
-        yourHp: p1Data.hp,
-        oppHp: p2Data.hp,
-        yourTokens: tokens,
-        reason: finalReason
-      };
-    } else {
-      return {
-        winner: isWinner ? 'YOU' : 'OPPONENT',
-        yourHp: p2Data.hp,
-        oppHp: p1Data.hp,
-        yourTokens: tokens,
-        reason: finalReason
-      };
-    }
+    // Единый payload для обоих игроков с winnerId/loserId
+    return {
+      winner: isWinner ? 'YOU' : 'OPPONENT',
+      winnerId: winnerSessionId,
+      loserId: loserSessionId,
+      yourHp: sessionId === match.sessions[0] ? p1Data.hp : p2Data.hp,
+      oppHp: sessionId === match.sessions[0] ? p2Data.hp : p1Data.hp,
+      yourTokens: tokens,
+      reason: finalReason
+    };
   });
   
   log(`[FORCE_END] match=${match.id} reason=${finalReason}`);

@@ -7,9 +7,10 @@ type BattleState = 'prep' | 'playing' | 'ended';
 interface BattleProps {
   onBackToMenu: () => void;
   tokens: number | null;
+  matchEndPayload: MatchEndPayload | null;
 }
 
-export default function Battle({ onBackToMenu, tokens }: BattleProps) {
+export default function Battle({ onBackToMenu, tokens, matchEndPayload }: BattleProps) {
   const [state, setState] = useState<BattleState>('prep');
   const [yourHp, setYourHp] = useState(10);
   const [oppHp, setOppHp] = useState(10);
@@ -21,14 +22,25 @@ export default function Battle({ onBackToMenu, tokens }: BattleProps) {
   const [timeLeft, setTimeLeft] = useState(20);
   const [roundIndex, setRoundIndex] = useState(1);
   const [suddenDeath, setSuddenDeath] = useState(false);
-  const [matchResult, setMatchResult] = useState<'YOU' | 'OPPONENT' | null>(null);
-  const [matchEndReason, setMatchEndReason] = useState<'normal' | 'disconnect' | 'timeout' | null>(null);
+  // matchResult и matchEndReason теперь получаем из props (matchEndPayload)
+  // Локальные state больше не нужны, используем props
   const [revealedCards, setRevealedCards] = useState<{ step: number; yourCard: Card; oppCard: Card }[]>([]);
   const [currentStepIndex, setCurrentStepIndex] = useState<number | null>(null);
   const [phase, setPhase] = useState<'PREP' | 'REVEAL' | 'END'>('PREP');
 
   const draggedCardRef = useRef<Card | null>(null);
   const draggedSlotRef = useRef<number | null>(null);
+
+  // Обновляем state при получении matchEndPayload из props
+  useEffect(() => {
+    if (matchEndPayload) {
+      setState('ended');
+      setPhase('END');
+      setYourHp(matchEndPayload.yourHp);
+      setOppHp(matchEndPayload.oppHp);
+      setCurrentStepIndex(null);
+    }
+  }, [matchEndPayload]);
 
   useEffect(() => {
     const socket = socketManager.getSocket();
@@ -92,19 +104,7 @@ export default function Battle({ onBackToMenu, tokens }: BattleProps) {
       // НЕ устанавливаем matchResult здесь
     });
 
-    socketManager.onMatchEnd((payload: MatchEndPayload) => {
-      // ВАЖНО: это ЕДИНСТВЕННОЕ место, где завершается матч
-      console.log("[MATCH_END_PAYLOAD]", payload);
-      setState('ended');
-      setPhase('END');
-      setYourHp(payload.yourHp);
-      setOppHp(payload.oppHp);
-      // winner определяется ТОЛЬКО из payload.match_end
-      setMatchResult(payload.winner);
-      // reason определяется ТОЛЬКО из payload.match_end
-      setMatchEndReason(payload.reason);
-      setCurrentStepIndex(null);
-    });
+    // УБРАНА подписка на match_end - теперь обрабатывается глобально в App.tsx
 
     return () => {
       console.log("[BATTLE_UNMOUNT]");
@@ -114,7 +114,7 @@ export default function Battle({ onBackToMenu, tokens }: BattleProps) {
       socketManager.off('confirm_ok');
       socketManager.off('step_reveal');
       socketManager.off('round_end');
-      // socketManager.off('match_end');
+      // match_end обрабатывается глобально в App.tsx, не снимаем здесь
     };
   }, []);
 
@@ -433,13 +433,13 @@ export default function Battle({ onBackToMenu, tokens }: BattleProps) {
       )}
 
       {/* Match End */}
-      {state === 'ended' && matchResult && (
+      {matchEndPayload && (
         <div style={{ textAlign: 'center', marginTop: '40px' }}>
-          <h2>{matchResult === 'YOU' ? 'YOU WIN' : 'YOU LOSE'}</h2>
-          {matchEndReason === 'disconnect' && (
+          <h2>{matchEndPayload.winner === 'YOU' ? 'YOU WIN' : 'YOU LOSE'}</h2>
+          {matchEndPayload.reason === 'disconnect' && (
             <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>Opponent disconnected</p>
           )}
-          {matchEndReason === 'timeout' && (
+          {matchEndPayload.reason === 'timeout' && (
             <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>Match timed out</p>
           )}
           <button

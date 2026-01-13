@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { socketManager } from './net/socket';
 import { getAuthToken, getSessionId, clearAuth } from './net/ids';
+import type { MatchEndPayload } from './net/types';
 import Login from './screens/Login';
 import Menu from './screens/Menu';
 import Battle from './screens/Battle';
@@ -13,6 +14,7 @@ function App() {
   const [connected, setConnected] = useState(false);
   const [tokens, setTokens] = useState<number | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
+  const [matchEndPayload, setMatchEndPayload] = useState<MatchEndPayload | null>(null);
 
   // Инициализация: читаем authToken из localStorage при старте
   useEffect(() => {
@@ -89,10 +91,21 @@ function App() {
       }
     });
 
-    socketManager.onMatchEnd((payload) => {
-      // on "match_end": setTokens(payload.yourTokens)
+    // Глобальная подписка на match_end на уровне приложения
+    socketManager.onMatchEnd((payload: MatchEndPayload) => {
+      console.log("[MATCH_END_PAYLOAD]", payload);
+      
+      // Обновляем токены
       if (payload.yourTokens !== undefined) {
         setTokens(payload.yourTokens);
+      }
+      
+      // Сохраняем полный payload
+      setMatchEndPayload(payload);
+      
+      // Переключаемся на экран боя если не в бою
+      if (screen !== 'battle') {
+        setScreen('battle');
       }
     });
 
@@ -125,7 +138,13 @@ function App() {
   return (
     <div>
       {screen === 'menu' && <Menu onBattleStart={handleBattleStart} tokens={tokens} />}
-      {screen === 'battle' && <Battle onBackToMenu={handleBackToMenu} tokens={tokens} />}
+      {screen === 'battle' && (
+        <Battle 
+          onBackToMenu={handleBackToMenu} 
+          tokens={tokens}
+          matchEndPayload={matchEndPayload}
+        />
+      )}
     </div>
   );
 }
