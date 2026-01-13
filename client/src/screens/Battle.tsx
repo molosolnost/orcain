@@ -107,6 +107,7 @@ export default function Battle({ onBackToMenu, tokens }: BattleProps) {
     });
 
     return () => {
+      console.log("[BATTLE_UNMOUNT]");
       // НЕ снимаем match_found и match_end - они обрабатываются в App.tsx
       // socketManager.off('match_found');
       socketManager.off('prep_start');
