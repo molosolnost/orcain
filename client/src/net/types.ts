@@ -9,6 +9,7 @@ export type MatchFoundPayload = {
 };
 
 export type PrepStartPayload = {
+  matchId: string;
   roundIndex: number;
   suddenDeath: boolean;
   deadlineTs: number;
@@ -18,6 +19,7 @@ export type PrepStartPayload = {
 };
 
 export type StepRevealPayload = {
+  matchId: string;
   roundIndex: number;
   stepIndex: number;
   yourCard: Card;
@@ -27,6 +29,7 @@ export type StepRevealPayload = {
 };
 
 export type RoundEndPayload = {
+  matchId: string;
   roundIndex: number;
   suddenDeath: boolean;
   yourHp: number;
@@ -34,7 +37,10 @@ export type RoundEndPayload = {
 };
 
 export type MatchEndPayload = {
+  matchId?: string;
   winner: "YOU" | "OPPONENT";
+  winnerId?: string;
+  loserId?: string;
   yourHp: number;
   oppHp: number;
   yourTokens: number;

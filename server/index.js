@@ -476,6 +476,7 @@ function doOneStep(match, stepIndex) {
     const sessionId = getSessionIdBySocket(socketId);
     if (sessionId === match.sessions[0]) {
       return {
+        matchId: match.id,
         roundIndex: match.roundIndex,
         stepIndex: stepIndex,
         yourCard: p1Card,
@@ -485,6 +486,7 @@ function doOneStep(match, stepIndex) {
       };
     } else {
       return {
+        matchId: match.id,
         roundIndex: match.roundIndex,
         stepIndex: stepIndex,
         yourCard: p2Card,
@@ -608,6 +610,7 @@ function finishRound(match) {
     const sessionId = getSessionIdBySocket(socketId);
     if (sessionId === match.sessions[0]) {
       return {
+        matchId: match.id,
         roundIndex: match.roundIndex,
         suddenDeath: match.suddenDeath,
         yourHp: p1Data.hp,
@@ -615,6 +618,7 @@ function finishRound(match) {
       };
     } else {
       return {
+        matchId: match.id,
         roundIndex: match.roundIndex,
         suddenDeath: match.suddenDeath,
         yourHp: p2Data.hp,
@@ -733,6 +737,7 @@ function startPrepPhase(match) {
     const sessionId = getSessionIdBySocket(socketId);
     if (sessionId === match.sessions[0]) {
       return {
+        matchId: match.id,
         roundIndex: match.roundIndex,
         suddenDeath: match.suddenDeath,
         deadlineTs: deadlineTs,
@@ -742,6 +747,7 @@ function startPrepPhase(match) {
       };
     } else {
       return {
+        matchId: match.id,
         roundIndex: match.roundIndex,
         suddenDeath: match.suddenDeath,
         deadlineTs: deadlineTs,
@@ -900,6 +906,7 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
     
     // Единый payload для обоих игроков с winnerId/loserId
     return {
+      matchId: match.id,
       winner: isWinner ? 'YOU' : 'OPPONENT',
       winnerId: winnerSessionId,
       loserId: loserSessionId,

@@ -36,17 +36,31 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
       setYourHp(matchEndPayload.yourHp);
       setOppHp(matchEndPayload.oppHp);
       setCurrentStepIndex(null);
+    } else {
+      // Очищаем END состояние если matchEndPayload стал null
+      if (phase === 'END') {
+        setPhase('PREP');
+        setState('prep');
+      }
     }
-  }, [matchEndPayload]);
+  }, [matchEndPayload, phase]);
 
   useEffect(() => {
     const socket = socketManager.getSocket();
     if (!socket) return;
 
     socketManager.onMatchFound((payload) => {
+      // При старте нового матча очищаем все локальные стейты
+      setState('prep');
+      setPhase('PREP');
       setYourHp(payload.yourHp);
       setOppHp(payload.oppHp);
       setPot(payload.pot);
+      setSlots([null, null, null]);
+      setConfirmed(false);
+      setRevealedCards([]);
+      setCurrentStepIndex(null);
+      setRoundIndex(1);
     });
 
     socketManager.onPrepStart((payload: PrepStartPayload) => {

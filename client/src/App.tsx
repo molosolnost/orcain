@@ -16,6 +16,7 @@ function App() {
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [matchEndPayload, setMatchEndPayload] = useState<MatchEndPayload | null>(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
 
   // Инициализация: читаем authToken из localStorage при старте
   useEffect(() => {
@@ -94,6 +95,10 @@ function App() {
     });
 
     socketManager.onMatchFound((payload) => {
+      if (payload.matchId) {
+        setCurrentMatchId(payload.matchId);
+      }
+      setMatchEndPayload(null);
       setIsSearching(false);
       setScreen('battle');
       if (payload.yourTokens !== undefined) {
@@ -102,6 +107,11 @@ function App() {
     });
 
     socketManager.onMatchEnd((payload: MatchEndPayload) => {
+      // Игнорируем match_end от старых матчей
+      if (payload.matchId && currentMatchId !== null && payload.matchId !== currentMatchId) {
+        return;
+      }
+      
       if (payload.yourTokens !== undefined) {
         setTokens(payload.yourTokens);
       }
