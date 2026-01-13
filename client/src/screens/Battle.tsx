@@ -19,7 +19,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
   const [availableCards, setAvailableCards] = useState<Card[]>(['ATTACK', 'DEFENSE', 'HEAL', 'COUNTER']);
   const [confirmed, setConfirmed] = useState(false);
   const [deadlineTs, setDeadlineTs] = useState<number | null>(null);
-  const [now, setNow] = useState(Date.now());
+  const [nowTs, setNowTs] = useState(Date.now());
   const [roundIndex, setRoundIndex] = useState(1);
   const [suddenDeath, setSuddenDeath] = useState(false);
   const [revealedCards, setRevealedCards] = useState<{ step: number; yourCard: Card; oppCard: Card }[]>([]);
@@ -72,7 +72,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
       setAvailableCards([...payload.cards]);
       setConfirmed(false);
       setDeadlineTs(payload.deadlineTs);
-      setNow(Date.now());
+      setNowTs(Date.now());
       setRoundIndex(payload.roundIndex);
       setSuddenDeath(payload.suddenDeath);
       setRevealedCards([]);
@@ -118,15 +118,15 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
   // Вычисляемый countdownSeconds
   const countdownSeconds = deadlineTs === null 
     ? null 
-    : Math.max(0, Math.ceil((deadlineTs - now) / 1000));
+    : Math.max(0, Math.ceil((deadlineTs - nowTs) / 1000));
 
   // Таймер для обновления countdown
   useEffect(() => {
     if (phase !== 'PREP' || deadlineTs === null) return;
 
     const interval = setInterval(() => {
-      setNow(Date.now());
-    }, 300);
+      setNowTs(Date.now());
+    }, 250);
 
     return () => clearInterval(interval);
   }, [phase, deadlineTs]);
