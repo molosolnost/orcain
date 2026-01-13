@@ -12,19 +12,26 @@ function App() {
   const [screen, setScreen] = useState<Screen>('login');
   const [connected, setConnected] = useState(false);
   const [tokens, setTokens] = useState<number | null>(null);
+  const [authToken, setAuthToken] = useState<string | null>(null);
 
+  // Инициализация: читаем authToken из localStorage при старте
   useEffect(() => {
-    // Проверяем наличие authToken
-    const authToken = getAuthToken();
+    const token = getAuthToken();
+    setAuthToken(token);
+  }, []);
+
+  // Подключение к socket и отправка hello при наличии authToken
+  useEffect(() => {
     if (!authToken) {
       setScreen('login');
+      setConnected(false);
       return;
     }
 
     const socket = socketManager.connect();
     const sessionId = getSessionId();
     
-    console.log("[SOCKET] connect");
+    console.log("[APP] hello send", { sessionId, hasToken: !!authToken });
     
     // Отправляем hello с sessionId и authToken сразу после подключения
     const sendHello = () => {
@@ -40,7 +47,7 @@ function App() {
     
     // Обработка hello_ok - сигнал успешной авторизации
     socketManager.onHelloOk((payload) => {
-      console.log("[SOCKET] hello_ok", payload);
+      console.log("[APP] hello_ok", payload);
       setConnected(true);
       setScreen('menu');
       if (payload.tokens !== undefined) {
@@ -50,9 +57,10 @@ function App() {
     
     // Обработка ошибок авторизации
     socketManager.onErrorMsg((payload) => {
-      console.log("[SOCKET] error_msg", payload);
+      console.log("[APP] error_msg", payload);
       if (payload.message === 'Unauthorized') {
         clearAuth();
+        setAuthToken(null);
         setScreen('login');
         setConnected(false);
         setTokens(null);
@@ -89,27 +97,12 @@ function App() {
     });
 
     // Сокет должен жить всю сессию вкладки, не отключаем при cleanup
-  }, []);
+  }, [authToken]);
 
-  const handleLogin = (accountId: string, authToken: string, tokens: number) => {
-    // Не переключаемся на menu сразу - ждём hello_ok
-    setTokens(tokens);
-    
-    // Подключаемся к сокету после логина
-    const socket = socketManager.connect();
-    const sessionId = getSessionId();
-    
-    console.log("[SOCKET] connect (after login)");
-    
-    const sendHello = () => {
-      socketManager.hello(sessionId, authToken);
-    };
-    
-    if (socket.connected) {
-      sendHello();
-    } else {
-      socket.on('connect', sendHello);
-    }
+  const handleLoginSuccess = ({ authToken: token, tokens: initialTokens }: { authToken: string; accountId: string; tokens: number }) => {
+    // Обновляем state authToken, что вызовет переподключение через useEffect
+    setAuthToken(token);
+    setTokens(initialTokens);
   };
 
   const handleBattleStart = () => {
@@ -120,8 +113,8 @@ function App() {
     setScreen('menu');
   };
 
-  if (screen === 'login') {
-    return <Login onLogin={handleLogin} />;
+  if (screen === 'login' || !authToken) {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
   }
 
   if (!connected) {
