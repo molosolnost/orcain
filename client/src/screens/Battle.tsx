@@ -22,6 +22,7 @@ export default function Battle({ onBackToMenu, tokens }: BattleProps) {
   const [roundIndex, setRoundIndex] = useState(1);
   const [suddenDeath, setSuddenDeath] = useState(false);
   const [matchResult, setMatchResult] = useState<'YOU' | 'OPPONENT' | null>(null);
+  const [matchEndReason, setMatchEndReason] = useState<'normal' | 'disconnect' | 'timeout' | null>(null);
   const [revealedCards, setRevealedCards] = useState<{ step: number; yourCard: Card; oppCard: Card }[]>([]);
   const [currentStepIndex, setCurrentStepIndex] = useState<number | null>(null);
   const [phase, setPhase] = useState<'PREP' | 'REVEAL' | 'END'>('PREP');
@@ -89,6 +90,7 @@ export default function Battle({ onBackToMenu, tokens }: BattleProps) {
       setYourHp(payload.yourHp);
       setOppHp(payload.oppHp);
       setMatchResult(payload.winner);
+      setMatchEndReason(payload.reason || 'normal');
       setCurrentStepIndex(null);
     });
 
@@ -421,6 +423,12 @@ export default function Battle({ onBackToMenu, tokens }: BattleProps) {
       {state === 'ended' && matchResult && (
         <div style={{ textAlign: 'center', marginTop: '40px' }}>
           <h2>{matchResult === 'YOU' ? 'YOU WIN' : 'YOU LOSE'}</h2>
+          {matchEndReason === 'disconnect' && (
+            <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>Opponent disconnected</p>
+          )}
+          {matchEndReason === 'timeout' && (
+            <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>Match timed out</p>
+          )}
           <button
             onClick={onBackToMenu}
             style={{
