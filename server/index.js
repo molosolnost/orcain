@@ -215,23 +215,33 @@ function emitToBoth(match, event, payloadForSidFn) {
   
   if (socket1) {
     const payload1 = payloadForSidFn(socket1);
-    // Лог для match_end с полной информацией
+    // Лог для match_end с полной информацией перед emit
     if (event === 'match_end') {
       const sessionId1 = getSessionIdBySocket(socket1);
       const winnerPlayerId = payload1.winner === 'YOU' ? sessionId1 : (sessionId1 === match.sessions[0] ? match.sessions[1] : match.sessions[0]);
       const loserPlayerId = payload1.winner === 'YOU' ? (sessionId1 === match.sessions[0] ? match.sessions[1] : match.sessions[0]) : sessionId1;
-      log(`[MATCH_END_EMIT] matchId=${match.id} reason=${payload1.reason || 'MISSING'} to=${sessionId1} winnerPlayerId=${winnerPlayerId} loserPlayerId=${loserPlayerId} winner=${payload1.winner}`);
+      // Гарантируем, что reason всегда есть
+      if (!payload1.reason) {
+        payload1.reason = 'normal';
+      }
+      console.log("[MATCH_END_EMIT]", { matchId: match.id, winnerId: winnerPlayerId, loserId: loserPlayerId, reason: payload1.reason });
+      log(`[MATCH_END_EMIT] matchId=${match.id} reason=${payload1.reason} to=${sessionId1} winnerPlayerId=${winnerPlayerId} loserPlayerId=${loserPlayerId} winner=${payload1.winner}`);
     }
     emitToPlayer(match, socket1, event, payload1);
   }
   if (socket2) {
     const payload2 = payloadForSidFn(socket2);
-    // Лог для match_end с полной информацией
+    // Лог для match_end с полной информацией перед emit
     if (event === 'match_end') {
       const sessionId2 = getSessionIdBySocket(socket2);
       const winnerPlayerId = payload2.winner === 'YOU' ? sessionId2 : (sessionId2 === match.sessions[0] ? match.sessions[1] : match.sessions[0]);
       const loserPlayerId = payload2.winner === 'YOU' ? (sessionId2 === match.sessions[0] ? match.sessions[1] : match.sessions[0]) : sessionId2;
-      log(`[MATCH_END_EMIT] matchId=${match.id} reason=${payload2.reason || 'MISSING'} to=${sessionId2} winnerPlayerId=${winnerPlayerId} loserPlayerId=${loserPlayerId} winner=${payload2.winner}`);
+      // Гарантируем, что reason всегда есть
+      if (!payload2.reason) {
+        payload2.reason = 'normal';
+      }
+      console.log("[MATCH_END_EMIT]", { matchId: match.id, winnerId: winnerPlayerId, loserId: loserPlayerId, reason: payload2.reason });
+      log(`[MATCH_END_EMIT] matchId=${match.id} reason=${payload2.reason} to=${sessionId2} winnerPlayerId=${winnerPlayerId} loserPlayerId=${loserPlayerId} winner=${payload2.winner}`);
     }
     emitToPlayer(match, socket2, event, payload2);
   }
@@ -811,6 +821,8 @@ function endMatchForfeit(match, loserSessionId, reason) {
 
   // Отправляем каждому winner: sessionId===winnerSessionId ? "YOU" : "OPPONENT"
   // Логи будут внутри emitToBoth для каждого получателя
+  // Гарантируем, что reason всегда присутствует
+  const finalReason = reason || 'normal';
   emitToBoth(match, 'match_end', (socketId) => {
     const sessionId = getSessionIdBySocket(socketId);
     const isWinner = sessionId === winnerSessionId;
@@ -823,7 +835,7 @@ function endMatchForfeit(match, loserSessionId, reason) {
         yourHp: p1Data.hp,
         oppHp: p2Data.hp,
         yourTokens: tokens,
-        reason: reason
+        reason: finalReason
       };
     } else {
       return {
@@ -831,12 +843,12 @@ function endMatchForfeit(match, loserSessionId, reason) {
         yourHp: p2Data.hp,
         oppHp: p1Data.hp,
         yourTokens: tokens,
-        reason: reason
+        reason: finalReason
       };
     }
   });
   
-  log(`[FORCE_END] match=${match.id} reason=${reason}`);
+  log(`[FORCE_END] match=${match.id} reason=${finalReason}`);
 
   // Очистка: не удаляем players, только сбрасываем matchId/layout/confirmed, hp оставляем
   p1Data.matchId = null;
@@ -928,6 +940,8 @@ function endMatch(match, reason = 'normal') {
 
   // Отправляем каждому winner: sessionId===winnerSessionId ? "YOU" : "OPPONENT"
   // Логи будут внутри emitToBoth для каждого получателя
+  // Гарантируем, что reason всегда присутствует
+  const finalReason = reason || 'normal';
   emitToBoth(match, 'match_end', (socketId) => {
     const sessionId = getSessionIdBySocket(socketId);
     const isWinner = sessionId === winnerSessionId;
@@ -940,7 +954,7 @@ function endMatch(match, reason = 'normal') {
         yourHp: p1Data.hp,
         oppHp: p2Data.hp,
         yourTokens: tokens,
-        reason: reason
+        reason: finalReason
       };
     } else {
       return {
@@ -948,12 +962,12 @@ function endMatch(match, reason = 'normal') {
         yourHp: p2Data.hp,
         oppHp: p1Data.hp,
         yourTokens: tokens,
-        reason: reason
+        reason: finalReason
       };
     }
   });
   
-  log(`[FORCE_END] match=${match.id} reason=${reason}`);
+  log(`[FORCE_END] match=${match.id} reason=${finalReason}`);
 
   // Очистка: не удаляем players, только сбрасываем matchId/layout/confirmed, hp оставляем
   p1Data.matchId = null;
