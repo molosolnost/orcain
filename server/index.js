@@ -310,27 +310,12 @@ function applyStepLogic(player1Card, player2Card, player1Hp, player2Hp) {
   let newP2Hp = player2Hp;
 
   // GRASS - NOOP карта, не влияет на HP и не триггерит эффекты
+  // Но не блокирует эффекты других карт (ATTACK против GRASS наносит урон)
   if (player1Card === CARD_GRASS && player2Card === CARD_GRASS) {
     return { p1Hp: newP1Hp, p2Hp: newP2Hp };
   }
-  if (player1Card === CARD_GRASS) {
-    // P1 играет GRASS - обрабатываем только карту P2
-    if (player2Card === 'HEAL') {
-      newP2Hp = Math.min(newP2Hp + 1, MAX_HP);
-    }
-    // ATTACK против GRASS не наносит урон (GRASS игнорирует атаки)
-    return { p1Hp: newP1Hp, p2Hp: newP2Hp };
-  }
-  if (player2Card === CARD_GRASS) {
-    // P2 играет GRASS - обрабатываем только карту P1
-    if (player1Card === 'HEAL') {
-      newP1Hp = Math.min(newP1Hp + 1, MAX_HP);
-    }
-    // ATTACK против GRASS не наносит урон (GRASS игнорирует атаки)
-    return { p1Hp: newP1Hp, p2Hp: newP2Hp };
-  }
 
-  // (1) HEAL всегда +1 HP
+  // (1) HEAL всегда +1 HP (GRASS не имеет эффекта HEAL)
   if (player1Card === 'HEAL') {
     newP1Hp = Math.min(newP1Hp + 1, MAX_HP);
   }
@@ -342,8 +327,10 @@ function applyStepLogic(player1Card, player2Card, player1Hp, player2Hp) {
   // ATTACK vs DEFENSE -> 0 урона
   // ATTACK vs ATTACK -> оба -2
   // ATTACK vs COUNTER -> атакующий -2 (защищающийся НЕ получает урон от ATTACK)
+  // ATTACK vs GRASS -> цель (GRASS игрок) получает -2 HP
   // DEFENSE сам по себе ничего не делает
   // COUNTER сам по себе ничего не делает
+  // GRASS сам по себе ничего не делает (не блокирует атаки)
 
   // Обработка player1Card === 'ATTACK'
   if (player1Card === 'ATTACK') {
@@ -357,7 +344,7 @@ function applyStepLogic(player1Card, player2Card, player1Hp, player2Hp) {
       // Только атакующий получает урон
       newP1Hp = Math.max(0, newP1Hp - 2);
     } else {
-      // ATTACK vs HEAL или другой случай
+      // ATTACK vs HEAL, GRASS или другой случай -> цель получает -2
       newP2Hp = Math.max(0, newP2Hp - 2);
     }
   }
@@ -370,7 +357,7 @@ function applyStepLogic(player1Card, player2Card, player1Hp, player2Hp) {
       // Только атакующий получает урон
       newP2Hp = Math.max(0, newP2Hp - 2);
     } else {
-      // ATTACK vs HEAL или другой случай
+      // ATTACK vs HEAL, GRASS или другой случай -> цель получает -2
       newP1Hp = Math.max(0, newP1Hp - 2);
     }
   }
