@@ -294,6 +294,12 @@ function startPlay(match) {
     log(`[${match.id}] startPlay: already in progress, ignoring`);
     return;
   }
+  
+  // Если матч paused из-за disconnect - не играем (ждём reconnect или forfeit)
+  if (match.paused && match.pauseReason === 'disconnect') {
+    log(`[${match.id}] startPlay: paused due to disconnect, waiting for reconnect or forfeit`);
+    return;
+  }
 
   match.roundInProgress = true;
   match.state = 'playing';
@@ -497,62 +503,38 @@ function resumePlay(match) {
     log(`[WATCHDOG_CLEAR] match=${match.id}`);
   }
   
-  // Перезапускаем watchdog
+  // Перезапускаем watchdog (только для playing, не для prep)
   match.watchdogTimer = setTimeout(() => {
     const currentMatch = matchesById.get(match.id);
     if (!currentMatch) return;
-    if (currentMatch.state === 'playing' || currentMatch.state === 'prep') {
+    
+    // Watchdog срабатывает ТОЛЬКО для playing
+    if (currentMatch.state === 'playing') {
       log(`[WATCHDOG_TIMEOUT] match=${currentMatch.id} state=${currentMatch.state}`);
       
       let loserSessionId = null;
       
-      if (currentMatch.state === 'prep') {
-        const p1Data = getPlayerData(currentMatch.sessions[0]);
-        const p2Data = getPlayerData(currentMatch.sessions[1]);
+      // В playing: loser = тот, кто paused/disconnected
+      if (currentMatch.paused && currentMatch.pauseReason === 'disconnect') {
+        const timer1 = disconnectTimerBySessionId.get(currentMatch.sessions[0]);
+        const timer2 = disconnectTimerBySessionId.get(currentMatch.sessions[1]);
         
-        if (!p1Data.confirmed && !p2Data.confirmed) {
+        if (timer1) {
           loserSessionId = currentMatch.sessions[0];
-          log(`[WATCHDOG] state=prep both unconfirmed, loser=${loserSessionId}`);
-        } else if (!p1Data.confirmed) {
-          loserSessionId = currentMatch.sessions[0];
-          log(`[WATCHDOG] state=prep p1 unconfirmed, loser=${loserSessionId}`);
-        } else if (!p2Data.confirmed) {
+          log(`[WATCHDOG] state=playing p1 disconnected, loser=${loserSessionId}`);
+        } else if (timer2) {
           loserSessionId = currentMatch.sessions[1];
-          log(`[WATCHDOG] state=prep p2 unconfirmed, loser=${loserSessionId}`);
-        }
-      } else if (currentMatch.state === 'playing') {
-        if (currentMatch.paused && currentMatch.pauseReason === 'disconnect') {
-          const timer1 = disconnectTimerBySessionId.get(currentMatch.sessions[0]);
-          const timer2 = disconnectTimerBySessionId.get(currentMatch.sessions[1]);
-          
-          if (timer1) {
-            loserSessionId = currentMatch.sessions[0];
-            log(`[WATCHDOG] state=playing p1 disconnected, loser=${loserSessionId}`);
-          } else if (timer2) {
-            loserSessionId = currentMatch.sessions[1];
-            log(`[WATCHDOG] state=playing p2 disconnected, loser=${loserSessionId}`);
-          }
+          log(`[WATCHDOG] state=playing p2 disconnected, loser=${loserSessionId}`);
         }
       }
       
       if (loserSessionId) {
         endMatchForfeit(currentMatch, loserSessionId, 'timeout');
-      } else if (currentMatch.state === 'prep') {
-        log(`[WATCHDOG] state=prep force continue`);
-        const p1Data = getPlayerData(currentMatch.sessions[0]);
-        const p2Data = getPlayerData(currentMatch.sessions[1]);
-        
-        if (!p1Data.confirmed) {
-          p1Data.layout = generateRandomLayout();
-          p1Data.confirmed = true;
-        }
-        if (!p2Data.confirmed) {
-          p2Data.layout = generateRandomLayout();
-          p2Data.confirmed = true;
-        }
-        
-        startPlay(currentMatch);
+      } else {
+        log(`[WATCHDOG] state=playing no clear loser, match may be stuck`);
       }
+    } else if (currentMatch.state === 'prep') {
+      log(`[WATCHDOG] state=prep (prepTimer will handle autoplay)`);
     }
   }, PLAY_STEP_TIMEOUT_MS);
   
@@ -634,71 +616,41 @@ function startPrepPhase(match) {
     log(`[WATCHDOG_CLEAR] match=${match.id}`);
   }
   
-  // Запускаем watchdog таймер для защиты от зависания
+  // Запускаем watchdog таймер для защиты от зависания (только для playing, не для prep)
   match.watchdogTimer = setTimeout(() => {
     const currentMatch = matchesById.get(match.id);
     if (!currentMatch) return; // Матч уже завершён
     
-    // Проверяем, что матч всё ещё в playing/prep и не двигается
-    if (currentMatch.state === 'playing' || currentMatch.state === 'prep') {
+    // Watchdog срабатывает ТОЛЬКО для playing (prep имеет свой prepTimer)
+    if (currentMatch.state === 'playing') {
       log(`[WATCHDOG_TIMEOUT] match=${currentMatch.id} state=${currentMatch.state}`);
       
       let loserSessionId = null;
       
-      if (currentMatch.state === 'prep') {
-        // В prep: loser = тот, кто НЕ confirmed
-        const p1Data = getPlayerData(currentMatch.sessions[0]);
-        const p2Data = getPlayerData(currentMatch.sessions[1]);
+      // В playing: loser = тот, кто paused/disconnected
+      if (currentMatch.paused && currentMatch.pauseReason === 'disconnect') {
+        // Находим кто disconnected (по grace timer)
+        const timer1 = disconnectTimerBySessionId.get(currentMatch.sessions[0]);
+        const timer2 = disconnectTimerBySessionId.get(currentMatch.sessions[1]);
         
-        if (!p1Data.confirmed && !p2Data.confirmed) {
-          // Оба не confirmed - выбираем первого как loser (случайно)
+        if (timer1) {
           loserSessionId = currentMatch.sessions[0];
-          log(`[WATCHDOG] state=prep both unconfirmed, loser=${loserSessionId}`);
-        } else if (!p1Data.confirmed) {
-          loserSessionId = currentMatch.sessions[0];
-          log(`[WATCHDOG] state=prep p1 unconfirmed, loser=${loserSessionId}`);
-        } else if (!p2Data.confirmed) {
+          log(`[WATCHDOG] state=playing p1 disconnected, loser=${loserSessionId}`);
+        } else if (timer2) {
           loserSessionId = currentMatch.sessions[1];
-          log(`[WATCHDOG] state=prep p2 unconfirmed, loser=${loserSessionId}`);
-        }
-      } else if (currentMatch.state === 'playing') {
-        // В playing: loser = тот, кто paused/disconnected
-        if (currentMatch.paused && currentMatch.pauseReason === 'disconnect') {
-          // Находим кто disconnected (по grace timer или по отсутствию socket)
-          const timer1 = disconnectTimerBySessionId.get(currentMatch.sessions[0]);
-          const timer2 = disconnectTimerBySessionId.get(currentMatch.sessions[1]);
-          
-          if (timer1) {
-            loserSessionId = currentMatch.sessions[0];
-            log(`[WATCHDOG] state=playing p1 disconnected, loser=${loserSessionId}`);
-          } else if (timer2) {
-            loserSessionId = currentMatch.sessions[1];
-            log(`[WATCHDOG] state=playing p2 disconnected, loser=${loserSessionId}`);
-          }
+          log(`[WATCHDOG] state=playing p2 disconnected, loser=${loserSessionId}`);
         }
       }
       
       if (loserSessionId) {
         endMatchForfeit(currentMatch, loserSessionId, 'timeout');
       } else {
-        // Не можем определить loser - форсируем продолжение (для prep)
-        if (currentMatch.state === 'prep') {
-          log(`[WATCHDOG] state=prep force continue`);
-          const p1Data = getPlayerData(currentMatch.sessions[0]);
-          const p2Data = getPlayerData(currentMatch.sessions[1]);
-          
-          if (!p1Data.confirmed) {
-            p1Data.layout = generateRandomLayout();
-            p1Data.confirmed = true;
-          }
-          if (!p2Data.confirmed) {
-            p2Data.layout = generateRandomLayout();
-            p2Data.confirmed = true;
-          }
-          
-          startPlay(currentMatch);
-        }
+        // Не можем определить loser в playing - просто логируем
+        log(`[WATCHDOG] state=playing no clear loser, match may be stuck`);
       }
+    } else if (currentMatch.state === 'prep') {
+      // В prep watchdog только логирует, не завершает матч (prepTimer сам запустит playRound)
+      log(`[WATCHDOG] state=prep (prepTimer will handle autoplay)`);
     }
   }, PLAY_STEP_TIMEOUT_MS);
   
@@ -743,6 +695,7 @@ function startPrepPhase(match) {
   });
 
   // Таймер: при истечении для каждого НЕ confirmed генерируем случайную раскладку и ставим confirmed=true
+  // ВАЖНО: этот таймер ВСЕГДА срабатывает и запускает playRound, никаких условий не должно блокировать
   match.prepTimer = setTimeout(() => {
     const currentMatch = matchesById.get(match.id);
     if (!currentMatch) return; // Матч уже завершён
@@ -755,23 +708,21 @@ function startPrepPhase(match) {
     const p2 = getPlayerData(sid2);
     if (!p1 || !p2) return;
     
-    // ВСЕГДА генерируем layouts для тех, кто не confirmed (даже если state изменился)
-    let generated = false;
+    // ВСЕГДА генерируем layouts для тех, кто не confirmed
     if (!p1.confirmed) {
       p1.layout = generateRandomLayout();
       p1.confirmed = true;
-      generated = true;
       log(`[PREP_TIMEOUT] match=${currentMatch.id} sessionId=${sid1} layout=${JSON.stringify(p1.layout)}`);
     }
     if (!p2.confirmed) {
       p2.layout = generateRandomLayout();
       p2.confirmed = true;
-      generated = true;
       log(`[PREP_TIMEOUT] match=${currentMatch.id} sessionId=${sid2} layout=${JSON.stringify(p2.layout)}`);
     }
     
-    // ВСЕГДА запускаем playRound если матч ещё в prep (или если мы сгенерировали layouts)
-    if (currentMatch.state === 'prep' && generated) {
+    // ВСЕГДА запускаем playRound (если матч ещё существует и в prep)
+    // НЕ проверяем paused/roundInProgress - prepTimer должен быть "железным"
+    if (currentMatch.state === 'prep') {
       log(`[PREP_TIMEOUT] match=${currentMatch.id} starting play`);
       startPlay(currentMatch);
     }
