@@ -65,14 +65,14 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
 
     socketManager.onPrepStart((payload: PrepStartPayload) => {
       setState('prep');
+      setNowTs(Date.now());
+      setDeadlineTs(payload.deadlineTs);
       setPhase('PREP');
       setYourHp(payload.yourHp);
       setOppHp(payload.oppHp);
       setSlots([null, null, null]);
       setAvailableCards([...payload.cards]);
       setConfirmed(false);
-      setDeadlineTs(payload.deadlineTs);
-      setNowTs(Date.now());
       setRoundIndex(payload.roundIndex);
       setSuddenDeath(payload.suddenDeath);
       setRevealedCards([]);
@@ -119,6 +119,16 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
   const countdownSeconds = deadlineTs === null 
     ? null 
     : Math.max(0, Math.ceil((deadlineTs - nowTs) / 1000));
+  
+  // Fallback для computedSeconds
+  const computedSeconds = (() => {
+    if (phase === 'PREP' && deadlineTs !== null) {
+      const baseNow = nowTs || Date.now();
+      const secs = Math.max(0, Math.ceil((deadlineTs - baseNow) / 1000));
+      return isNaN(secs) ? 0 : secs;
+    }
+    return countdownSeconds !== null && !isNaN(countdownSeconds) ? countdownSeconds : null;
+  })();
 
   // Таймер для обновления countdown
   useEffect(() => {
@@ -277,9 +287,9 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
         <div style={{ fontSize: '16px', marginTop: '8px', fontWeight: 'bold' }}>
           Phase: {phase}
         </div>
-        {phase === 'PREP' && countdownSeconds !== null && (
+        {phase === 'PREP' && deadlineTs !== null && computedSeconds !== null && (
           <div>
-            <p>Time left: {countdownSeconds}s</p>
+            <p>Time left: {computedSeconds}s</p>
           </div>
         )}
       </div>
