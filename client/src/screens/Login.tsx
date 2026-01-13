@@ -1,3 +1,5 @@
+const API_BASE = import.meta.env.VITE_API_BASE || 'https://orcain-server.onrender.com';
+
 interface LoginProps {
   onLogin: (accountId: string, authToken: string, tokens: number) => void;
 }
@@ -5,7 +7,7 @@ interface LoginProps {
 export default function Login({ onLogin }: LoginProps) {
   const handleCreateAccount = async () => {
     try {
-      const response = await fetch('http://localhost:3001/auth/guest', {
+      const response = await fetch(`${API_BASE}/auth/guest`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

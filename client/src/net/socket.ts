@@ -8,6 +8,8 @@ import type {
   HelloOkPayload,
 } from './types';
 
+const API_BASE = import.meta.env.VITE_API_BASE || 'https://orcain-server.onrender.com';
+
 class SocketManager {
   private socket: Socket | null = null;
 
@@ -16,8 +18,11 @@ class SocketManager {
     if (this.socket) {
       return this.socket;
     }
-    // Если this.socket == null -> создать io('http://localhost:3001', { autoConnect: true }) и сохранить
-    this.socket = io('http://localhost:3001', { autoConnect: true });
+    // Если this.socket == null -> создать подключение к серверу
+    this.socket = io(API_BASE, { 
+      autoConnect: true,
+      transports: ['websocket']
+    });
     return this.socket;
   }
 
