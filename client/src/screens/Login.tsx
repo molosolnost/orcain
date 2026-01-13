@@ -28,8 +28,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       const data = await response.json();
       const { accountId, authToken, tokens } = data;
       
-      console.log("[LOGIN] guest ok", { accountId, authToken, tokens });
-      
       // Сохраняем authToken и accountId в localStorage
       localStorage.setItem('orcain_authToken', authToken);
       localStorage.setItem('orcain_accountId', accountId);
@@ -37,7 +35,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       // Вызываем callback для обновления App (accountId сохраняется в localStorage, не передаём в callback)
       onLoginSuccess({ authToken, tokens });
     } catch (error) {
-      console.error('Error creating account:', error);
       setError('Failed to create account. Please try again.');
     } finally {
       setLoading(false);

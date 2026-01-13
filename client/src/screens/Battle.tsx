@@ -22,8 +22,6 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
   const [timeLeft, setTimeLeft] = useState(20);
   const [roundIndex, setRoundIndex] = useState(1);
   const [suddenDeath, setSuddenDeath] = useState(false);
-  // matchResult и matchEndReason теперь получаем из props (matchEndPayload)
-  // Локальные state больше не нужны, используем props
   const [revealedCards, setRevealedCards] = useState<{ step: number; yourCard: Card; oppCard: Card }[]>([]);
   const [currentStepIndex, setCurrentStepIndex] = useState<number | null>(null);
   const [phase, setPhase] = useState<'PREP' | 'REVEAL' | 'END'>('PREP');
@@ -31,8 +29,6 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
   const draggedCardRef = useRef<Card | null>(null);
   const draggedSlotRef = useRef<number | null>(null);
 
-  // Обновляем state при получении matchEndPayload из props
-  // ВАЖНО: phase = END устанавливается ТОЛЬКО после получения match_end
   useEffect(() => {
     if (matchEndPayload) {
       setState('ended');
@@ -40,7 +36,6 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
       setYourHp(matchEndPayload.yourHp);
       setOppHp(matchEndPayload.oppHp);
       setCurrentStepIndex(null);
-      // matchEndPayload НЕ очищается - он должен сохраняться для отображения в UI
     }
   }, [matchEndPayload]);
 
@@ -74,8 +69,6 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
     });
 
     socketManager.onStepReveal((payload: StepRevealPayload) => {
-      // ВАЖНО: НЕ завершаем матч здесь, даже если HP = 0
-      // Только обновляем UI, ждём match_end от сервера
       setState('playing');
       setPhase('REVEAL');
       setYourHp(payload.yourHp);
@@ -91,31 +84,19 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
         };
         return newRevealed;
       });
-      // НЕ проверяем HP здесь
-      // НЕ устанавливаем state = 'ended' здесь
-      // НЕ устанавливаем matchResult здесь
     });
 
     socketManager.onRoundEnd(() => {
-      // Раунд закончен, следующий prep_start придёт от сервера
-      // ВАЖНО: НЕ завершаем матч здесь, только ждём match_end от сервера
       setRevealedCards([]);
       setCurrentStepIndex(null);
       setPhase('PREP');
-      // НЕ устанавливаем state = 'ended' здесь
-      // НЕ устанавливаем matchResult здесь
     });
 
-    // УБРАНА подписка на match_end - теперь обрабатывается глобально в App.tsx
-
     return () => {
-      // НЕ снимаем match_found и match_end - они обрабатываются в App.tsx
-      // socketManager.off('match_found');
       socketManager.off('prep_start');
       socketManager.off('confirm_ok');
       socketManager.off('step_reveal');
       socketManager.off('round_end');
-      // match_end обрабатывается глобально в App.tsx, не снимаем здесь
     };
   }, []);
 

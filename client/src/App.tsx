@@ -33,8 +33,6 @@ function App() {
     const socket = socketManager.connect();
     const sessionId = getSessionId();
     
-    console.log("[APP] hello send", { sessionId, hasToken: !!authToken });
-    
     // Отправляем hello с sessionId и authToken сразу после подключения
     const sendHello = () => {
       socketManager.hello(sessionId, authToken);
@@ -49,7 +47,6 @@ function App() {
     
     // Обработка hello_ok - сигнал успешной авторизации
     socketManager.onHelloOk((payload) => {
-      console.log("[APP] hello_ok", payload);
       setConnected(true);
       setScreen('menu');
       if (payload.tokens !== undefined) {
@@ -59,7 +56,6 @@ function App() {
     
     // Обработка ошибок авторизации
     socketManager.onErrorMsg((payload) => {
-      console.log("[APP] error_msg", payload);
       if (payload.message === 'Unauthorized') {
         clearAuth();
         setAuthToken(null);
@@ -78,30 +74,22 @@ function App() {
     });
 
     socketManager.onQueueOk((payload) => {
-      // on "queue_ok": setTokens(payload.tokens)
       if (payload?.tokens !== undefined) {
         setTokens(payload.tokens);
       }
     });
 
     socketManager.onMatchFound((payload) => {
-      // on "match_found": setTokens(payload.yourTokens)
       if (payload.yourTokens !== undefined) {
         setTokens(payload.yourTokens);
       }
     });
 
-    // Глобальная подписка на match_end на уровне приложения
     socketManager.onMatchEnd((payload: MatchEndPayload) => {
-      // Обновляем токены
       if (payload.yourTokens !== undefined) {
         setTokens(payload.yourTokens);
       }
-      
-      // Сохраняем полный payload
       setMatchEndPayload(payload);
-      
-      // Переключаемся на экран боя если не в бою
       if (screen !== 'battle') {
         setScreen('battle');
       }
@@ -111,8 +99,6 @@ function App() {
   }, [authToken]);
 
   const handleLoginSuccess = ({ authToken: token, tokens: initialTokens }: { authToken: string; tokens: number }) => {
-    // Обновляем state authToken, что вызовет переподключение через useEffect
-    // accountId сохраняется в localStorage через Login компонент, здесь не используется
     setAuthToken(token);
     setTokens(initialTokens);
   };
@@ -123,7 +109,6 @@ function App() {
 
   const handleBackToMenu = () => {
     setScreen('menu');
-    // НЕ очищаем matchEndPayload при возврате в меню - он должен сохраняться
   };
 
   if (screen === 'login' || !authToken) {
