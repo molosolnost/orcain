@@ -8,9 +8,11 @@ interface BattleProps {
   onBackToMenu: () => void;
   tokens: number | null;
   matchEndPayload: MatchEndPayload | null;
+  lastPrepStart: PrepStartPayload | null;
+  currentMatchId: string | null;
 }
 
-export default function Battle({ onBackToMenu, tokens, matchEndPayload }: BattleProps) {
+export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrepStart, currentMatchId }: BattleProps) {
   const [state, setState] = useState<BattleState>('prep');
   const [yourHp, setYourHp] = useState(10);
   const [oppHp, setOppHp] = useState(10);
@@ -28,6 +30,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
 
   const draggedCardRef = useRef<Card | null>(null);
   const draggedSlotRef = useRef<number | null>(null);
+  const lastAppliedRoundIndexRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (matchEndPayload) {
@@ -44,6 +47,38 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
       }
     }
   }, [matchEndPayload, phase]);
+
+  // Применение lastPrepStart из props
+  useEffect(() => {
+    if (!lastPrepStart) return;
+    
+    // Игнорируем если matchId не совпадает
+    if (lastPrepStart.matchId && currentMatchId !== null && lastPrepStart.matchId !== currentMatchId) {
+      return;
+    }
+    
+    const isNewRound = lastAppliedRoundIndexRef.current === null || 
+                       lastAppliedRoundIndexRef.current !== lastPrepStart.roundIndex;
+    
+    setRoundIndex(lastPrepStart.roundIndex);
+    setPhase('PREP');
+    setNowTs(Date.now());
+    setDeadlineTs(lastPrepStart.deadlineTs);
+    setYourHp(lastPrepStart.yourHp);
+    setOppHp(lastPrepStart.oppHp);
+    setSuddenDeath(lastPrepStart.suddenDeath);
+    setAvailableCards([...lastPrepStart.cards]);
+    
+    // Сбросить confirmed/layout/slot/выкладки только если это новый раунд
+    if (isNewRound) {
+      setState('prep');
+      setSlots([null, null, null]);
+      setConfirmed(false);
+      setRevealedCards([]);
+      setCurrentStepIndex(null);
+      lastAppliedRoundIndexRef.current = lastPrepStart.roundIndex;
+    }
+  }, [lastPrepStart, currentMatchId]);
 
   useEffect(() => {
     const socket = socketManager.getSocket();

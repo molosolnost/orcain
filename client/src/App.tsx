@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { socketManager } from './net/socket';
 import { getAuthToken, getSessionId, clearAuth } from './net/ids';
-import type { MatchEndPayload } from './net/types';
+import type { MatchEndPayload, PrepStartPayload } from './net/types';
 import Login from './screens/Login';
 import Menu from './screens/Menu';
 import Battle from './screens/Battle';
@@ -17,6 +17,7 @@ function App() {
   const [matchEndPayload, setMatchEndPayload] = useState<MatchEndPayload | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
+  const [lastPrepStart, setLastPrepStart] = useState<PrepStartPayload | null>(null);
 
   // Инициализация: читаем authToken из localStorage при старте
   useEffect(() => {
@@ -99,11 +100,20 @@ function App() {
         setCurrentMatchId(payload.matchId);
       }
       setMatchEndPayload(null);
+      setLastPrepStart(null);
       setIsSearching(false);
       setScreen('battle');
       if (payload.yourTokens !== undefined) {
         setTokens(payload.yourTokens);
       }
+    });
+
+    socketManager.onPrepStart((payload: PrepStartPayload) => {
+      // Игнорируем prep_start от старых матчей
+      if (payload.matchId && currentMatchId !== null && payload.matchId !== currentMatchId) {
+        return;
+      }
+      setLastPrepStart(payload);
     });
 
     socketManager.onMatchEnd((payload: MatchEndPayload) => {
@@ -122,7 +132,7 @@ function App() {
     });
 
     // Сокет должен жить всю сессию вкладки, не отключаем при cleanup
-  }, [authToken]);
+  }, [authToken, currentMatchId]);
 
   const handleLoginSuccess = ({ authToken: token, tokens: initialTokens }: { authToken: string; tokens: number }) => {
     setAuthToken(token);
@@ -165,6 +175,8 @@ function App() {
           onBackToMenu={handleBackToMenu} 
           tokens={tokens}
           matchEndPayload={matchEndPayload}
+          lastPrepStart={lastPrepStart}
+          currentMatchId={currentMatchId}
         />
       )}
     </div>
