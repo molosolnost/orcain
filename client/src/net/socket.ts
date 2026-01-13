@@ -89,7 +89,6 @@ class SocketManager {
 
   onMatchEnd(callback: (payload: MatchEndPayload) => void) {
     this.socket?.on('match_end', (payload: MatchEndPayload) => {
-      console.log("[MATCH_END_PAYLOAD]", payload);
       callback(payload);
     });
   }

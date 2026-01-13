@@ -93,8 +93,6 @@ function App() {
 
     // Глобальная подписка на match_end на уровне приложения
     socketManager.onMatchEnd((payload: MatchEndPayload) => {
-      console.log("[MATCH_END_PAYLOAD]", payload);
-      
       // Обновляем токены
       if (payload.yourTokens !== undefined) {
         setTokens(payload.yourTokens);
@@ -134,11 +132,6 @@ function App() {
 
   if (!connected) {
     return <div>Connecting...</div>;
-  }
-
-  // Лог перед рендером END UI
-  if (screen === 'battle' && matchEndPayload) {
-    console.log("[END_RENDER]", matchEndPayload);
   }
 
   return (

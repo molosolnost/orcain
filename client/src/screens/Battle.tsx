@@ -35,7 +35,6 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
   // ВАЖНО: phase = END устанавливается ТОЛЬКО после получения match_end
   useEffect(() => {
     if (matchEndPayload) {
-      console.log("[BATTLE] matchEndPayload received", { reason: matchEndPayload.reason, winner: matchEndPayload.winner });
       setState('ended');
       setPhase('END');
       setYourHp(matchEndPayload.yourHp);
@@ -110,7 +109,6 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
     // УБРАНА подписка на match_end - теперь обрабатывается глобально в App.tsx
 
     return () => {
-      console.log("[BATTLE_UNMOUNT]");
       // НЕ снимаем match_found и match_end - они обрабатываются в App.tsx
       // socketManager.off('match_found');
       socketManager.off('prep_start');
@@ -436,33 +434,28 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
       )}
 
       {/* Match End */}
-      {matchEndPayload && (() => {
-        // Лог прямо перед JSX END-экрана
-        console.log("[END_RENDER]", matchEndPayload);
-        return (
-          <div style={{ textAlign: 'center', marginTop: '40px' }}>
-            <h2>{matchEndPayload.winner === 'YOU' ? 'YOU WIN' : 'YOU LOSE'}</h2>
-            {/* УБРАНЫ fallback-ы: рендерим текст ТОЛЬКО если reason !== "normal" */}
-            {matchEndPayload.reason === 'disconnect' && (
-              <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>Opponent disconnected</p>
-            )}
-            {matchEndPayload.reason === 'timeout' && (
-              <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>Match timed out</p>
-            )}
-            <button
-              onClick={onBackToMenu}
-              style={{
-                padding: '12px 24px',
-                fontSize: '18px',
-                cursor: 'pointer',
-                marginTop: '20px'
-              }}
-            >
-              Back to Menu
-            </button>
-          </div>
-        );
-      })()}
+      {matchEndPayload && (
+        <div style={{ textAlign: 'center', marginTop: '40px' }}>
+          <h2>{matchEndPayload.winner === 'YOU' ? 'YOU WIN' : 'YOU LOSE'}</h2>
+          {matchEndPayload.reason === 'disconnect' && (
+            <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>Opponent disconnected</p>
+          )}
+          {matchEndPayload.reason === 'timeout' && (
+            <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>Match timed out</p>
+          )}
+          <button
+            onClick={onBackToMenu}
+            style={{
+              padding: '12px 24px',
+              fontSize: '18px',
+              cursor: 'pointer',
+              marginTop: '20px'
+            }}
+          >
+            Back to Menu
+          </button>
+        </div>
+      )}
     </div>
   );
 }
