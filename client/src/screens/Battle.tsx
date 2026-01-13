@@ -476,7 +476,12 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
             <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>Opponent disconnected</p>
           )}
           {matchEndPayload.reason === 'timeout' && (
-            <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>Match timed out</p>
+            <div style={{ marginTop: '10px' }}>
+              <p style={{ fontSize: '14px', color: '#666' }}>Match timed out</p>
+              {matchEndPayload.message && (
+                <p style={{ fontSize: '12px', color: '#999', marginTop: '4px' }}>{matchEndPayload.message}</p>
+              )}
+            </div>
           )}
           <button
             onClick={onBackToMenu}

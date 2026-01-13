@@ -47,6 +47,7 @@ export type MatchEndPayload = {
   oppHp: number;
   yourTokens: number;
   reason: "normal" | "disconnect" | "timeout";
+  message?: string;
 };
 
 export type HelloOkPayload = {

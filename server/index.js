@@ -28,6 +28,7 @@ const START_TOKENS = 10;
 const MATCH_COST = 1;
 const DISCONNECT_GRACE_MS = 5000; // 5 seconds grace period for reconnect
 const PLAY_STEP_TIMEOUT_MS = 15000; // 15 seconds global timeout for PLAY phase
+const BOTH_AFK_ROUNDS_TO_BURN = 2; // Number of consecutive rounds where both players are AFK to burn pot
 
 // Debug flag
 const DEBUG = false;
@@ -112,7 +113,8 @@ function createMatch(player1Socket, player2Socket) {
     pauseReason: null,
     currentStepIndex: null,
     stepTimer: null,
-    watchdogTimer: null
+    watchdogTimer: null,
+    bothAfkStreak: 0
   };
 
   // Сохраняем матч по ID и по socketId
@@ -303,6 +305,7 @@ function fillAfkLayout(playerData) {
     playerData.layout = filledLayout;
   }
   playerData.confirmed = true;
+  playerData.wasAfkFilledThisRound = true;
 }
 
 function applyStepLogic(player1Card, player2Card, player1Hp, player2Hp) {
@@ -376,6 +379,29 @@ function startPlay(match) {
   if (match.paused && match.pauseReason === 'disconnect') {
     log(`[${match.id}] startPlay: paused due to disconnect, waiting for reconnect or forfeit`);
     return;
+  }
+
+  const p1Data = getPlayerData(match.sessions[0]);
+  const p2Data = getPlayerData(match.sessions[1]);
+  
+  // Проверка на оба AFK: если оба получили GRASS через AFK_FILL
+  if (p1Data && p2Data) {
+    const bothAfk = p1Data.wasAfkFilledThisRound && p2Data.wasAfkFilledThisRound;
+    
+    if (bothAfk) {
+      match.bothAfkStreak++;
+      log(`[BOTH_AFK] match=${match.id} streak=${match.bothAfkStreak}`);
+      
+      if (match.bothAfkStreak >= BOTH_AFK_ROUNDS_TO_BURN) {
+        // Завершаем матч с сгоранием pot
+        log(`[BURN_END] match=${match.id} pot=${match.pot} reason=timeout`);
+        endMatchBothAfk(match);
+        return;
+      }
+    } else {
+      // Если хотя бы один не AFK - сбрасываем streak
+      match.bothAfkStreak = 0;
+    }
   }
 
   match.roundInProgress = true;
@@ -463,17 +489,20 @@ function startPlay(match) {
   
   log(`[WATCHDOG_START] match=${match.id} timeout=${PLAY_STEP_TIMEOUT_MS}ms`);
   
-  const p1Data = getPlayerData(match.sessions[0]);
-  const p2Data = getPlayerData(match.sessions[1]);
-  
   // Если игроки не подтвердили, заполняем AFK расклады
   if (!p1Data.layout || !p1Data.confirmed) {
     fillAfkLayout(p1Data);
     log(`[AFK_FILL] match=${match.id} player=${match.sessions[0]} layout=${JSON.stringify(p1Data.layout)}`);
+  } else {
+    // Если игрок confirmed, убеждаемся что wasAfkFilledThisRound = false
+    p1Data.wasAfkFilledThisRound = false;
   }
   if (!p2Data.layout || !p2Data.confirmed) {
     fillAfkLayout(p2Data);
     log(`[AFK_FILL] match=${match.id} player=${match.sessions[1]} layout=${JSON.stringify(p2Data.layout)}`);
+  } else {
+    // Если игрок confirmed, убеждаемся что wasAfkFilledThisRound = false
+    p2Data.wasAfkFilledThisRound = false;
   }
 
   // Логируем начало раунда и финальные layouts
@@ -751,8 +780,10 @@ function startPrepPhase(match) {
   // Сбрасываем состояние подготовки
   p1Data.confirmed = false;
   p1Data.layout = null;
+  p1Data.wasAfkFilledThisRound = false;
   p2Data.confirmed = false;
   p2Data.layout = null;
+  p2Data.wasAfkFilledThisRound = false;
 
   const deadlineTs = Date.now() + PREP_TIME_MS;
   match.prepDeadline = deadlineTs;
@@ -970,6 +1001,104 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
   // Socket.IO автоматически очистит room при disconnect всех участников
   // Но можно явно покинуть room если нужно
   // io.socketsLeave(match.id);
+}
+
+function endMatchBothAfk(match) {
+  // Завершение матча когда оба игрока AFK N раундов подряд
+  // Pot сгорает, tokens не возвращаются
+  match.state = 'ended';
+  match.roundInProgress = false;
+  match.paused = false;
+  match.pauseReason = null;
+  
+  // Очистка таймеров
+  if (match.prepTimer) {
+    clearTimeout(match.prepTimer);
+    match.prepTimer = null;
+  }
+  
+  if (match.stepTimer) {
+    clearTimeout(match.stepTimer);
+    match.stepTimer = null;
+  }
+  
+  if (match.watchdogTimer) {
+    clearTimeout(match.watchdogTimer);
+    match.watchdogTimer = null;
+    log(`[WATCHDOG_CLEAR] match=${match.id}`);
+  }
+  
+  // Очистка grace timers для обоих игроков
+  if (match.sessions && match.sessions.length >= 2) {
+    const timer1 = disconnectTimerBySessionId.get(match.sessions[0]);
+    if (timer1) {
+      clearTimeout(timer1);
+      disconnectTimerBySessionId.delete(match.sessions[0]);
+    }
+    const timer2 = disconnectTimerBySessionId.get(match.sessions[1]);
+    if (timer2) {
+      clearTimeout(timer2);
+      disconnectTimerBySessionId.delete(match.sessions[1]);
+    }
+  }
+  
+  // Аборт playRound если он идёт
+  match.playAbortToken++;
+  
+  const p1Data = getPlayerData(match.sessions[0]);
+  const p2Data = getPlayerData(match.sessions[1]);
+  
+  // Используем финальные HP из данных или дефолтные
+  const p1Hp = p1Data ? p1Data.hp : START_HP;
+  const p2Hp = p2Data ? p2Data.hp : START_HP;
+  
+  // Получаем токены по accountId для отправки (НЕ возвращаем pot)
+  const acc1AccountId = getAccountIdBySessionId(match.sessions[0]);
+  const acc2AccountId = getAccountIdBySessionId(match.sessions[1]);
+  const acc1Tokens = acc1AccountId ? db.getTokens(acc1AccountId) : START_TOKENS;
+  const acc2Tokens = acc2AccountId ? db.getTokens(acc2AccountId) : START_TOKENS;
+  
+  // Отправляем match_end обоим с winner="OPPONENT" (чтобы никто не видел "YOU WIN")
+  // Pot НЕ начисляется, tokens НЕ возвращаются
+  emitToBoth(match, 'match_end', (socketId) => {
+    const sessionId = getSessionIdBySocket(socketId);
+    const accountId = getAccountIdBySessionId(sessionId);
+    const tokens = accountId ? (db.getTokens(accountId) !== null ? db.getTokens(accountId) : START_TOKENS) : START_TOKENS;
+    
+    return {
+      matchId: match.id,
+      winner: 'OPPONENT', // Обоим "OPPONENT" чтобы никто не видел "YOU WIN"
+      winnerId: match.sessions[1], // Произвольный, не важен
+      loserId: match.sessions[0], // Произвольный, не важен
+      yourHp: sessionId === match.sessions[0] ? p1Hp : p2Hp,
+      oppHp: sessionId === match.sessions[0] ? p2Hp : p1Hp,
+      yourTokens: tokens,
+      reason: 'timeout',
+      message: 'Both AFK — tokens burned'
+    };
+  });
+  
+  log(`[BURN_END] match=${match.id} pot=${match.pot} reason=timeout`);
+  
+  // Очистка: не удаляем players, только сбрасываем matchId/layout/confirmed, hp оставляем
+  if (p1Data) {
+    p1Data.matchId = null;
+    p1Data.confirmed = false;
+    p1Data.layout = null;
+    p1Data.hp = START_HP; // Сбрасываем HP на 10 после матча
+  }
+  
+  if (p2Data) {
+    p2Data.matchId = null;
+    p2Data.confirmed = false;
+    p2Data.layout = null;
+    p2Data.hp = START_HP; // Сбрасываем HP на 10 после матча
+  }
+  
+  // Удаляем матч из хранилищ
+  matchesById.delete(match.id);
+  matchIdBySocket.delete(match.player1);
+  matchIdBySocket.delete(match.player2);
 }
 
 function endMatch(match, reason = 'normal') {
