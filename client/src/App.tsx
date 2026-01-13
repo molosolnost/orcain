@@ -118,10 +118,8 @@ function App() {
         return;
       }
       
-      // Пробрасываем payload в Battle если мы в battle
-      if (screen === 'battle') {
-        setLastPrepStart(payload);
-      }
+      // Всегда устанавливаем lastPrepStart после фильтра по matchId
+      setLastPrepStart(payload);
     });
 
     socketManager.onMatchEnd((payload: MatchEndPayload) => {

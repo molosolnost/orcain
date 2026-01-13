@@ -87,6 +87,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
     socketManager.onMatchFound((payload) => {
       // При старте нового матча очищаем все локальные стейты
+      // НЕ трогаем deadlineTs/pot - они будут установлены из lastPrepStart
       setState('prep');
       setPhase('PREP');
       setYourHp(payload.yourHp);
@@ -97,6 +98,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setRevealedCards([]);
       setCurrentStepIndex(null);
       setRoundIndex(1);
+      lastAppliedRoundIndexRef.current = null;
     });
 
     // Убрана прямая подписка на prep_start - теперь получаем через props (lastPrepStart)
