@@ -793,6 +793,9 @@ function endMatchForfeit(match, loserSessionId, reason) {
   const acc2Tokens = acc2AccountId ? db.getTokens(acc2AccountId) : START_TOKENS;
   log(`[TOKENS] end winner=${winnerSessionId} acc1tokens=${acc1Tokens} acc2tokens=${acc2Tokens}`);
 
+  // Лог перед отправкой match_end
+  log(`[MATCH_END_EMIT] matchId=${match.id} reason=${reason} winner=${winnerSessionId} loser=${loserSessionId}`);
+
   // Отправляем каждому winner: sessionId===winnerSessionId ? "YOU" : "OPPONENT"
   emitToBoth(match, 'match_end', (socketId) => {
     const sessionId = getSessionIdBySocket(socketId);
@@ -908,6 +911,9 @@ function endMatch(match, reason = 'normal') {
   const acc1Tokens = acc1AccountId ? db.getTokens(acc1AccountId) : START_TOKENS;
   const acc2Tokens = acc2AccountId ? db.getTokens(acc2AccountId) : START_TOKENS;
   log(`[TOKENS] end winner=${winnerSessionId} acc1tokens=${acc1Tokens} acc2tokens=${acc2Tokens}`);
+
+  // Лог перед отправкой match_end
+  log(`[MATCH_END_EMIT] matchId=${match.id} reason=${reason} winner=${winnerSessionId}`);
 
   // Отправляем каждому winner: sessionId===winnerSessionId ? "YOU" : "OPPONENT"
   emitToBoth(match, 'match_end', (socketId) => {

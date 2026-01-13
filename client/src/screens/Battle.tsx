@@ -85,7 +85,7 @@ export default function Battle({ onBackToMenu, tokens }: BattleProps) {
     });
 
     socketManager.onMatchEnd((payload: MatchEndPayload) => {
-      console.log("[MATCH_END]", payload);
+      console.log("[MATCH_END_PAYLOAD]", payload);
       setState('ended');
       setPhase('END');
       setYourHp(payload.yourHp);
@@ -424,15 +424,11 @@ export default function Battle({ onBackToMenu, tokens }: BattleProps) {
       {state === 'ended' && matchResult && (
         <div style={{ textAlign: 'center', marginTop: '40px' }}>
           <h2>{matchResult === 'YOU' ? 'YOU WIN' : 'YOU LOSE'}</h2>
-          {matchEndReason && matchEndReason !== 'normal' && (
-            <>
-              {matchEndReason === 'disconnect' && (
-                <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>Opponent disconnected</p>
-              )}
-              {matchEndReason === 'timeout' && (
-                <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>Match timed out</p>
-              )}
-            </>
+          {matchEndReason === 'disconnect' && (
+            <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>Opponent disconnected</p>
+          )}
+          {matchEndReason === 'timeout' && (
+            <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>Match timed out</p>
           )}
           <button
             onClick={onBackToMenu}
