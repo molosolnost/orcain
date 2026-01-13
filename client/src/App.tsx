@@ -125,6 +125,7 @@ function App() {
 
   const handleBackToMenu = () => {
     setScreen('menu');
+    // НЕ очищаем matchEndPayload при возврате в меню - он должен сохраняться
   };
 
   if (screen === 'login' || !authToken) {
@@ -133,6 +134,11 @@ function App() {
 
   if (!connected) {
     return <div>Connecting...</div>;
+  }
+
+  // Лог перед рендером END UI
+  if (screen === 'battle' && matchEndPayload) {
+    console.log("[END_RENDER]", matchEndPayload);
   }
 
   return (
