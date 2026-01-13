@@ -15,6 +15,7 @@ function App() {
   const [tokens, setTokens] = useState<number | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [matchEndPayload, setMatchEndPayload] = useState<MatchEndPayload | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
 
   // Инициализация: читаем authToken из localStorage при старте
   useEffect(() => {
@@ -62,6 +63,10 @@ function App() {
         setScreen('login');
         setConnected(false);
         setTokens(null);
+        setIsSearching(false);
+      } else if (isSearching) {
+        setIsSearching(false);
+        alert(payload.message);
       }
     });
     
@@ -80,6 +85,8 @@ function App() {
     });
 
     socketManager.onMatchFound((payload) => {
+      setIsSearching(false);
+      setScreen('battle');
       if (payload.yourTokens !== undefined) {
         setTokens(payload.yourTokens);
       }
@@ -103,8 +110,79 @@ function App() {
     setTokens(initialTokens);
   };
 
-  const handleBattleStart = () => {
-    setScreen('battle');
+  const handleStartBattle = () => {
+    setIsSearching(true);
+    socketManager.queueJoin();
+  };
+
+  const handleCancelSearch = () => {
+    setIsSearching(false);
+    // Переподключение сокета для отмены поиска
+    socketManager.disconnect();
+    const socket = socketManager.connect();
+    const sessionId = getSessionId();
+    
+    if (!authToken) return;
+    
+    // Повторно навешиваем все подписки
+    const sendHello = () => {
+      socketManager.hello(sessionId, authToken);
+    };
+    
+    socket.on('connect', sendHello);
+    
+    if (socket.connected) {
+      sendHello();
+    }
+    
+    socketManager.onHelloOk((payload) => {
+      setConnected(true);
+      setScreen('menu');
+      if (payload.tokens !== undefined) {
+        setTokens(prev => (prev === null ? payload.tokens : prev));
+      }
+    });
+    
+    socketManager.onErrorMsg((payload) => {
+      if (payload.message === 'Unauthorized') {
+        clearAuth();
+        setAuthToken(null);
+        setScreen('login');
+        setConnected(false);
+        setTokens(null);
+        setIsSearching(false);
+      }
+    });
+    
+    socketManager.onSyncState((payload) => {
+      if (payload.inMatch && payload.matchId) {
+        setScreen('battle');
+      }
+    });
+
+    socketManager.onQueueOk((payload) => {
+      if (payload?.tokens !== undefined) {
+        setTokens(payload.tokens);
+      }
+    });
+
+    socketManager.onMatchFound((payload) => {
+      setIsSearching(false);
+      setScreen('battle');
+      if (payload.yourTokens !== undefined) {
+        setTokens(payload.yourTokens);
+      }
+    });
+
+    socketManager.onMatchEnd((payload: MatchEndPayload) => {
+      if (payload.yourTokens !== undefined) {
+        setTokens(payload.yourTokens);
+      }
+      setMatchEndPayload(payload);
+      if (screen !== 'battle') {
+        setScreen('battle');
+      }
+    });
   };
 
   const handleBackToMenu = () => {
@@ -121,7 +199,14 @@ function App() {
 
   return (
     <div>
-      {screen === 'menu' && <Menu onBattleStart={handleBattleStart} tokens={tokens} />}
+      {screen === 'menu' && (
+        <Menu 
+          onStartBattle={handleStartBattle} 
+          onCancelSearch={handleCancelSearch}
+          isSearching={isSearching}
+          tokens={tokens} 
+        />
+      )}
       {screen === 'battle' && (
         <Battle 
           onBackToMenu={handleBackToMenu} 

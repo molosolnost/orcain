@@ -1,18 +1,13 @@
-import { socketManager } from '../net/socket';
-
 const BUILD = import.meta.env.VITE_BUILD_ID ?? "dev";
 
 interface MenuProps {
-  onBattleStart: () => void;
+  onStartBattle: () => void;
+  onCancelSearch: () => void;
+  isSearching: boolean;
   tokens: number | null;
 }
 
-export default function Menu({ onBattleStart, tokens }: MenuProps) {
-  const handleStartBattle = () => {
-    socketManager.queueJoin();
-    onBattleStart();
-  };
-
+export default function Menu({ onStartBattle, onCancelSearch, isSearching, tokens }: MenuProps) {
   // Кнопка Start Battle disabled если tokens !== null && tokens < 1
   const hasEnoughTokens = tokens !== null && tokens >= 1;
 
@@ -28,18 +23,35 @@ export default function Menu({ onBattleStart, tokens }: MenuProps) {
     }}>
       <h1 style={{ fontSize: '48px', margin: 0 }}>ORCAIN</h1>
       <div style={{ fontSize: '20px' }}>Tokens: {tokens === null ? '—' : tokens}</div>
-      <button 
-        onClick={handleStartBattle}
-        disabled={!hasEnoughTokens}
-        style={{
-          padding: '12px 24px',
-          fontSize: '18px',
-          cursor: hasEnoughTokens ? 'pointer' : 'not-allowed',
-          opacity: hasEnoughTokens ? 1 : 0.5
-        }}
-      >
-        {hasEnoughTokens ? 'Start Battle' : 'Not enough tokens'}
-      </button>
+      
+      {isSearching ? (
+        <>
+          <div style={{ fontSize: '18px', color: '#666' }}>Searching opponent…</div>
+          <button 
+            onClick={onCancelSearch}
+            style={{
+              padding: '12px 24px',
+              fontSize: '18px',
+              cursor: 'pointer'
+            }}
+          >
+            Cancel
+          </button>
+        </>
+      ) : (
+        <button 
+          onClick={onStartBattle}
+          disabled={!hasEnoughTokens}
+          style={{
+            padding: '12px 24px',
+            fontSize: '18px',
+            cursor: hasEnoughTokens ? 'pointer' : 'not-allowed',
+            opacity: hasEnoughTokens ? 1 : 0.5
+          }}
+        >
+          {hasEnoughTokens ? 'Start Battle' : 'Not enough tokens'}
+        </button>
+      )}
       <div style={{ 
         position: 'absolute', 
         bottom: '20px', 
