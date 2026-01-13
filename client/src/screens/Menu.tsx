@@ -1,5 +1,7 @@
 import { socketManager } from '../net/socket';
 
+const BUILD = import.meta.env.VITE_BUILD_ID ?? "dev";
+
 interface MenuProps {
   onBattleStart: () => void;
   tokens: number | null;
@@ -21,7 +23,8 @@ export default function Menu({ onBattleStart, tokens }: MenuProps) {
       alignItems: 'center', 
       justifyContent: 'center',
       height: '100vh',
-      gap: '20px'
+      gap: '20px',
+      position: 'relative'
     }}>
       <h1 style={{ fontSize: '48px', margin: 0 }}>ORCAIN</h1>
       <div style={{ fontSize: '20px' }}>Tokens: {tokens === null ? '—' : tokens}</div>
@@ -37,6 +40,15 @@ export default function Menu({ onBattleStart, tokens }: MenuProps) {
       >
         {hasEnoughTokens ? 'Start Battle' : 'Not enough tokens'}
       </button>
+      <div style={{ 
+        position: 'absolute', 
+        bottom: '20px', 
+        fontSize: '12px', 
+        color: '#666',
+        textAlign: 'center'
+      }}>
+        build: {BUILD}
+      </div>
     </div>
   );
 }
