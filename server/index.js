@@ -218,11 +218,24 @@ function emitToBoth(match, event, payloadForSidFn) {
     // Лог для match_end с полной информацией перед emit
     if (event === 'match_end') {
       const sessionId1 = getSessionIdBySocket(socket1);
-      const winnerPlayerId = payload1.winner === 'YOU' ? sessionId1 : (sessionId1 === match.sessions[0] ? match.sessions[1] : match.sessions[0]);
-      const loserPlayerId = payload1.winner === 'YOU' ? (sessionId1 === match.sessions[0] ? match.sessions[1] : match.sessions[0]) : sessionId1;
+      // Используем сохранённые _forfeitLoserId и _forfeitWinnerId если есть (для forfeit)
+      let winnerPlayerId, loserPlayerId;
+      if (match._forfeitLoserId && match._forfeitWinnerId) {
+        // Для forfeit используем сохранённые значения
+        loserPlayerId = match._forfeitLoserId;
+        winnerPlayerId = match._forfeitWinnerId;
+      } else {
+        // Для обычного завершения вычисляем через payload.winner
+        winnerPlayerId = payload1.winner === 'YOU' ? sessionId1 : (sessionId1 === match.sessions[0] ? match.sessions[1] : match.sessions[0]);
+        loserPlayerId = payload1.winner === 'YOU' ? (sessionId1 === match.sessions[0] ? match.sessions[1] : match.sessions[0]) : sessionId1;
+      }
       // Гарантируем, что reason всегда есть
       if (!payload1.reason) {
         payload1.reason = 'normal';
+      }
+      // Валидация: loserId не должен быть undefined
+      if (!loserPlayerId || !winnerPlayerId) {
+        log(`[MATCH_END_EMIT_BUG] matchId=${match.id} winnerId=${winnerPlayerId} loserId=${loserPlayerId} reason=${payload1.reason}`);
       }
       console.log("[MATCH_END_EMIT]", { matchId: match.id, winnerId: winnerPlayerId, loserId: loserPlayerId, reason: payload1.reason });
       log(`[MATCH_END_EMIT] matchId=${match.id} reason=${payload1.reason} to=${sessionId1} winnerPlayerId=${winnerPlayerId} loserPlayerId=${loserPlayerId} winner=${payload1.winner}`);
@@ -234,11 +247,24 @@ function emitToBoth(match, event, payloadForSidFn) {
     // Лог для match_end с полной информацией перед emit
     if (event === 'match_end') {
       const sessionId2 = getSessionIdBySocket(socket2);
-      const winnerPlayerId = payload2.winner === 'YOU' ? sessionId2 : (sessionId2 === match.sessions[0] ? match.sessions[1] : match.sessions[0]);
-      const loserPlayerId = payload2.winner === 'YOU' ? (sessionId2 === match.sessions[0] ? match.sessions[1] : match.sessions[0]) : sessionId2;
+      // Используем сохранённые _forfeitLoserId и _forfeitWinnerId если есть (для forfeit)
+      let winnerPlayerId, loserPlayerId;
+      if (match._forfeitLoserId && match._forfeitWinnerId) {
+        // Для forfeit используем сохранённые значения
+        loserPlayerId = match._forfeitLoserId;
+        winnerPlayerId = match._forfeitWinnerId;
+      } else {
+        // Для обычного завершения вычисляем через payload.winner
+        winnerPlayerId = payload2.winner === 'YOU' ? sessionId2 : (sessionId2 === match.sessions[0] ? match.sessions[1] : match.sessions[0]);
+        loserPlayerId = payload2.winner === 'YOU' ? (sessionId2 === match.sessions[0] ? match.sessions[1] : match.sessions[0]) : sessionId2;
+      }
       // Гарантируем, что reason всегда есть
       if (!payload2.reason) {
         payload2.reason = 'normal';
+      }
+      // Валидация: loserId не должен быть undefined
+      if (!loserPlayerId || !winnerPlayerId) {
+        log(`[MATCH_END_EMIT_BUG] matchId=${match.id} winnerId=${winnerPlayerId} loserId=${loserPlayerId} reason=${payload2.reason}`);
       }
       console.log("[MATCH_END_EMIT]", { matchId: match.id, winnerId: winnerPlayerId, loserId: loserPlayerId, reason: payload2.reason });
       log(`[MATCH_END_EMIT] matchId=${match.id} reason=${payload2.reason} to=${sessionId2} winnerPlayerId=${winnerPlayerId} loserPlayerId=${loserPlayerId} winner=${payload2.winner}`);
@@ -385,7 +411,9 @@ function startPlay(match) {
       }
       
       if (loserSessionId) {
-        endMatchForfeit(currentMatch, loserSessionId, 'timeout');
+        // Фиксируем winnerSessionId ДО вызова endMatchForfeit
+        const winnerSessionId = loserSessionId === currentMatch.sessions[0] ? currentMatch.sessions[1] : currentMatch.sessions[0];
+        endMatchForfeit(currentMatch, loserSessionId, winnerSessionId, 'timeout');
       } else {
         // Не можем определить loser - форсируем продолжение (для prep)
         if (currentMatch.state === 'prep') {
@@ -555,7 +583,9 @@ function resumePlay(match) {
       }
       
       if (loserSessionId) {
-        endMatchForfeit(currentMatch, loserSessionId, 'timeout');
+        // Фиксируем winnerSessionId ДО вызова endMatchForfeit
+        const winnerSessionId = loserSessionId === currentMatch.sessions[0] ? currentMatch.sessions[1] : currentMatch.sessions[0];
+        endMatchForfeit(currentMatch, loserSessionId, winnerSessionId, 'timeout');
       } else {
         log(`[WATCHDOG] state=playing no clear loser, match may be stuck`);
       }
@@ -669,7 +699,9 @@ function startPrepPhase(match) {
       }
       
       if (loserSessionId) {
-        endMatchForfeit(currentMatch, loserSessionId, 'timeout');
+        // Фиксируем winnerSessionId ДО вызова endMatchForfeit
+        const winnerSessionId = loserSessionId === currentMatch.sessions[0] ? currentMatch.sessions[1] : currentMatch.sessions[0];
+        endMatchForfeit(currentMatch, loserSessionId, winnerSessionId, 'timeout');
       } else {
         // Не можем определить loser в playing - просто логируем
         log(`[WATCHDOG] state=playing no clear loser, match may be stuck`);
@@ -755,7 +787,42 @@ function startPrepPhase(match) {
   }, PREP_TIME_MS);
 }
 
-function endMatchForfeit(match, loserSessionId, reason) {
+function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
+  // ВАЖНО: loserSessionId и winnerSessionId должны быть переданы как аргументы
+  // НЕ вычисляем их через players map, так как данные могут быть уже удалены
+  
+  // Валидация: проверяем что loserSessionId и winnerSessionId валидны
+  if (!loserSessionId || !winnerSessionId) {
+    log(`[FORFEIT_BUG] match=${match.id} loserSessionId=${loserSessionId} winnerSessionId=${winnerSessionId} reason=${reason}`);
+    // Пытаемся восстановить из match.sessions
+    if (!loserSessionId && match.sessions && match.sessions.length >= 2) {
+      // Если loserSessionId не передан, пытаемся определить по reason
+      if (reason === 'disconnect') {
+        // Для disconnect нужно найти кто disconnected (по grace timer)
+        const timer1 = disconnectTimerBySessionId.get(match.sessions[0]);
+        const timer2 = disconnectTimerBySessionId.get(match.sessions[1]);
+        if (timer1) {
+          loserSessionId = match.sessions[0];
+          winnerSessionId = match.sessions[1];
+        } else if (timer2) {
+          loserSessionId = match.sessions[1];
+          winnerSessionId = match.sessions[0];
+        }
+      }
+    }
+    // Если всё ещё не определены, используем match.sessions напрямую
+    if (!loserSessionId || !winnerSessionId) {
+      if (match.sessions && match.sessions.length >= 2) {
+        loserSessionId = match.sessions[0];
+        winnerSessionId = match.sessions[1];
+        log(`[FORFEIT_FALLBACK] using sessions[0] as loser`);
+      } else {
+        log(`[FORFEIT_ERROR] cannot determine loser/winner, match may be invalid`);
+        return;
+      }
+    }
+  }
+  
   match.state = 'ended';
   match.roundInProgress = false;
   match.paused = false;
@@ -795,11 +862,13 @@ function endMatchForfeit(match, loserSessionId, reason) {
   // Аборт playRound если он идёт
   match.playAbortToken++;
 
+  // Получаем данные игроков (может быть null если уже удалены, но это ок для HP)
   const p1Data = getPlayerData(match.sessions[0]);
   const p2Data = getPlayerData(match.sessions[1]);
-
-  // Winner = другой игрок (не loser)
-  const winnerSessionId = loserSessionId === match.sessions[0] ? match.sessions[1] : match.sessions[0];
+  
+  // Используем финальные HP из данных или дефолтные
+  const p1Hp = p1Data ? p1Data.hp : START_HP;
+  const p2Hp = p2Data ? p2Data.hp : START_HP;
   
   log(`[FORFEIT] match=${match.id} loser=${loserSessionId} winner=${winnerSessionId} reason=${reason}`);
 
@@ -1041,8 +1110,12 @@ function handleDisconnect(socketId) {
         const currentMatch = getMatchBySessionId(sessionId);
         if (!currentMatch) return; // Матч уже завершён
         
+        // ВАЖНО: фиксируем loserSessionId и winnerSessionId ДО cleanup
+        const loserSessionId = sessionId;
+        const winnerSessionId = loserSessionId === currentMatch.sessions[0] ? currentMatch.sessions[1] : currentMatch.sessions[0];
+        
         // Завершаем матч с forfeit: disconnected игрок = loser
-        endMatchForfeit(currentMatch, sessionId, 'disconnect');
+        endMatchForfeit(currentMatch, loserSessionId, winnerSessionId, 'disconnect');
         
         disconnectTimerBySessionId.delete(sessionId);
       }, DISCONNECT_GRACE_MS);
