@@ -18,8 +18,8 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
   const [slots, setSlots] = useState<(Card | null)[]>([null, null, null]);
   const [availableCards, setAvailableCards] = useState<Card[]>(['ATTACK', 'DEFENSE', 'HEAL', 'COUNTER']);
   const [confirmed, setConfirmed] = useState(false);
-  const [deadlineTs, setDeadlineTs] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(20);
+  const [deadlineTs, setDeadlineTs] = useState<number | null>(null);
+  const [now, setNow] = useState(Date.now());
   const [roundIndex, setRoundIndex] = useState(1);
   const [suddenDeath, setSuddenDeath] = useState(false);
   const [revealedCards, setRevealedCards] = useState<{ step: number; yourCard: Card; oppCard: Card }[]>([]);
@@ -58,6 +58,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
       setAvailableCards([...payload.cards]);
       setConfirmed(false);
       setDeadlineTs(payload.deadlineTs);
+      setNow(Date.now());
       setRoundIndex(payload.roundIndex);
       setSuddenDeath(payload.suddenDeath);
       setRevealedCards([]);
@@ -100,17 +101,21 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
     };
   }, []);
 
-  // Таймер
+  // Вычисляемый countdownSeconds
+  const countdownSeconds = deadlineTs === null 
+    ? null 
+    : Math.max(0, Math.ceil((deadlineTs - now) / 1000));
+
+  // Таймер для обновления countdown
   useEffect(() => {
-    if (state !== 'prep' || deadlineTs === 0) return;
+    if (phase !== 'PREP' || deadlineTs === null) return;
 
     const interval = setInterval(() => {
-      const remaining = Math.max(0, Math.ceil((deadlineTs - Date.now()) / 1000));
-      setTimeLeft(remaining);
-    }, 100);
+      setNow(Date.now());
+    }, 300);
 
     return () => clearInterval(interval);
-  }, [state, deadlineTs]);
+  }, [phase, deadlineTs]);
 
   const handleDragStart = (card: Card) => {
     draggedCardRef.current = card;
@@ -258,9 +263,9 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload }: Battle
         <div style={{ fontSize: '16px', marginTop: '8px', fontWeight: 'bold' }}>
           Phase: {phase}
         </div>
-        {state === 'prep' && (
+        {phase === 'PREP' && countdownSeconds !== null && (
           <div>
-            <p>Time left: {timeLeft}s</p>
+            <p>Time left: {countdownSeconds}s</p>
           </div>
         )}
       </div>
