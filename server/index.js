@@ -18,6 +18,7 @@ const io = new Server(server, {
 
 // Constants
 const CARDS = ['ATTACK', 'DEFENSE', 'HEAL', 'COUNTER'];
+const CARD_GRASS = 'GRASS';
 const MAX_HP = 10;
 const START_HP = 10;
 const PREP_TIME_MS = 20000; // 20 seconds
@@ -288,9 +289,46 @@ function generateRandomLayout() {
   return shuffled3;
 }
 
+function fillAfkLayout(playerData) {
+  // Если layout пустой/undefined -> заполнить все 3 позиции GRASS
+  // Если layout частично заполнен -> заполнить пустые позиции GRASS
+  if (!playerData.layout || playerData.layout.length === 0) {
+    playerData.layout = [CARD_GRASS, CARD_GRASS, CARD_GRASS];
+  } else {
+    // Заполняем пустые позиции GRASS
+    const filledLayout = [];
+    for (let i = 0; i < 3; i++) {
+      filledLayout[i] = playerData.layout[i] || CARD_GRASS;
+    }
+    playerData.layout = filledLayout;
+  }
+  playerData.confirmed = true;
+}
+
 function applyStepLogic(player1Card, player2Card, player1Hp, player2Hp) {
   let newP1Hp = player1Hp;
   let newP2Hp = player2Hp;
+
+  // GRASS - NOOP карта, не влияет на HP и не триггерит эффекты
+  if (player1Card === CARD_GRASS && player2Card === CARD_GRASS) {
+    return { p1Hp: newP1Hp, p2Hp: newP2Hp };
+  }
+  if (player1Card === CARD_GRASS) {
+    // P1 играет GRASS - обрабатываем только карту P2
+    if (player2Card === 'HEAL') {
+      newP2Hp = Math.min(newP2Hp + 1, MAX_HP);
+    }
+    // ATTACK против GRASS не наносит урон (GRASS игнорирует атаки)
+    return { p1Hp: newP1Hp, p2Hp: newP2Hp };
+  }
+  if (player2Card === CARD_GRASS) {
+    // P2 играет GRASS - обрабатываем только карту P1
+    if (player1Card === 'HEAL') {
+      newP1Hp = Math.min(newP1Hp + 1, MAX_HP);
+    }
+    // ATTACK против GRASS не наносит урон (GRASS игнорирует атаки)
+    return { p1Hp: newP1Hp, p2Hp: newP2Hp };
+  }
 
   // (1) HEAL всегда +1 HP
   if (player1Card === 'HEAL') {
@@ -422,12 +460,12 @@ function startPlay(match) {
           const p2Data = getPlayerData(currentMatch.sessions[1]);
           
           if (!p1Data.confirmed) {
-            p1Data.layout = generateRandomLayout();
-            p1Data.confirmed = true;
+            fillAfkLayout(p1Data);
+            log(`[AFK_FILL] match=${currentMatch.id} player=${currentMatch.sessions[0]} layout=${JSON.stringify(p1Data.layout)}`);
           }
           if (!p2Data.confirmed) {
-            p2Data.layout = generateRandomLayout();
-            p2Data.confirmed = true;
+            fillAfkLayout(p2Data);
+            log(`[AFK_FILL] match=${currentMatch.id} player=${currentMatch.sessions[1]} layout=${JSON.stringify(p2Data.layout)}`);
           }
           
           startPlay(currentMatch);
@@ -441,12 +479,14 @@ function startPlay(match) {
   const p1Data = getPlayerData(match.sessions[0]);
   const p2Data = getPlayerData(match.sessions[1]);
   
-  // Если игроки не подтвердили, генерируем случайные расклады
-  if (!p1Data.layout) {
-    p1Data.layout = generateRandomLayout();
+  // Если игроки не подтвердили, заполняем AFK расклады
+  if (!p1Data.layout || !p1Data.confirmed) {
+    fillAfkLayout(p1Data);
+    log(`[AFK_FILL] match=${match.id} player=${match.sessions[0]} layout=${JSON.stringify(p1Data.layout)}`);
   }
-  if (!p2Data.layout) {
-    p2Data.layout = generateRandomLayout();
+  if (!p2Data.layout || !p2Data.confirmed) {
+    fillAfkLayout(p2Data);
+    log(`[AFK_FILL] match=${match.id} player=${match.sessions[1]} layout=${JSON.stringify(p2Data.layout)}`);
   }
 
   // Логируем начало раунда и финальные layouts
@@ -779,16 +819,14 @@ function startPrepPhase(match) {
     const p2 = getPlayerData(sid2);
     if (!p1 || !p2) return;
     
-    // ВСЕГДА генерируем layouts для тех, кто не confirmed
+    // ВСЕГДА заполняем AFK layouts для тех, кто не confirmed
     if (!p1.confirmed) {
-      p1.layout = generateRandomLayout();
-      p1.confirmed = true;
-      log(`[PREP_TIMEOUT] match=${currentMatch.id} sessionId=${sid1} layout=${JSON.stringify(p1.layout)}`);
+      fillAfkLayout(p1);
+      log(`[AFK_FILL] match=${currentMatch.id} player=${sid1} layout=${JSON.stringify(p1.layout)}`);
     }
     if (!p2.confirmed) {
-      p2.layout = generateRandomLayout();
-      p2.confirmed = true;
-      log(`[PREP_TIMEOUT] match=${currentMatch.id} sessionId=${sid2} layout=${JSON.stringify(p2.layout)}`);
+      fillAfkLayout(p2);
+      log(`[AFK_FILL] match=${currentMatch.id} player=${sid2} layout=${JSON.stringify(p2.layout)}`);
     }
     
     // ВСЕГДА запускаем playRound (если матч ещё существует и в prep)

@@ -217,6 +217,8 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
         return { bg: '#e8f5e9', border: '#4caf50', text: '#2e7d32', icon: '💚' };
       case 'COUNTER':
         return { bg: '#f3e5f5', border: '#9c27b0', text: '#6a1b9a', icon: '🟣' };
+      case 'GRASS':
+        return { bg: '#f5f5f5', border: '#9e9e9e', text: '#616161', icon: '🌱' };
       default:
         return { bg: '#f5f5f5', border: '#333', text: '#000', icon: '' };
     }
@@ -274,7 +276,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     }
 
     const colors = getCardColor(card);
-    const cardName = card === 'COUNTER' ? 'COUNTER' : card;
+    const cardName = card === 'COUNTER' ? 'COUNTER' : card === 'GRASS' ? 'TOUCH GRASS' : card;
 
     return (
       <div

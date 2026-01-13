@@ -1,4 +1,4 @@
-export type Card = "ATTACK" | "DEFENSE" | "HEAL" | "COUNTER";
+export type Card = "ATTACK" | "DEFENSE" | "HEAL" | "COUNTER" | "GRASS";
 
 export type MatchFoundPayload = {
   matchId?: string;
