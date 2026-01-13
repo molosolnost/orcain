@@ -60,6 +60,8 @@ export default function Battle({ onBackToMenu, tokens }: BattleProps) {
     });
 
     socketManager.onStepReveal((payload: StepRevealPayload) => {
+      // ВАЖНО: НЕ завершаем матч здесь, даже если HP = 0
+      // Только обновляем UI, ждём match_end от сервера
       setState('playing');
       setPhase('REVEAL');
       setYourHp(payload.yourHp);
@@ -75,22 +77,31 @@ export default function Battle({ onBackToMenu, tokens }: BattleProps) {
         };
         return newRevealed;
       });
+      // НЕ проверяем HP здесь
+      // НЕ устанавливаем state = 'ended' здесь
+      // НЕ устанавливаем matchResult здесь
     });
 
     socketManager.onRoundEnd(() => {
       // Раунд закончен, следующий prep_start придёт от сервера
+      // ВАЖНО: НЕ завершаем матч здесь, только ждём match_end от сервера
       setRevealedCards([]);
       setCurrentStepIndex(null);
       setPhase('PREP');
+      // НЕ устанавливаем state = 'ended' здесь
+      // НЕ устанавливаем matchResult здесь
     });
 
     socketManager.onMatchEnd((payload: MatchEndPayload) => {
+      // ВАЖНО: это ЕДИНСТВЕННОЕ место, где завершается матч
+      console.log("[MATCH_END_PAYLOAD]", payload);
       setState('ended');
       setPhase('END');
       setYourHp(payload.yourHp);
       setOppHp(payload.oppHp);
+      // winner определяется ТОЛЬКО из payload.match_end
       setMatchResult(payload.winner);
-      // Сохраняем reason из payload (обязательное поле)
+      // reason определяется ТОЛЬКО из payload.match_end
       setMatchEndReason(payload.reason);
       setCurrentStepIndex(null);
     });
