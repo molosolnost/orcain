@@ -46,6 +46,10 @@ class SocketManager {
     this.socket?.emit('queue_join');
   }
 
+  queueLeave() {
+    this.socket?.emit('queue_leave');
+  }
+
   layoutConfirm(layout: string[]) {
     this.socket?.emit('layout_confirm', { layout });
   }
@@ -65,6 +69,10 @@ class SocketManager {
 
   onQueueOk(callback: (payload?: { tokens: number }) => void) {
     this.socket?.on('queue_ok', callback);
+  }
+
+  onQueueLeft(callback: () => void) {
+    this.socket?.on('queue_left', callback);
   }
 
   onMatchFound(callback: (payload: MatchFoundPayload) => void) {

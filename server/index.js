@@ -1310,6 +1310,25 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('queue_leave', () => {
+    const sessionId = getSessionIdBySocket(socket.id);
+    if (!sessionId) {
+      console.log('[QUEUE_LEAVE] sid=undefined (no sessionId)');
+      socket.emit('queue_left');
+      return;
+    }
+    
+    const queueIndex = queue.indexOf(sessionId);
+    if (queueIndex !== -1) {
+      queue.splice(queueIndex, 1);
+      console.log(`[QUEUE_LEAVE] sid=${sessionId} (was in queue)`);
+    } else {
+      console.log(`[QUEUE_LEAVE] sid=${sessionId} (was not in queue)`);
+    }
+    
+    socket.emit('queue_left');
+  });
+
   socket.on('layout_confirm', (data) => {
     const sessionId = getSessionIdBySocket(socket.id);
     if (!sessionId) {

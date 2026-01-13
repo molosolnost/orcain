@@ -84,6 +84,15 @@ function App() {
       }
     });
 
+    socketManager.onQueueLeft(() => {
+      console.log('[SOCKET] queue_left');
+      // Если уже в battle (матч нашёлся раньше отмены) - игнорируем
+      if (screen === 'battle') {
+        return;
+      }
+      setIsSearching(false);
+    });
+
     socketManager.onMatchFound((payload) => {
       setIsSearching(false);
       setScreen('battle');
@@ -116,73 +125,7 @@ function App() {
   };
 
   const handleCancelSearch = () => {
-    setIsSearching(false);
-    // Переподключение сокета для отмены поиска
-    socketManager.disconnect();
-    const socket = socketManager.connect();
-    const sessionId = getSessionId();
-    
-    if (!authToken) return;
-    
-    // Повторно навешиваем все подписки
-    const sendHello = () => {
-      socketManager.hello(sessionId, authToken);
-    };
-    
-    socket.on('connect', sendHello);
-    
-    if (socket.connected) {
-      sendHello();
-    }
-    
-    socketManager.onHelloOk((payload) => {
-      setConnected(true);
-      setScreen('menu');
-      if (payload.tokens !== undefined) {
-        setTokens(prev => (prev === null ? payload.tokens : prev));
-      }
-    });
-    
-    socketManager.onErrorMsg((payload) => {
-      if (payload.message === 'Unauthorized') {
-        clearAuth();
-        setAuthToken(null);
-        setScreen('login');
-        setConnected(false);
-        setTokens(null);
-        setIsSearching(false);
-      }
-    });
-    
-    socketManager.onSyncState((payload) => {
-      if (payload.inMatch && payload.matchId) {
-        setScreen('battle');
-      }
-    });
-
-    socketManager.onQueueOk((payload) => {
-      if (payload?.tokens !== undefined) {
-        setTokens(payload.tokens);
-      }
-    });
-
-    socketManager.onMatchFound((payload) => {
-      setIsSearching(false);
-      setScreen('battle');
-      if (payload.yourTokens !== undefined) {
-        setTokens(payload.yourTokens);
-      }
-    });
-
-    socketManager.onMatchEnd((payload: MatchEndPayload) => {
-      if (payload.yourTokens !== undefined) {
-        setTokens(payload.yourTokens);
-      }
-      setMatchEndPayload(payload);
-      if (screen !== 'battle') {
-        setScreen('battle');
-      }
-    });
+    socketManager.queueLeave();
   };
 
   const handleBackToMenu = () => {
