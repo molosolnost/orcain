@@ -34,9 +34,13 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     y: number;
     offsetX: number;
     offsetY: number;
+    sourceSlotIndex: number | null;
+    lastClientX: number;
+    lastClientY: number;
   } | null>(null);
   const [hoveredSlotIndex, setHoveredSlotIndex] = useState<number | null>(null);
   const dragPointerIdRef = useRef<number | null>(null);
+  const draftDebounceRef = useRef<number | null>(null);
   const lastAppliedRoundIndexRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -94,7 +98,6 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
     socketManager.onMatchFound((payload) => {
       // При старте нового матча очищаем все локальные стейты
-      // НЕ трогаем deadlineTs/pot - они будут установлены из lastPrepStart
       setState('prep');
       setPhase('PREP');
       setYourHp(payload.yourHp);
@@ -105,7 +108,6 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setRevealedCards([]);
       setCurrentStepIndex(null);
       setRoundIndex(1);
-      lastAppliedRoundIndexRef.current = null;
     });
 
     // Убрана прямая подписка на prep_start - теперь получаем через props (lastPrepStart)
@@ -185,6 +187,14 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   }, [dragState]);
 
   useEffect(() => {
+    return () => {
+      if (draftDebounceRef.current) {
+        window.clearTimeout(draftDebounceRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (!canInteract && dragState) {
       dragPointerIdRef.current = null;
       setDragState(null);
@@ -192,16 +202,19 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     }
   }, [canInteract, dragState]);
 
-  const toCardCode = (v: Card | null): string | null => {
-    if (!v) return null;
-    if (typeof v === 'string') {
-      if (v === 'GRASS') return null;
-      return v;
+  const toCardCode = (v: Card | null): string | null => (v ? v : null);
+
+  const scheduleDraft = (nextSlots: (Card | null)[]) => {
+    if (!currentMatchId) return;
+    if (draftDebounceRef.current) {
+      window.clearTimeout(draftDebounceRef.current);
     }
-    if (typeof v === 'object' && 'id' in v) return (v as any).id;
-    if (typeof v === 'object' && 'code' in v) return (v as any).code;
-    if (typeof v === 'object' && 'type' in v) return (v as any).type;
-    return null;
+    draftDebounceRef.current = window.setTimeout(() => {
+      const layoutWithNulls: (string | null)[] = nextSlots.map(toCardCode);
+      if (layoutWithNulls.length === 3) {
+        socketManager.layoutDraft(currentMatchId, layoutWithNulls);
+      }
+    }, 150);
   };
 
   const getSlotIndexAtPoint = (x: number, y: number): number | null => {
@@ -212,31 +225,49 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     return Number.isFinite(slotIndex) ? slotIndex : null;
   };
 
-  const applyDropToSlot = (card: Card, slotIndex: number) => {
-    if (!canInteract) return;
+  const applySlotsUpdate = (updater: (prev: (Card | null)[]) => (Card | null)[]) => {
     setSlots(prev => {
-      const newSlots = [...prev];
-      const oldSlotIndex = prev.indexOf(card);
-
-      if (oldSlotIndex !== -1) {
-        newSlots[oldSlotIndex] = null;
-      }
-
-      newSlots[slotIndex] = card;
-
-      const layoutWithNulls: (string | null)[] = newSlots.map(toCardCode);
-      if (layoutWithNulls.length === 3 && currentMatchId) {
-        socketManager.layoutDraft(currentMatchId, layoutWithNulls);
-      }
-
-      return newSlots;
+      const next = updater(prev);
+      scheduleDraft(next);
+      return next;
     });
   };
 
-  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>, card: Card) => {
+  const applyDropToSlot = (card: Card, slotIndex: number, sourceSlotIndex: number | null) => {
     if (!canInteract) return;
-    if (card === 'GRASS') return;
-    if (slots.includes(card)) return;
+    applySlotsUpdate(prev => {
+      const next = [...prev];
+      const oldSlotIndex = prev.indexOf(card);
+
+      if (oldSlotIndex !== -1) {
+        next[oldSlotIndex] = null;
+      }
+
+      if (sourceSlotIndex !== null && sourceSlotIndex !== oldSlotIndex) {
+        next[sourceSlotIndex] = null;
+      }
+
+      next[slotIndex] = card;
+      return next;
+    });
+  };
+
+  const clearSlotIfNeeded = (sourceSlotIndex: number | null) => {
+    if (sourceSlotIndex === null) return;
+    applySlotsUpdate(prev => {
+      const next = [...prev];
+      next[sourceSlotIndex] = null;
+      return next;
+    });
+  };
+
+  const handlePointerDown = (
+    e: React.PointerEvent<HTMLDivElement>,
+    card: Card,
+    sourceSlotIndex: number | null
+  ) => {
+    if (!canInteract) return;
+    if (sourceSlotIndex === null && slots.includes(card)) return;
 
     e.preventDefault();
     const target = e.currentTarget as HTMLElement;
@@ -252,7 +283,10 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       x: e.clientX - offsetX,
       y: e.clientY - offsetY,
       offsetX,
-      offsetY
+      offsetY,
+      sourceSlotIndex,
+      lastClientX: e.clientX,
+      lastClientY: e.clientY
     });
     setHoveredSlotIndex(null);
   };
@@ -264,10 +298,34 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     e.preventDefault();
     const nextX = e.clientX - dragState.offsetX;
     const nextY = e.clientY - dragState.offsetY;
-    setDragState({ ...dragState, x: nextX, y: nextY });
+    setDragState(prev =>
+      prev
+        ? {
+            ...prev,
+            x: nextX,
+            y: nextY,
+            lastClientX: e.clientX,
+            lastClientY: e.clientY
+          }
+        : prev
+    );
 
     const slotIndex = getSlotIndexAtPoint(e.clientX, e.clientY);
     setHoveredSlotIndex(slotIndex);
+  };
+
+  const finalizePointerEnd = (x: number, y: number) => {
+    if (!dragState) return;
+    const slotIndex = getSlotIndexAtPoint(x, y);
+    if (slotIndex !== null && canInteract) {
+      if (dragState.sourceSlotIndex !== null && slotIndex === dragState.sourceSlotIndex) {
+        // Drop обратно в тот же слот — ничего не меняем
+      } else {
+        applyDropToSlot(dragState.card, slotIndex, dragState.sourceSlotIndex);
+      }
+    } else {
+      clearSlotIfNeeded(dragState.sourceSlotIndex);
+    }
   };
 
   const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -275,11 +333,23 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     if (dragPointerIdRef.current !== e.pointerId) return;
 
     e.preventDefault();
-    const slotIndex = getSlotIndexAtPoint(e.clientX, e.clientY);
-    if (slotIndex !== null && canInteract) {
-      applyDropToSlot(dragState.card, slotIndex);
+    finalizePointerEnd(e.clientX, e.clientY);
+    dragPointerIdRef.current = null;
+    setDragState(null);
+    setHoveredSlotIndex(null);
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
     }
+  };
 
+  const handlePointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragState) return;
+    if (dragPointerIdRef.current !== e.pointerId) return;
+
+    e.preventDefault();
+    finalizePointerEnd(dragState.lastClientX, dragState.lastClientY);
     dragPointerIdRef.current = null;
     setDragState(null);
     setHoveredSlotIndex(null);
@@ -310,8 +380,6 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
         return { bg: '#e8f5e9', border: '#4caf50', text: '#2e7d32', icon: '💚' };
       case 'COUNTER':
         return { bg: '#f3e5f5', border: '#9c27b0', text: '#6a1b9a', icon: '🟣' };
-      case 'GRASS':
-        return { bg: '#f5f5f5', border: '#9e9e9e', text: '#616161', icon: '🌱' };
       default:
         return { bg: '#f5f5f5', border: '#333', text: '#000', icon: '' };
     }
@@ -369,7 +437,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     }
 
     const colors = getCardColor(card);
-    const cardName = card === 'COUNTER' ? 'COUNTER' : card === 'GRASS' ? 'TOUCH GRASS' : card;
+    const cardName = card === 'COUNTER' ? 'COUNTER' : card;
 
     return (
       <div
@@ -477,14 +545,10 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
             const displayCard = revealed ? revealed.yourCard : card;
             const isCurrentStep = currentStepIndex === index;
             const isHovered = dragState !== null && hoveredSlotIndex === index;
-            const hoverBorder = isHovered
-              ? canInteract
-                ? '3px solid #4caf50'
-                : '3px solid #f44336'
-              : null;
+            const hoverBorder = isHovered ? '3px solid #4caf50' : null;
             const stepBorder = isCurrentStep ? '3px solid #ff6b6b' : 'none';
             const border = hoverBorder || stepBorder;
-            
+
             return (
               <div
                 key={index}
@@ -494,15 +558,19 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                   borderRadius: '12px',
                   padding: border !== 'none' ? '2px' : '0',
                   cursor: canInteract ? 'pointer' : 'default',
-                  boxShadow: isHovered
-                    ? canInteract
-                      ? '0 0 0 3px rgba(76, 175, 80, 0.2)'
-                      : '0 0 0 3px rgba(244, 67, 54, 0.2)'
-                    : 'none'
+                  boxShadow: isHovered ? '0 0 0 3px rgba(76, 175, 80, 0.2)' : 'none'
                 }}
               >
                 {displayCard ? (
-                  renderCard(displayCard, 'SLOT', index)
+                  <div
+                    className="battle-card"
+                    onPointerDown={(e) => handlePointerDown(e, displayCard, index)}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerEnd}
+                    onPointerCancel={handlePointerCancel}
+                  >
+                    {renderCard(displayCard, 'SLOT', index)}
+                  </div>
                 ) : (
                   renderCard(null, 'SLOT', index)
                 )}
@@ -530,17 +598,17 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
               const inSlot = slots.includes(card);
               const isDraggingCard = dragState?.card === card;
               const cardElement = renderCard(card, 'HAND');
-              
+
               return (
                 <div
                   key={card}
                   className="battle-card"
-                  onPointerDown={(e) => handlePointerDown(e, card)}
+                  onPointerDown={(e) => handlePointerDown(e, card, null)}
                   onPointerMove={handlePointerMove}
                   onPointerUp={handlePointerEnd}
-                  onPointerCancel={handlePointerEnd}
+                  onPointerCancel={handlePointerCancel}
                   style={{
-                    opacity: inSlot ? 0.5 : isDraggingCard ? 0.2 : 1,
+                    opacity: inSlot ? 0.5 : isDraggingCard ? 0.25 : 1,
                     cursor: canInteract && !inSlot ? 'grab' : 'default',
                     userSelect: 'none'
                   }}
@@ -584,19 +652,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
             <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>Opponent disconnected</p>
           )}
           {matchEndPayload.reason === 'timeout' && (
-            <div style={{ marginTop: '10px' }}>
-              <p style={{ fontSize: '14px', color: '#666' }}>Match timed out</p>
-              {matchEndPayload.message && (
-                <p style={{ fontSize: '12px', color: '#999', marginTop: '4px' }}>{matchEndPayload.message}</p>
-              )}
-            </div>
-          )}
-          {matchEndPayload.reason === 'afk' && (
-            <div style={{ marginTop: '10px' }}>
-              <p style={{ fontSize: '14px', color: '#666' }}>
-                {matchEndPayload.message || 'Opponent AFK'}
-              </p>
-            </div>
+            <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>Match timed out</p>
           )}
           <button
             onClick={onBackToMenu}

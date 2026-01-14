@@ -22,19 +22,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       });
 
       if (!response.ok) {
-        const text = await response.text();
-        console.error('[AUTH_GUEST_FAIL]', response.status, text);
-        
-        let errorMessage = 'Server error';
-        try {
-          const errorJson = JSON.parse(text);
-          errorMessage = errorJson.message || errorJson.error || `Server error ${response.status}`;
-        } catch (e) {
-          errorMessage = text || `Server error ${response.status}`;
-        }
-        
-        setError(errorMessage);
-        return;
+        throw new Error('Failed to create account');
       }
 
       const data = await response.json();
@@ -47,7 +35,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       // Вызываем callback для обновления App (accountId сохраняется в localStorage, не передаём в callback)
       onLoginSuccess({ authToken, tokens });
     } catch (error) {
-      console.error('[AUTH_GUEST_FAIL]', 'network error', error);
       setError('Failed to create account. Please try again.');
     } finally {
       setLoading(false);

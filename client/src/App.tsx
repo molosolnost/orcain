@@ -19,69 +19,16 @@ function App() {
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [lastPrepStart, setLastPrepStart] = useState<PrepStartPayload | null>(null);
 
-  // Инициализация: проверяем Telegram Mini App или читаем authToken из localStorage
+  // Инициализация: читаем authToken из localStorage при старте
   useEffect(() => {
     const tg = (window as any).Telegram?.WebApp;
-    
-    // Инициализируем Telegram WebApp SDK
     if (tg) {
-      tg.ready();
-      tg.expand?.();
+      tg.expand();
+      tg.disableVerticalSwipes?.();
     }
-    
-    // Проверяем initData для авторизации
-    const initData = tg?.initData;
-    
-    if (initData && initData.trim() !== '') {
-      const API_BASE = import.meta.env.VITE_API_BASE || 'https://orcain-server.onrender.com';
-      
-      fetch(`${API_BASE}/auth/telegram`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ initData }),
-      })
-        .then(async (response) => {
-          if (!response.ok) {
-            const text = await response.text();
-            console.error('[AUTH_TG_FAIL]', response.status, text);
-            
-            let errorMessage = 'Failed to authenticate with Telegram';
-            try {
-              const errorJson = JSON.parse(text);
-              errorMessage = errorJson.message || errorJson.error || `Server error ${response.status}`;
-            } catch (e) {
-              errorMessage = text || `Server error ${response.status}`;
-            }
-            
-            throw new Error(errorMessage);
-          }
-          return response.json();
-        })
-        .then((data) => {
-          const { accountId, authToken, tokens } = data;
-          
-          // Сохраняем authToken и accountId в localStorage
-          localStorage.setItem('orcain_authToken', authToken);
-          localStorage.setItem('orcain_accountId', accountId);
-          
-          setAuthToken(authToken);
-          setTokens(tokens);
-          setScreen('menu');
-        })
-        .catch((error) => {
-          console.error('[AUTH_TG_FAIL]', 'network error', error);
-          alert(error.message || 'Failed to authenticate with Telegram');
-          // Fallback к guest auth
-          const token = getAuthToken();
-          setAuthToken(token);
-        });
-    } else {
-      // Fallback: читаем authToken из localStorage (guest)
-      const token = getAuthToken();
-      setAuthToken(token);
-    }
+
+    const token = getAuthToken();
+    setAuthToken(token);
   }, []);
 
   // Подключение к socket и отправка hello при наличии authToken
@@ -125,11 +72,8 @@ function App() {
         setConnected(false);
         setTokens(null);
         setIsSearching(false);
-      } else {
-        // Другие ошибки (например, self-match)
-        if (isSearching) {
-          setIsSearching(false);
-        }
+      } else if (isSearching) {
+        setIsSearching(false);
         alert(payload.message);
       }
     });
@@ -180,8 +124,10 @@ function App() {
         return;
       }
       
-      // Всегда устанавливаем lastPrepStart после фильтра по matchId
-      setLastPrepStart(payload);
+      // Пробрасываем payload в Battle если мы в battle
+      if (screen === 'battle') {
+        setLastPrepStart(payload);
+      }
     });
 
     socketManager.onMatchEnd((payload: MatchEndPayload) => {

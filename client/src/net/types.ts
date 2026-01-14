@@ -1,4 +1,4 @@
-export type Card = "ATTACK" | "DEFENSE" | "HEAL" | "COUNTER" | "GRASS";
+export type Card = "ATTACK" | "DEFENSE" | "HEAL" | "COUNTER";
 
 export type MatchFoundPayload = {
   matchId?: string;
@@ -46,15 +46,9 @@ export type MatchEndPayload = {
   yourHp: number;
   oppHp: number;
   yourTokens: number;
-  reason: "normal" | "disconnect" | "timeout" | "afk";
-  message?: string;
+  reason: "normal" | "disconnect" | "timeout";
 };
 
 export type HelloOkPayload = {
   tokens: number;
-};
-
-export type DraftLayoutPayload = {
-  matchId: string;
-  layout: (Card | null)[];
 };

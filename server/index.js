@@ -2,7 +2,6 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const crypto = require('crypto');
 const db = require('./db');
 
 const app = express();
@@ -19,7 +18,6 @@ const io = new Server(server, {
 
 // Constants
 const CARDS = ['ATTACK', 'DEFENSE', 'HEAL', 'COUNTER'];
-const CARD_GRASS = 'GRASS';
 const MAX_HP = 10;
 const START_HP = 10;
 const PREP_TIME_MS = 20000; // 20 seconds
@@ -29,8 +27,6 @@ const START_TOKENS = 10;
 const MATCH_COST = 1;
 const DISCONNECT_GRACE_MS = 5000; // 5 seconds grace period for reconnect
 const PLAY_STEP_TIMEOUT_MS = 15000; // 15 seconds global timeout for PLAY phase
-const BOTH_AFK_ROUNDS_TO_BURN = 2; // Number of consecutive rounds where both players are AFK to burn pot
-const AFK_FORFEIT_ROUNDS = 2; // Number of consecutive rounds where a single player is AFK to forfeit
 
 // Debug flag
 const DEBUG = false;
@@ -115,9 +111,7 @@ function createMatch(player1Socket, player2Socket) {
     pauseReason: null,
     currentStepIndex: null,
     stepTimer: null,
-    watchdogTimer: null,
-    bothAfkStreak: 0,
-    afkStreakBySid: new Map() // sessionId -> streak count
+    watchdogTimer: null
   };
 
   // Сохраняем матч по ID и по socketId
@@ -294,57 +288,11 @@ function generateRandomLayout() {
   return shuffled3;
 }
 
-function fillAfkLayout(playerData, matchId = null) {
-  // Проверяем draftLayout: если содержит хотя бы одну карту из CARDS
-  const hasDraftCards = playerData.draftLayout && playerData.draftLayout.some(card => card && CARDS.includes(card));
-  
-  if (hasDraftCards) {
-    // Игрок отправил draft - заполняем null позиции в draftLayout на GRASS
-    const finalLayout = [];
-    for (let i = 0; i < 3; i++) {
-      finalLayout[i] = playerData.draftLayout[i] || CARD_GRASS;
-    }
-    playerData.layout = finalLayout;
-    playerData.confirmed = true;
-  } else {
-    // DraftLayout пустой (все null) - игрок вообще ничего не ставил
-    playerData.layout = [CARD_GRASS, CARD_GRASS, CARD_GRASS];
-    playerData.confirmed = true;
-  }
-}
-
-function finalizeLayoutsAndAfk(match) {
-  const p1Data = getPlayerData(match.sessions[0]);
-  const p2Data = getPlayerData(match.sessions[1]);
-  
-  if (!p1Data || !p2Data) return { p1IsAfk: false, p2IsAfk: false };
-  
-  // Финализируем layouts для каждого игрока
-  if (!p1Data.layout || !p1Data.confirmed) {
-    fillAfkLayout(p1Data, match.id);
-  }
-  if (!p2Data.layout || !p2Data.confirmed) {
-    fillAfkLayout(p2Data, match.id);
-  }
-  
-  // Определяем AFK по финальному layout: все карты должны быть GRASS
-  const p1IsAfk = p1Data.layout && p1Data.layout.length === 3 && p1Data.layout.every(c => c === CARD_GRASS);
-  const p2IsAfk = p2Data.layout && p2Data.layout.length === 3 && p2Data.layout.every(c => c === CARD_GRASS);
-  
-  return { p1IsAfk, p2IsAfk };
-}
-
 function applyStepLogic(player1Card, player2Card, player1Hp, player2Hp) {
   let newP1Hp = player1Hp;
   let newP2Hp = player2Hp;
 
-  // GRASS - NOOP карта, не влияет на HP и не триггерит эффекты
-  // Но не блокирует эффекты других карт (ATTACK против GRASS наносит урон)
-  if (player1Card === CARD_GRASS && player2Card === CARD_GRASS) {
-    return { p1Hp: newP1Hp, p2Hp: newP2Hp };
-  }
-
-  // (1) HEAL всегда +1 HP (GRASS не имеет эффекта HEAL)
+  // (1) HEAL всегда +1 HP
   if (player1Card === 'HEAL') {
     newP1Hp = Math.min(newP1Hp + 1, MAX_HP);
   }
@@ -356,10 +304,8 @@ function applyStepLogic(player1Card, player2Card, player1Hp, player2Hp) {
   // ATTACK vs DEFENSE -> 0 урона
   // ATTACK vs ATTACK -> оба -2
   // ATTACK vs COUNTER -> атакующий -2 (защищающийся НЕ получает урон от ATTACK)
-  // ATTACK vs GRASS -> цель (GRASS игрок) получает -2 HP
   // DEFENSE сам по себе ничего не делает
   // COUNTER сам по себе ничего не делает
-  // GRASS сам по себе ничего не делает (не блокирует атаки)
 
   // Обработка player1Card === 'ATTACK'
   if (player1Card === 'ATTACK') {
@@ -373,7 +319,7 @@ function applyStepLogic(player1Card, player2Card, player1Hp, player2Hp) {
       // Только атакующий получает урон
       newP1Hp = Math.max(0, newP1Hp - 2);
     } else {
-      // ATTACK vs HEAL, GRASS или другой случай -> цель получает -2
+      // ATTACK vs HEAL или другой случай
       newP2Hp = Math.max(0, newP2Hp - 2);
     }
   }
@@ -386,7 +332,7 @@ function applyStepLogic(player1Card, player2Card, player1Hp, player2Hp) {
       // Только атакующий получает урон
       newP2Hp = Math.max(0, newP2Hp - 2);
     } else {
-      // ATTACK vs HEAL, GRASS или другой случай -> цель получает -2
+      // ATTACK vs HEAL или другой случай
       newP1Hp = Math.max(0, newP1Hp - 2);
     }
   }
@@ -405,69 +351,6 @@ function startPlay(match) {
   if (match.paused && match.pauseReason === 'disconnect') {
     log(`[${match.id}] startPlay: paused due to disconnect, waiting for reconnect or forfeit`);
     return;
-  }
-
-  // Финализируем layouts и определяем AFK по финальному layout
-  const { p1IsAfk, p2IsAfk } = finalizeLayoutsAndAfk(match);
-  
-  const p1Data = getPlayerData(match.sessions[0]);
-  const p2Data = getPlayerData(match.sessions[1]);
-  
-  if (p1Data && p2Data) {
-    // Обновляем индивидуальные AFK streak
-    const p1Sid = match.sessions[0];
-    const p2Sid = match.sessions[1];
-    
-    if (p1IsAfk) {
-      const currentStreak = match.afkStreakBySid.get(p1Sid) || 0;
-      match.afkStreakBySid.set(p1Sid, currentStreak + 1);
-    } else {
-      match.afkStreakBySid.set(p1Sid, 0);
-    }
-    
-    if (p2IsAfk) {
-      const currentStreak = match.afkStreakBySid.get(p2Sid) || 0;
-      match.afkStreakBySid.set(p2Sid, currentStreak + 1);
-    } else {
-      match.afkStreakBySid.set(p2Sid, 0);
-    }
-    
-    const p1Streak = match.afkStreakBySid.get(p1Sid) || 0;
-    const p2Streak = match.afkStreakBySid.get(p2Sid) || 0;
-    
-    // Логируем статус AFK
-    log(`[AFK_STATUS] match=${match.id} p1=${p1Sid} afk=${p1IsAfk} streak=${p1Streak} layout=${JSON.stringify(p1Data.layout)} | p2=${p2Sid} afk=${p2IsAfk} streak=${p2Streak} layout=${JSON.stringify(p2Data.layout)}`);
-    
-    // Проверка на forfeit одного AFK игрока
-    if (p1Streak >= AFK_FORFEIT_ROUNDS && p2Streak < AFK_FORFEIT_ROUNDS) {
-      // P1 AFK, P2 активен - P2 побеждает
-      log(`[AFK_FORFEIT] match=${match.id} loser=${p1Sid} winner=${p2Sid}`);
-      endMatchAfkForfeit(match, p1Sid, p2Sid);
-      return;
-    }
-    
-    if (p2Streak >= AFK_FORFEIT_ROUNDS && p1Streak < AFK_FORFEIT_ROUNDS) {
-      // P2 AFK, P1 активен - P1 побеждает
-      log(`[AFK_FORFEIT] match=${match.id} loser=${p2Sid} winner=${p1Sid}`);
-      endMatchAfkForfeit(match, p2Sid, p1Sid);
-      return;
-    }
-    
-    // Проверка на оба AFK (burn)
-    const bothAfk = p1IsAfk && p2IsAfk;
-    if (bothAfk) {
-      match.bothAfkStreak++;
-      
-      if (match.bothAfkStreak >= BOTH_AFK_ROUNDS_TO_BURN) {
-        // Завершаем матч с сгоранием pot
-        log(`[BURN_END] match=${match.id} pot=${match.pot} reason=timeout`);
-        endMatchBothAfk(match);
-        return;
-      }
-    } else {
-      // Если хотя бы один не AFK - сбрасываем streak
-      match.bothAfkStreak = 0;
-    }
   }
 
   match.roundInProgress = true;
@@ -539,10 +422,12 @@ function startPlay(match) {
           const p2Data = getPlayerData(currentMatch.sessions[1]);
           
           if (!p1Data.confirmed) {
-            fillAfkLayout(p1Data, currentMatch.id);
+            p1Data.layout = generateRandomLayout();
+            p1Data.confirmed = true;
           }
           if (!p2Data.confirmed) {
-            fillAfkLayout(p2Data, currentMatch.id);
+            p2Data.layout = generateRandomLayout();
+            p2Data.confirmed = true;
           }
           
           startPlay(currentMatch);
@@ -553,7 +438,16 @@ function startPlay(match) {
   
   log(`[WATCHDOG_START] match=${match.id} timeout=${PLAY_STEP_TIMEOUT_MS}ms`);
   
-  // Layouts уже финализированы в finalizeLayoutsAndAfk выше
+  const p1Data = getPlayerData(match.sessions[0]);
+  const p2Data = getPlayerData(match.sessions[1]);
+  
+  // Если игроки не подтвердили, генерируем случайные расклады
+  if (!p1Data.layout) {
+    p1Data.layout = generateRandomLayout();
+  }
+  if (!p2Data.layout) {
+    p2Data.layout = generateRandomLayout();
+  }
 
   // Логируем начало раунда и финальные layouts
   log(`[PLAY] match=${match.id} round=${match.roundIndex} sudden=${match.suddenDeath}`);
@@ -830,10 +724,8 @@ function startPrepPhase(match) {
   // Сбрасываем состояние подготовки
   p1Data.confirmed = false;
   p1Data.layout = null;
-  p1Data.draftLayout = [null, null, null];
   p2Data.confirmed = false;
   p2Data.layout = null;
-  p2Data.draftLayout = [null, null, null];
 
   const deadlineTs = Date.now() + PREP_TIME_MS;
   match.prepDeadline = deadlineTs;
@@ -887,12 +779,16 @@ function startPrepPhase(match) {
     const p2 = getPlayerData(sid2);
     if (!p1 || !p2) return;
     
-    // ВСЕГДА заполняем AFK layouts для тех, кто не confirmed
+    // ВСЕГДА генерируем layouts для тех, кто не confirmed
     if (!p1.confirmed) {
-      fillAfkLayout(p1, currentMatch.id);
+      p1.layout = generateRandomLayout();
+      p1.confirmed = true;
+      log(`[PREP_TIMEOUT] match=${currentMatch.id} sessionId=${sid1} layout=${JSON.stringify(p1.layout)}`);
     }
     if (!p2.confirmed) {
-      fillAfkLayout(p2, currentMatch.id);
+      p2.layout = generateRandomLayout();
+      p2.confirmed = true;
+      log(`[PREP_TIMEOUT] match=${currentMatch.id} sessionId=${sid2} layout=${JSON.stringify(p2.layout)}`);
     }
     
     // ВСЕГДА запускаем playRound (если матч ещё существует и в prep)
@@ -1051,211 +947,6 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
   // io.socketsLeave(match.id);
 }
 
-function endMatchAfkForfeit(match, loserSessionId, winnerSessionId) {
-  // Завершение матча когда один игрок AFK N раундов подряд
-  // Победитель получает pot, проигравший теряет
-  match.state = 'ended';
-  match.roundInProgress = false;
-  match.paused = false;
-  match.pauseReason = null;
-  
-  // Очистка таймеров
-  if (match.prepTimer) {
-    clearTimeout(match.prepTimer);
-    match.prepTimer = null;
-  }
-  
-  if (match.stepTimer) {
-    clearTimeout(match.stepTimer);
-    match.stepTimer = null;
-  }
-  
-  if (match.watchdogTimer) {
-    clearTimeout(match.watchdogTimer);
-    match.watchdogTimer = null;
-    log(`[WATCHDOG_CLEAR] match=${match.id}`);
-  }
-  
-  // Очистка grace timers для обоих игроков
-  if (match.sessions && match.sessions.length >= 2) {
-    const timer1 = disconnectTimerBySessionId.get(match.sessions[0]);
-    if (timer1) {
-      clearTimeout(timer1);
-      disconnectTimerBySessionId.delete(match.sessions[0]);
-    }
-    const timer2 = disconnectTimerBySessionId.get(match.sessions[1]);
-    if (timer2) {
-      clearTimeout(timer2);
-      disconnectTimerBySessionId.delete(match.sessions[1]);
-    }
-  }
-  
-  // Аборт playRound если он идёт
-  match.playAbortToken++;
-  
-  const p1Data = getPlayerData(match.sessions[0]);
-  const p2Data = getPlayerData(match.sessions[1]);
-  
-  // Используем финальные HP из данных или дефолтные
-  const p1Hp = p1Data ? p1Data.hp : START_HP;
-  const p2Hp = p2Data ? p2Data.hp : START_HP;
-  
-  // WinnerAccountId получает +match.pot (по accountId, не sessionId)
-  const winnerAccountId = getAccountIdBySessionId(winnerSessionId);
-  if (winnerAccountId) {
-    db.addTokens(winnerAccountId, match.pot);
-  }
-  
-  log(`[END] match=${match.id} winner=${winnerSessionId} finalHp=${p1Hp}-${p2Hp}`);
-  
-  // Получаем токены по accountId для отправки
-  const acc1AccountId = getAccountIdBySessionId(match.sessions[0]);
-  const acc2AccountId = getAccountIdBySessionId(match.sessions[1]);
-  const acc1Tokens = acc1AccountId ? db.getTokens(acc1AccountId) : START_TOKENS;
-  const acc2Tokens = acc2AccountId ? db.getTokens(acc2AccountId) : START_TOKENS;
-  log(`[TOKENS] end winner=${winnerSessionId} acc1tokens=${acc1Tokens} acc2tokens=${acc2Tokens}`);
-  
-  // Отправляем match_end обоим с reason="afk"
-  emitToBoth(match, 'match_end', (socketId) => {
-    const sessionId = getSessionIdBySocket(socketId);
-    const isWinner = sessionId === winnerSessionId;
-    const accountId = getAccountIdBySessionId(sessionId);
-    const tokens = accountId ? (db.getTokens(accountId) !== null ? db.getTokens(accountId) : START_TOKENS) : START_TOKENS;
-    
-    return {
-      matchId: match.id,
-      winner: isWinner ? 'YOU' : 'OPPONENT',
-      winnerId: winnerSessionId,
-      loserId: loserSessionId,
-      yourHp: sessionId === match.sessions[0] ? p1Hp : p2Hp,
-      oppHp: sessionId === match.sessions[0] ? p2Hp : p1Hp,
-      yourTokens: tokens,
-      reason: 'afk',
-      message: isWinner ? 'Opponent AFK — you win' : 'You were AFK'
-    };
-  });
-  
-  log(`[FORCE_END] match=${match.id} reason=afk`);
-  
-  // Очистка: не удаляем players, только сбрасываем matchId/layout/confirmed, hp оставляем
-  if (p1Data) {
-    p1Data.matchId = null;
-    p1Data.confirmed = false;
-    p1Data.layout = null;
-    p1Data.hp = START_HP; // Сбрасываем HP на 10 после матча
-  }
-  
-  if (p2Data) {
-    p2Data.matchId = null;
-    p2Data.confirmed = false;
-    p2Data.layout = null;
-    p2Data.hp = START_HP; // Сбрасываем HP на 10 после матча
-  }
-  
-  // Удаляем матч из хранилищ
-  matchesById.delete(match.id);
-  matchIdBySocket.delete(match.player1);
-  matchIdBySocket.delete(match.player2);
-}
-
-function endMatchBothAfk(match) {
-  // Завершение матча когда оба игрока AFK N раундов подряд
-  // Pot сгорает, tokens не возвращаются
-  match.state = 'ended';
-  match.roundInProgress = false;
-  match.paused = false;
-  match.pauseReason = null;
-  
-  // Очистка таймеров
-  if (match.prepTimer) {
-    clearTimeout(match.prepTimer);
-    match.prepTimer = null;
-  }
-  
-  if (match.stepTimer) {
-    clearTimeout(match.stepTimer);
-    match.stepTimer = null;
-  }
-  
-  if (match.watchdogTimer) {
-    clearTimeout(match.watchdogTimer);
-    match.watchdogTimer = null;
-    log(`[WATCHDOG_CLEAR] match=${match.id}`);
-  }
-  
-  // Очистка grace timers для обоих игроков
-  if (match.sessions && match.sessions.length >= 2) {
-    const timer1 = disconnectTimerBySessionId.get(match.sessions[0]);
-    if (timer1) {
-      clearTimeout(timer1);
-      disconnectTimerBySessionId.delete(match.sessions[0]);
-    }
-    const timer2 = disconnectTimerBySessionId.get(match.sessions[1]);
-    if (timer2) {
-      clearTimeout(timer2);
-      disconnectTimerBySessionId.delete(match.sessions[1]);
-    }
-  }
-  
-  // Аборт playRound если он идёт
-  match.playAbortToken++;
-  
-  const p1Data = getPlayerData(match.sessions[0]);
-  const p2Data = getPlayerData(match.sessions[1]);
-  
-  // Используем финальные HP из данных или дефолтные
-  const p1Hp = p1Data ? p1Data.hp : START_HP;
-  const p2Hp = p2Data ? p2Data.hp : START_HP;
-  
-  // Получаем токены по accountId для отправки (НЕ возвращаем pot)
-  const acc1AccountId = getAccountIdBySessionId(match.sessions[0]);
-  const acc2AccountId = getAccountIdBySessionId(match.sessions[1]);
-  const acc1Tokens = acc1AccountId ? db.getTokens(acc1AccountId) : START_TOKENS;
-  const acc2Tokens = acc2AccountId ? db.getTokens(acc2AccountId) : START_TOKENS;
-  
-  // Отправляем match_end обоим с winner="OPPONENT" (чтобы никто не видел "YOU WIN")
-  // Pot НЕ начисляется, tokens НЕ возвращаются
-  emitToBoth(match, 'match_end', (socketId) => {
-    const sessionId = getSessionIdBySocket(socketId);
-    const accountId = getAccountIdBySessionId(sessionId);
-    const tokens = accountId ? (db.getTokens(accountId) !== null ? db.getTokens(accountId) : START_TOKENS) : START_TOKENS;
-    
-    return {
-      matchId: match.id,
-      winner: 'OPPONENT', // Обоим "OPPONENT" чтобы никто не видел "YOU WIN"
-      winnerId: match.sessions[1], // Произвольный, не важен
-      loserId: match.sessions[0], // Произвольный, не важен
-      yourHp: sessionId === match.sessions[0] ? p1Hp : p2Hp,
-      oppHp: sessionId === match.sessions[0] ? p2Hp : p1Hp,
-      yourTokens: tokens,
-      reason: 'timeout',
-      message: 'Both AFK — tokens burned'
-    };
-  });
-  
-  log(`[BURN_END] match=${match.id} pot=${match.pot} reason=timeout`);
-  
-  // Очистка: не удаляем players, только сбрасываем matchId/layout/confirmed, hp оставляем
-  if (p1Data) {
-    p1Data.matchId = null;
-    p1Data.confirmed = false;
-    p1Data.layout = null;
-    p1Data.hp = START_HP; // Сбрасываем HP на 10 после матча
-  }
-  
-  if (p2Data) {
-    p2Data.matchId = null;
-    p2Data.confirmed = false;
-    p2Data.layout = null;
-    p2Data.hp = START_HP; // Сбрасываем HP на 10 после матча
-  }
-  
-  // Удаляем матч из хранилищ
-  matchesById.delete(match.id);
-  matchIdBySocket.delete(match.player1);
-  matchIdBySocket.delete(match.player2);
-}
-
 function endMatch(match, reason = 'normal') {
   match.state = 'ended';
   match.roundInProgress = false;
@@ -1337,7 +1028,6 @@ function endMatch(match, reason = 'normal') {
     
     // Единый payload для обоих игроков с winnerId/loserId
     return {
-      matchId: match.id,
       winner: isWinner ? 'YOU' : 'OPPONENT',
       winnerId: winnerSessionId,
       loserId: loserSessionId,
@@ -1496,7 +1186,6 @@ io.on('connection', (socket) => {
         hp: START_HP,
         confirmed: false,
         layout: null,
-        draftLayout: [null, null, null],
         matchId: null
       };
       players.set(sessionId, playerData);
@@ -1600,27 +1289,13 @@ io.on('connection', (socket) => {
       const player2Socket = s2SocketId ? io.sockets.sockets.get(s2SocketId) : null;
 
       if (player1Socket && player2Socket) {
-        // Проверка на self-match: один accountId не может играть против себя
-        const acc1AccountId = getAccountIdBySessionId(s1SessionId);
-        const acc2AccountId = getAccountIdBySessionId(s2SessionId);
-        
-        if (acc1AccountId && acc2AccountId && acc1AccountId === acc2AccountId) {
-          // Блокируем self-match
-          log(`[SELF_MATCH_BLOCK] acc=${acc1AccountId} s1=${s1SessionId} s2=${s2SessionId}`);
-          
-          // Отправляем ошибку обоим игрокам
-          player1Socket.emit('error_msg', { message: 'You cannot fight yourself' });
-          player2Socket.emit('error_msg', { message: 'You cannot fight yourself' });
-          
-          // Оба уже удалены из очереди через shift(), ничего дополнительно делать не нужно
-          return;
-        }
-        
         const match = createMatch(player1Socket, player2Socket);
 
         const p1Data = getPlayerData(s1SessionId);
         const p2Data = getPlayerData(s2SessionId);
         
+        const acc1AccountId = getAccountIdBySessionId(s1SessionId);
+        const acc2AccountId = getAccountIdBySessionId(s2SessionId);
         const acc1Tokens = acc1AccountId ? (db.getTokens(acc1AccountId) !== null ? db.getTokens(acc1AccountId) : START_TOKENS) : START_TOKENS;
         const acc2Tokens = acc2AccountId ? (db.getTokens(acc2AccountId) !== null ? db.getTokens(acc2AccountId) : START_TOKENS) : START_TOKENS;
 
@@ -1666,52 +1341,6 @@ io.on('connection', (socket) => {
     }
     
     socket.emit('queue_left');
-  });
-
-  socket.on('layout_draft', ({ matchId, layout }) => {
-    const sessionId = getSessionIdBySocket(socket.id);
-    
-    if (!sessionId) {
-      return;
-    }
-    
-    // Находим матч строго по matchId
-    if (!matchId) {
-      return;
-    }
-    
-    const match = matchesById.get(matchId);
-    if (!match) {
-      return;
-    }
-    
-    // Проверяем состояние матча
-    if (match.state !== 'prep') {
-      return;
-    }
-
-    const playerData = getPlayerData(sessionId);
-    if (!playerData || playerData.confirmed) {
-      return;
-    }
-
-    // Валидация draft layout
-    if (!layout || !Array.isArray(layout) || layout.length !== 3) {
-      return;
-    }
-
-    // Каждый элемент должен быть либо картой из CARDS, либо null
-    // Также проверяем что GRASS не отправляется
-    const validDraft = layout.every(card => 
-      card === null || (typeof card === 'string' && CARDS.includes(card) && card !== CARD_GRASS)
-    );
-
-    if (!validDraft) {
-      return;
-    }
-
-    // Сохраняем draftLayout
-    playerData.draftLayout = [...layout];
   });
 
   socket.on('layout_confirm', (data) => {
@@ -1796,118 +1425,7 @@ app.post('/auth/guest', (req, res) => {
       tokens: account.tokens
     });
   } catch (error) {
-    console.error('[AUTH_GUEST_FAIL]', error);
-    log(`[AUTH_GUEST_FAIL] reason=exception error=${error.message}`);
-    res.status(500).json({ 
-      error: 'INTERNAL_ERROR',
-      message: 'Failed to create guest account'
-    });
-  }
-});
-
-app.post('/auth/telegram', (req, res) => {
-  try {
-    const { initData } = req.body;
-    
-    if (!initData) {
-      log(`[AUTH_TG_FAIL] reason=no_initData`);
-      return res.status(400).json({ 
-        error: 'MISSING_INITDATA',
-        message: 'Missing initData'
-      });
-    }
-    
-    const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-    if (!TELEGRAM_BOT_TOKEN) {
-      log(`[AUTH_TG_FAIL] reason=no_bot_token`);
-      return res.status(500).json({ 
-        error: 'TELEGRAM_NOT_CONFIGURED',
-        message: 'Telegram auth not configured'
-      });
-    }
-    
-    // Парсим initData как querystring
-    const params = new URLSearchParams(initData);
-    const hash = params.get('hash');
-    if (!hash) {
-      log(`[AUTH_TG_FAIL] reason=no_hash`);
-      return res.status(400).json({ 
-        error: 'INVALID_INITDATA',
-        message: 'Invalid initData: missing hash'
-      });
-    }
-    
-    // Собираем data_check_string (key=value по сортировке, hash не включаем)
-    const dataCheckPairs = [];
-    for (const [key, value] of params.entries()) {
-      if (key !== 'hash') {
-        dataCheckPairs.push(`${key}=${value}`);
-      }
-    }
-    dataCheckPairs.sort();
-    const dataCheckString = dataCheckPairs.join('\n');
-    
-    // Вычисляем secret_key = HMAC_SHA256("WebAppData", bot_token)
-    const secretKey = crypto.createHmac('sha256', 'WebAppData').update(TELEGRAM_BOT_TOKEN).digest();
-    
-    // Вычисляем calculated_hash = HMAC_SHA256(secret_key, data_check_string) hex
-    const calculatedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
-    
-    // Timing-safe сравнение
-    if (!crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(calculatedHash, 'hex'))) {
-      log(`[AUTH_TG_FAIL] reason=invalid_hash`);
-      return res.status(401).json({ 
-        error: 'INVALID_SIGNATURE',
-        message: 'Invalid initData signature'
-      });
-    }
-    
-    // Извлекаем user из поля user (JSON строка)
-    const userStr = params.get('user');
-    if (!userStr) {
-      log(`[AUTH_TG_FAIL] reason=no_user`);
-      return res.status(400).json({ 
-        error: 'MISSING_USER',
-        message: 'Invalid initData: missing user'
-      });
-    }
-    
-    let user;
-    try {
-      user = JSON.parse(userStr);
-    } catch (e) {
-      log(`[AUTH_TG_FAIL] reason=invalid_user_json`);
-      return res.status(400).json({ 
-        error: 'INVALID_USER_JSON',
-        message: 'Invalid initData: invalid user JSON'
-      });
-    }
-    
-    if (!user.id) {
-      log(`[AUTH_TG_FAIL] reason=no_user_id`);
-      return res.status(400).json({ 
-        error: 'MISSING_USER_ID',
-        message: 'Invalid initData: missing user.id'
-      });
-    }
-    
-    // Находим/создаём аккаунт по telegram_user_id
-    const account = db.getOrCreateTelegramAccount(user.id);
-    
-    log(`[AUTH_TG_OK] tgId=${user.id} acc=${account.accountId}`);
-    
-    res.json({
-      accountId: account.accountId,
-      authToken: account.authToken,
-      tokens: account.tokens
-    });
-  } catch (error) {
-    console.error('[AUTH_TG_FAIL]', 'exception', error);
-    log(`[AUTH_TG_FAIL] reason=exception error=${error.message}`);
-    res.status(500).json({ 
-      error: 'INTERNAL_ERROR',
-      message: 'Failed to authenticate with Telegram'
-    });
+    res.status(500).json({ error: 'Failed to create guest account' });
   }
 });
 
