@@ -505,6 +505,13 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
               )}
             </div>
           )}
+          {matchEndPayload.reason === 'afk' && (
+            <div style={{ marginTop: '10px' }}>
+              <p style={{ fontSize: '14px', color: '#666' }}>
+                {matchEndPayload.message || 'Opponent AFK'}
+              </p>
+            </div>
+          )}
           <button
             onClick={onBackToMenu}
             style={{

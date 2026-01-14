@@ -29,6 +29,7 @@ const MATCH_COST = 1;
 const DISCONNECT_GRACE_MS = 5000; // 5 seconds grace period for reconnect
 const PLAY_STEP_TIMEOUT_MS = 15000; // 15 seconds global timeout for PLAY phase
 const BOTH_AFK_ROUNDS_TO_BURN = 2; // Number of consecutive rounds where both players are AFK to burn pot
+const AFK_FORFEIT_ROUNDS = 2; // Number of consecutive rounds where a single player is AFK to forfeit
 
 // Debug flag
 const DEBUG = false;
@@ -114,7 +115,9 @@ function createMatch(player1Socket, player2Socket) {
     currentStepIndex: null,
     stepTimer: null,
     watchdogTimer: null,
-    bothAfkStreak: 0
+    bothAfkStreak: 0,
+    p1AfkStreak: 0,
+    p2AfkStreak: 0
   };
 
   // Сохраняем матч по ID и по socketId
@@ -479,11 +482,9 @@ function startPlay(match) {
           
           if (!p1Data.confirmed) {
             fillAfkLayout(p1Data, currentMatch.id);
-            log(`[AFK_FILL] match=${currentMatch.id} player=${currentMatch.sessions[0]} layout=${JSON.stringify(p1Data.layout)}`);
           }
           if (!p2Data.confirmed) {
             fillAfkLayout(p2Data, currentMatch.id);
-            log(`[AFK_FILL] match=${currentMatch.id} player=${currentMatch.sessions[1]} layout=${JSON.stringify(p2Data.layout)}`);
           }
           
           startPlay(currentMatch);
@@ -498,11 +499,9 @@ function startPlay(match) {
   // fillAfkLayout сам устанавливает wasAfkFilledThisRound правильно
   if (!p1Data.layout || !p1Data.confirmed) {
     fillAfkLayout(p1Data, match.id);
-    log(`[AFK_FILL] match=${match.id} player=${match.sessions[0]} layout=${JSON.stringify(p1Data.layout)} wasAfk=${p1Data.wasAfkFilledThisRound}`);
   }
   if (!p2Data.layout || !p2Data.confirmed) {
     fillAfkLayout(p2Data, match.id);
-    log(`[AFK_FILL] match=${match.id} player=${match.sessions[1]} layout=${JSON.stringify(p2Data.layout)} wasAfk=${p2Data.wasAfkFilledThisRound}`);
   }
 
   // Логируем начало раунда и финальные layouts
@@ -842,11 +841,9 @@ function startPrepPhase(match) {
     // ВСЕГДА заполняем AFK layouts для тех, кто не confirmed
     if (!p1.confirmed) {
       fillAfkLayout(p1, currentMatch.id);
-      log(`[AFK_FILL] match=${currentMatch.id} player=${sid1} layout=${JSON.stringify(p1.layout)}`);
     }
     if (!p2.confirmed) {
       fillAfkLayout(p2, currentMatch.id);
-      log(`[AFK_FILL] match=${currentMatch.id} player=${sid2} layout=${JSON.stringify(p2.layout)}`);
     }
     
     // ВСЕГДА запускаем playRound (если матч ещё существует и в prep)
@@ -1003,6 +1000,113 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
   // Socket.IO автоматически очистит room при disconnect всех участников
   // Но можно явно покинуть room если нужно
   // io.socketsLeave(match.id);
+}
+
+function endMatchAfkForfeit(match, loserSessionId, winnerSessionId) {
+  // Завершение матча когда один игрок AFK N раундов подряд
+  // Победитель получает pot, проигравший теряет
+  match.state = 'ended';
+  match.roundInProgress = false;
+  match.paused = false;
+  match.pauseReason = null;
+  
+  // Очистка таймеров
+  if (match.prepTimer) {
+    clearTimeout(match.prepTimer);
+    match.prepTimer = null;
+  }
+  
+  if (match.stepTimer) {
+    clearTimeout(match.stepTimer);
+    match.stepTimer = null;
+  }
+  
+  if (match.watchdogTimer) {
+    clearTimeout(match.watchdogTimer);
+    match.watchdogTimer = null;
+    log(`[WATCHDOG_CLEAR] match=${match.id}`);
+  }
+  
+  // Очистка grace timers для обоих игроков
+  if (match.sessions && match.sessions.length >= 2) {
+    const timer1 = disconnectTimerBySessionId.get(match.sessions[0]);
+    if (timer1) {
+      clearTimeout(timer1);
+      disconnectTimerBySessionId.delete(match.sessions[0]);
+    }
+    const timer2 = disconnectTimerBySessionId.get(match.sessions[1]);
+    if (timer2) {
+      clearTimeout(timer2);
+      disconnectTimerBySessionId.delete(match.sessions[1]);
+    }
+  }
+  
+  // Аборт playRound если он идёт
+  match.playAbortToken++;
+  
+  const p1Data = getPlayerData(match.sessions[0]);
+  const p2Data = getPlayerData(match.sessions[1]);
+  
+  // Используем финальные HP из данных или дефолтные
+  const p1Hp = p1Data ? p1Data.hp : START_HP;
+  const p2Hp = p2Data ? p2Data.hp : START_HP;
+  
+  // WinnerAccountId получает +match.pot (по accountId, не sessionId)
+  const winnerAccountId = getAccountIdBySessionId(winnerSessionId);
+  if (winnerAccountId) {
+    db.addTokens(winnerAccountId, match.pot);
+  }
+  
+  log(`[END] match=${match.id} winner=${winnerSessionId} finalHp=${p1Hp}-${p2Hp}`);
+  
+  // Получаем токены по accountId для отправки
+  const acc1AccountId = getAccountIdBySessionId(match.sessions[0]);
+  const acc2AccountId = getAccountIdBySessionId(match.sessions[1]);
+  const acc1Tokens = acc1AccountId ? db.getTokens(acc1AccountId) : START_TOKENS;
+  const acc2Tokens = acc2AccountId ? db.getTokens(acc2AccountId) : START_TOKENS;
+  log(`[TOKENS] end winner=${winnerSessionId} acc1tokens=${acc1Tokens} acc2tokens=${acc2Tokens}`);
+  
+  // Отправляем match_end обоим с reason="afk"
+  emitToBoth(match, 'match_end', (socketId) => {
+    const sessionId = getSessionIdBySocket(socketId);
+    const isWinner = sessionId === winnerSessionId;
+    const accountId = getAccountIdBySessionId(sessionId);
+    const tokens = accountId ? (db.getTokens(accountId) !== null ? db.getTokens(accountId) : START_TOKENS) : START_TOKENS;
+    
+    return {
+      matchId: match.id,
+      winner: isWinner ? 'YOU' : 'OPPONENT',
+      winnerId: winnerSessionId,
+      loserId: loserSessionId,
+      yourHp: sessionId === match.sessions[0] ? p1Hp : p2Hp,
+      oppHp: sessionId === match.sessions[0] ? p2Hp : p1Hp,
+      yourTokens: tokens,
+      reason: 'afk',
+      message: isWinner ? 'Opponent AFK — you win' : 'You were AFK'
+    };
+  });
+  
+  log(`[FORCE_END] match=${match.id} reason=afk`);
+  
+  // Очистка: не удаляем players, только сбрасываем matchId/layout/confirmed, hp оставляем
+  if (p1Data) {
+    p1Data.matchId = null;
+    p1Data.confirmed = false;
+    p1Data.layout = null;
+    p1Data.hp = START_HP; // Сбрасываем HP на 10 после матча
+  }
+  
+  if (p2Data) {
+    p2Data.matchId = null;
+    p2Data.confirmed = false;
+    p2Data.layout = null;
+    p2Data.hp = START_HP; // Сбрасываем HP на 10 после матча
+  }
+  
+  // Удаляем матч из хранилищ
+  matchesById.delete(match.id);
+  matchIdBySocket.delete(match.player1);
+  matchIdBySocket.delete(match.player2);
 }
 
 function endMatchBothAfk(match) {
