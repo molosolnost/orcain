@@ -469,6 +469,12 @@ function doOneStep(match, stepIndex) {
   p1Data.hp = result.p1Hp;
   p2Data.hp = result.p2Hp;
 
+  // Получаем nickname для обоих игроков
+  const p1AccountId = getAccountIdBySessionId(match.sessions[0]);
+  const p2AccountId = getAccountIdBySessionId(match.sessions[1]);
+  const p1Nickname = p1AccountId ? (db.getNickname(p1AccountId) || null) : null;
+  const p2Nickname = p2AccountId ? (db.getNickname(p2AccountId) || null) : null;
+
   // Лог перед каждым step_reveal
   log(`[STEP] match=${match.id} round=${match.roundIndex} step=${stepIndex} p1Card=${p1Card} p2Card=${p2Card} hp=${p1Data.hp}-${p2Data.hp}`);
 
@@ -483,7 +489,9 @@ function doOneStep(match, stepIndex) {
         yourCard: p1Card,
         oppCard: p2Card,
         yourHp: p1Data.hp,
-        oppHp: p2Data.hp
+        oppHp: p2Data.hp,
+        yourNickname: p1Nickname,
+        oppNickname: p2Nickname
       };
     } else {
       return {
@@ -493,7 +501,9 @@ function doOneStep(match, stepIndex) {
         yourCard: p2Card,
         oppCard: p1Card,
         yourHp: p2Data.hp,
-        oppHp: p1Data.hp
+        oppHp: p1Data.hp,
+        yourNickname: p2Nickname,
+        oppNickname: p1Nickname
       };
     }
   });
@@ -606,6 +616,12 @@ function resumePlay(match) {
 function finishRound(match) {
   const p1Data = getPlayerData(match.sessions[0]);
   const p2Data = getPlayerData(match.sessions[1]);
+  
+  // Получаем nickname для обоих игроков
+  const p1AccountId = getAccountIdBySessionId(match.sessions[0]);
+  const p2AccountId = getAccountIdBySessionId(match.sessions[1]);
+  const p1Nickname = p1AccountId ? (db.getNickname(p1AccountId) || null) : null;
+  const p2Nickname = p2AccountId ? (db.getNickname(p2AccountId) || null) : null;
 
   emitToBoth(match, 'round_end', (socketId) => {
     const sessionId = getSessionIdBySocket(socketId);
@@ -615,7 +631,9 @@ function finishRound(match) {
         roundIndex: match.roundIndex,
         suddenDeath: match.suddenDeath,
         yourHp: p1Data.hp,
-        oppHp: p2Data.hp
+        oppHp: p2Data.hp,
+        yourNickname: p1Nickname,
+        oppNickname: p2Nickname
       };
     } else {
       return {
@@ -623,7 +641,9 @@ function finishRound(match) {
         roundIndex: match.roundIndex,
         suddenDeath: match.suddenDeath,
         yourHp: p2Data.hp,
-        oppHp: p1Data.hp
+        oppHp: p1Data.hp,
+        yourNickname: p2Nickname,
+        oppNickname: p1Nickname
       };
     }
   });
@@ -733,6 +753,12 @@ function startPrepPhase(match) {
 
   log(`[${match.id}] prep_start: round=${match.roundIndex}, suddenDeath=${match.suddenDeath}, p1Hp=${p1Data.hp}, p2Hp=${p2Data.hp}`);
 
+  // Получаем nickname для обоих игроков
+  const p1AccountId = getAccountIdBySessionId(match.sessions[0]);
+  const p2AccountId = getAccountIdBySessionId(match.sessions[1]);
+  const p1Nickname = p1AccountId ? (db.getNickname(p1AccountId) || null) : null;
+  const p2Nickname = p2AccountId ? (db.getNickname(p2AccountId) || null) : null;
+
   // Отправляем prep_start
   emitToBoth(match, 'prep_start', (socketId) => {
     const sessionId = getSessionIdBySocket(socketId);
@@ -749,7 +775,9 @@ function startPrepPhase(match) {
         oppHp: p2Data.hp,
         pot: match.pot,
         yourTokens: playerTokens,
-        cards: [...CARDS]
+        cards: [...CARDS],
+        yourNickname: p1Nickname,
+        oppNickname: p2Nickname
       };
     } else {
       return {
@@ -761,7 +789,9 @@ function startPrepPhase(match) {
         oppHp: p1Data.hp,
         pot: match.pot,
         yourTokens: playerTokens,
-        cards: [...CARDS]
+        cards: [...CARDS],
+        yourNickname: p2Nickname,
+        oppNickname: p1Nickname
       };
     }
   });
@@ -902,6 +932,10 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
   const acc2Tokens = acc2AccountId ? db.getTokens(acc2AccountId) : START_TOKENS;
   log(`[TOKENS] end winner=${winnerSessionId} acc1tokens=${acc1Tokens} acc2tokens=${acc2Tokens}`);
 
+  // Получаем nickname для обоих игроков
+  const acc1Nickname = acc1AccountId ? (db.getNickname(acc1AccountId) || null) : null;
+  const acc2Nickname = acc2AccountId ? (db.getNickname(acc2AccountId) || null) : null;
+
   // Определяем loserSessionId для единого payload (уже есть как аргумент)
   // Отправляем одинаковый payload для обоих игроков с winnerId/loserId
   // Гарантируем, что reason всегда присутствует
@@ -921,7 +955,9 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
       yourHp: sessionId === match.sessions[0] ? p1Hp : p2Hp,
       oppHp: sessionId === match.sessions[0] ? p2Hp : p1Hp,
       yourTokens: tokens,
-      reason: finalReason
+      reason: finalReason,
+      yourNickname: sessionId === match.sessions[0] ? acc1Nickname : acc2Nickname,
+      oppNickname: sessionId === match.sessions[0] ? acc2Nickname : acc1Nickname
     };
   });
   
@@ -1015,6 +1051,10 @@ function endMatch(match, reason = 'normal') {
   const acc2Tokens = acc2AccountId ? db.getTokens(acc2AccountId) : START_TOKENS;
   log(`[TOKENS] end winner=${winnerSessionId} acc1tokens=${acc1Tokens} acc2tokens=${acc2Tokens}`);
 
+  // Получаем nickname для обоих игроков
+  const acc1Nickname = acc1AccountId ? (db.getNickname(acc1AccountId) || null) : null;
+  const acc2Nickname = acc2AccountId ? (db.getNickname(acc2AccountId) || null) : null;
+
   // Определяем loserSessionId для единого payload
   const loserSessionId = winnerSessionId === match.sessions[0] ? match.sessions[1] : match.sessions[0];
 
@@ -1035,7 +1075,9 @@ function endMatch(match, reason = 'normal') {
       yourHp: sessionId === match.sessions[0] ? p1Data.hp : p2Data.hp,
       oppHp: sessionId === match.sessions[0] ? p2Data.hp : p1Data.hp,
       yourTokens: tokens,
-      reason: finalReason
+      reason: finalReason,
+      yourNickname: sessionId === match.sessions[0] ? acc1Nickname : acc2Nickname,
+      oppNickname: sessionId === match.sessions[0] ? acc2Nickname : acc1Nickname
     };
   });
   
@@ -1195,9 +1237,13 @@ io.on('connection', (socket) => {
     // Получаем токены по accountId из SQLite
     const tokens = db.getTokens(accountId);
     
-    // Отправляем hello_ok с токенами
+    // Получаем nickname
+    const nickname = db.getNickname(accountId);
+    
+    // Отправляем hello_ok с токенами и nickname
     socket.emit('hello_ok', {
-      tokens: tokens !== null ? tokens : START_TOKENS
+      tokens: tokens !== null ? tokens : START_TOKENS,
+      nickname: nickname || null
     });
     
     // Если sessionId участвует в активном матче
@@ -1302,13 +1348,19 @@ io.on('connection', (socket) => {
 
         log(`[MATCH_FOUND] matchId=${match.id} s1=${s1SessionId} s2=${s2SessionId}`);
 
-        // Отправляем match_found с токенами и pot
+        // Получаем nickname для обоих игроков
+        const acc1Nickname = acc1AccountId ? (db.getNickname(acc1AccountId) || null) : null;
+        const acc2Nickname = acc2AccountId ? (db.getNickname(acc2AccountId) || null) : null;
+
+        // Отправляем match_found с токенами, pot и nickname
         player1Socket.emit('match_found', {
           matchId: match.id,
           yourHp: p1Data.hp,
           oppHp: p2Data.hp,
           yourTokens: acc1Tokens,
-          pot: match.pot
+          pot: match.pot,
+          yourNickname: acc1Nickname,
+          oppNickname: acc2Nickname
         });
 
         player2Socket.emit('match_found', {
@@ -1316,7 +1368,9 @@ io.on('connection', (socket) => {
           yourHp: p2Data.hp,
           oppHp: p1Data.hp,
           yourTokens: acc2Tokens,
-          pot: match.pot
+          pot: match.pot,
+          yourNickname: acc2Nickname,
+          oppNickname: acc1Nickname
         });
 
         // Начинаем первый раунд
@@ -1552,8 +1606,78 @@ app.get('/auth/me', (req, res) => {
 
   res.json({
     accountId: account.accountId,
-    tokens: account.tokens
+    tokens: account.tokens,
+    nickname: account.nickname || null
   });
+});
+
+// Валидация nickname
+function validateNickname(nickname) {
+  if (!nickname || typeof nickname !== 'string') {
+    return { valid: false, error: 'Nickname is required' };
+  }
+  
+  const trimmed = nickname.trim();
+  
+  if (trimmed.length < 3 || trimmed.length > 16) {
+    return { valid: false, error: 'Nickname must be 3-16 characters long' };
+  }
+  
+  // Разрешенные символы: латиница, цифры, подчерк, пробел, дефис
+  const allowedPattern = /^[a-zA-Z0-9_\s-]+$/;
+  if (!allowedPattern.test(trimmed)) {
+    return { valid: false, error: 'Nickname can only contain letters, numbers, underscore, space, and hyphen' };
+  }
+  
+  // Нормализация: collapse spaces
+  const normalized = trimmed.replace(/\s+/g, ' ');
+  
+  return { valid: true, normalized };
+}
+
+// Endpoint для установки nickname
+app.post('/account/nickname', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'unauthorized', message: 'Unauthorized' });
+  }
+
+  const authToken = authHeader.substring(7);
+  const account = db.getAccountByAuthToken(authToken);
+  
+  if (!account) {
+    return res.status(401).json({ error: 'unauthorized', message: 'Unauthorized' });
+  }
+
+  const { nickname } = req.body;
+  
+  if (!nickname) {
+    return res.status(400).json({ error: 'invalid_nickname', message: 'Nickname is required' });
+  }
+
+  const validation = validateNickname(nickname);
+  if (!validation.valid) {
+    return res.status(400).json({ error: 'invalid_nickname', message: validation.error });
+  }
+
+  const normalized = validation.normalized;
+  const nicknameLower = normalized.toLowerCase();
+  
+  // Проверяем уникальность (case-insensitive)
+  const existingAccountId = db.getNicknameByLower(nicknameLower);
+  if (existingAccountId && existingAccountId !== account.accountId) {
+    return res.status(409).json({ error: 'nickname_taken', message: 'Nickname is already taken' });
+  }
+
+  // Устанавливаем nickname
+  try {
+    db.setNickname(account.accountId, normalized);
+    console.log(`[NICKNAME_SET] accountId=${account.accountId} nickname=${normalized}`);
+    res.json({ nickname: normalized, nicknameLower });
+  } catch (error) {
+    console.error('[NICKNAME_SET_FAIL]', error);
+    res.status(500).json({ error: 'internal_error', message: 'Failed to set nickname' });
+  }
 });
 
 const PORT = process.env.PORT || 3001;

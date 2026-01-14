@@ -6,6 +6,8 @@ export type MatchFoundPayload = {
   oppHp: number;
   yourTokens: number;
   pot: number;
+  yourNickname?: string | null;
+  oppNickname?: string | null;
 };
 
 export type PrepStartPayload = {
@@ -18,6 +20,8 @@ export type PrepStartPayload = {
   pot: number;
   yourTokens: number;
   cards: Card[];
+  yourNickname?: string | null;
+  oppNickname?: string | null;
 };
 
 export type StepRevealPayload = {
@@ -28,6 +32,8 @@ export type StepRevealPayload = {
   oppCard: Card;
   yourHp: number;
   oppHp: number;
+  yourNickname?: string | null;
+  oppNickname?: string | null;
 };
 
 export type RoundEndPayload = {
@@ -36,6 +42,8 @@ export type RoundEndPayload = {
   suddenDeath: boolean;
   yourHp: number;
   oppHp: number;
+  yourNickname?: string | null;
+  oppNickname?: string | null;
 };
 
 export type MatchEndPayload = {
@@ -47,8 +55,11 @@ export type MatchEndPayload = {
   oppHp: number;
   yourTokens: number;
   reason: "normal" | "disconnect" | "timeout";
+  yourNickname?: string | null;
+  oppNickname?: string | null;
 };
 
 export type HelloOkPayload = {
   tokens: number;
+  nickname?: string | null;
 };

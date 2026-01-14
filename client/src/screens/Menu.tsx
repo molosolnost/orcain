@@ -5,9 +5,10 @@ interface MenuProps {
   onCancelSearch: () => void;
   isSearching: boolean;
   tokens: number | null;
+  nickname: string | null;
 }
 
-export default function Menu({ onStartBattle, onCancelSearch, isSearching, tokens }: MenuProps) {
+export default function Menu({ onStartBattle, onCancelSearch, isSearching, tokens, nickname }: MenuProps) {
   // Кнопка Start Battle disabled если tokens !== null && tokens < 1
   const hasEnoughTokens = tokens !== null && tokens >= 1;
 
@@ -22,6 +23,11 @@ export default function Menu({ onStartBattle, onCancelSearch, isSearching, token
       position: 'relative'
     }}>
       <h1 style={{ fontSize: '48px', margin: 0 }}>ORCAIN</h1>
+      {nickname && (
+        <div style={{ fontSize: '18px', color: '#666', marginTop: '-10px' }}>
+          Welcome, <strong>{nickname}</strong>
+        </div>
+      )}
       <div style={{ fontSize: '20px' }}>Tokens: {tokens === null ? '—' : tokens}</div>
       
       {isSearching ? (

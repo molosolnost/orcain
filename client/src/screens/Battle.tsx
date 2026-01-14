@@ -27,6 +27,8 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   const [revealedCards, setRevealedCards] = useState<{ step: number; yourCard: Card; oppCard: Card }[]>([]);
   const [currentStepIndex, setCurrentStepIndex] = useState<number | null>(null);
   const [phase, setPhase] = useState<'PREP' | 'REVEAL' | 'END'>('PREP');
+  const [yourNickname, setYourNickname] = useState<string | null>(null);
+  const [oppNickname, setOppNickname] = useState<string | null>(null);
 
   const [dragState, setDragState] = useState<{
     card: Card;
@@ -80,6 +82,12 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     setPot(lastPrepStart.pot);
     setSuddenDeath(lastPrepStart.suddenDeath);
     setAvailableCards([...lastPrepStart.cards]);
+    if (lastPrepStart.yourNickname !== undefined) {
+      setYourNickname(lastPrepStart.yourNickname);
+    }
+    if (lastPrepStart.oppNickname !== undefined) {
+      setOppNickname(lastPrepStart.oppNickname);
+    }
     
     // Сбросить confirmed/layout/slot/выкладки только если это новый раунд
     if (isNewRound) {
@@ -108,6 +116,12 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setRevealedCards([]);
       setCurrentStepIndex(null);
       setRoundIndex(1);
+      if (payload.yourNickname !== undefined) {
+        setYourNickname(payload.yourNickname);
+      }
+      if (payload.oppNickname !== undefined) {
+        setOppNickname(payload.oppNickname);
+      }
     });
 
     // Убрана прямая подписка на prep_start - теперь получаем через props (lastPrepStart)
@@ -499,16 +513,22 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
         fontSize: '24px'
       }}>
         <div>
-          <div>Your HP: {yourHp}</div>
+          <div style={{ fontSize: '16px', color: '#666', marginBottom: '4px' }}>
+            {yourNickname || 'You'}
+          </div>
+          <div>HP: {yourHp}</div>
         </div>
         <div>
-          <div>Opponent HP: {oppHp}</div>
+          <div style={{ fontSize: '16px', color: '#666', marginBottom: '4px' }}>
+            {oppNickname || 'Opponent'}
+          </div>
+          <div>HP: {oppHp}</div>
         </div>
       </div>
 
       {/* Opponent Slots */}
       <div style={{ marginBottom: '40px' }}>
-        <h3>Opponent</h3>
+        <h3>{oppNickname || 'Opponent'}</h3>
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
           {[0, 1, 2].map((index) => {
             const revealed = revealedCards[index];
@@ -538,7 +558,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
       {/* Your Slots */}
       <div style={{ marginBottom: '40px' }}>
-        <h3>Your Slots {state === 'prep' && !confirmed && '(drop cards here)'}</h3>
+        <h3>{(yourNickname || 'You') + (state === 'prep' && !confirmed ? ' (drop cards here)' : '')}</h3>
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
           {slots.map((card, index) => {
             const revealed = revealedCards[index];

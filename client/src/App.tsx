@@ -5,6 +5,7 @@ import type { MatchEndPayload, PrepStartPayload } from './net/types';
 import Login from './screens/Login';
 import Menu from './screens/Menu';
 import Battle from './screens/Battle';
+import Onboarding from './screens/Onboarding';
 import './App.css';
 
 type Screen = 'login' | 'menu' | 'battle';
@@ -22,13 +23,12 @@ function App() {
   const [hasTelegramWebApp, setHasTelegramWebApp] = useState(false);
   const [hasTelegramInitData, setHasTelegramInitData] = useState(false);
   const [telegramAuthError, setTelegramAuthError] = useState<string | null>(null);
+  const [nickname, setNickname] = useState<string | null>(null);
 
   // Инициализация: проверяем Telegram Mini App или читаем authToken из localStorage
   useEffect(() => {
     // Безопасная инициализация Telegram WebApp
     const tg = (window as any).Telegram?.WebApp;
-    const hasTg = Boolean(tg);
-    setHasTelegramWebApp(hasTg);
     
     if (tg) {
       // Обязательно вызываем ready() перед любыми действиями
@@ -44,25 +44,13 @@ function App() {
       
       // Проверяем initData для автологина
       const initData = tg.initData;
-      const hasInitData = typeof initData === 'string' && initData.trim().length > 0;
-      setHasTelegramInitData(hasInitData);
       
-      if (hasInitData) {
+      if (initData && typeof initData === 'string' && initData.trim().length > 0) {
         // Автологин через Telegram
         setIsTelegramAuthPending(true);
-        setTelegramAuthError(null);
-        const API_BASE = import.meta.env.VITE_API_BASE;
-
-        if (!API_BASE || !/^https?:\/\//.test(API_BASE)) {
-          console.error('VITE_API_BASE is missing or invalid');
-          setIsTelegramAuthPending(false);
-          setTelegramAuthError('VITE_API_BASE is missing or invalid');
-          return;
-        }
-
-        const authUrl = API_BASE.replace(/\/$/, '') + '/auth/telegram';
+        const API_BASE = import.meta.env.VITE_API_BASE || 'https://orcain-server.onrender.com';
         
-        fetch(authUrl, {
+        fetch(`${API_BASE}/auth/telegram`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -87,7 +75,7 @@ function App() {
             return response.json();
           })
           .then((data) => {
-            const { accountId, authToken, tokens } = data;
+            const { accountId, authToken, tokens, nickname: tgNickname } = data;
             
             // Сохраняем authToken и accountId в localStorage
             localStorage.setItem('orcain_authToken', authToken);
@@ -95,13 +83,24 @@ function App() {
             
             setAuthToken(authToken);
             setTokens(tokens);
-            setScreen('menu');
+            setNickname(tgNickname || null);
+            
+            // Если nickname отсутствует, показываем onboarding, иначе сразу в меню
+            if (!tgNickname) {
+              setScreen('login'); // Будет показан onboarding
+            } else {
+              setScreen('menu');
+            }
             setIsTelegramAuthPending(false);
           })
           .catch((error) => {
             console.error('[AUTH_TG_FAIL]', 'network error', error);
             setIsTelegramAuthPending(false);
-            setTelegramAuthError(error.message || 'Failed to authenticate with Telegram');
+            // НЕ молча уходим в guest - показываем ошибку
+            // Но все равно fallback к guest для возможности продолжить
+            alert(error.message || 'Failed to authenticate with Telegram. Using guest mode.');
+            const token = getAuthToken();
+            setAuthToken(token);
           });
       } else {
         // Нет initData - fallback к guest auth
@@ -109,7 +108,6 @@ function App() {
         setAuthToken(token);
       }
     } else {
-      setHasTelegramInitData(false);
       // Telegram WebApp не доступен - fallback к guest auth
       const token = getAuthToken();
       setAuthToken(token);
@@ -142,9 +140,17 @@ function App() {
     // Обработка hello_ok - сигнал успешной авторизации
     socketManager.onHelloOk((payload) => {
       setConnected(true);
-      setScreen('menu');
+      if (payload.nickname !== undefined) {
+        setNickname(payload.nickname || null);
+      }
       if (payload.tokens !== undefined) {
         setTokens(prev => (prev === null ? payload.tokens : prev));
+      }
+      // Если nickname отсутствует, показываем onboarding, иначе меню
+      if (!payload.nickname) {
+        setScreen('login'); // Будет показан onboarding
+      } else {
+        setScreen('menu');
       }
     });
     
@@ -236,6 +242,12 @@ function App() {
   const handleLoginSuccess = ({ authToken: token, tokens: initialTokens }: { authToken: string; tokens: number }) => {
     setAuthToken(token);
     setTokens(initialTokens);
+    // После guest login тоже нужно проверить nickname через hello_ok
+  };
+
+  const handleNicknameSet = (newNickname: string) => {
+    setNickname(newNickname);
+    setScreen('menu');
   };
 
   const handleStartBattle = () => {
@@ -252,24 +264,13 @@ function App() {
   };
 
   // Не показываем Login экран если идет автологин через Telegram
-  if ((screen === 'login' || !authToken) && !isTelegramAuthPending && (!hasTelegramWebApp || !hasTelegramInitData)) {
+  if ((screen === 'login' || !authToken) && !isTelegramAuthPending) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
   
   // Показываем загрузку во время автологина
   if (isTelegramAuthPending) {
     return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Authenticating...</div>;
-  }
-
-  if (!authToken && hasTelegramWebApp && hasTelegramInitData) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: '12px' }}>
-        <div>Telegram authentication failed.</div>
-        <div style={{ fontSize: '12px', color: '#888' }}>
-          {telegramAuthError || 'Please retry from Telegram.'}
-        </div>
-      </div>
-    );
   }
 
   if (!connected) {
@@ -283,7 +284,8 @@ function App() {
           onStartBattle={handleStartBattle} 
           onCancelSearch={handleCancelSearch}
           isSearching={isSearching}
-          tokens={tokens} 
+          tokens={tokens}
+          nickname={nickname}
         />
       )}
       {screen === 'battle' && (
