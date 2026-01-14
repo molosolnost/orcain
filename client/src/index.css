@@ -1,3 +1,9 @@
+html,
+body,
+#root {
+  height: 100%;
+}
+
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
@@ -28,6 +34,7 @@ body {
   place-items: center;
   min-width: 320px;
   min-height: 100vh;
+  overscroll-behavior: none;
 }
 
 h1 {
@@ -52,6 +59,16 @@ button:hover {
 button:focus,
 button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
+}
+
+.battle-card {
+  touch-action: none;
+}
+
+body.dragging {
+  user-select: none;
+  touch-action: none;
+  -webkit-user-select: none;
 }
 
 @media (prefers-color-scheme: light) {

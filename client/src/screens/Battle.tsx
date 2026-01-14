@@ -28,8 +28,15 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   const [currentStepIndex, setCurrentStepIndex] = useState<number | null>(null);
   const [phase, setPhase] = useState<'PREP' | 'REVEAL' | 'END'>('PREP');
 
-  const draggedCardRef = useRef<Card | null>(null);
-  const draggedSlotRef = useRef<number | null>(null);
+  const [dragState, setDragState] = useState<{
+    card: Card;
+    x: number;
+    y: number;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
+  const [hoveredSlotIndex, setHoveredSlotIndex] = useState<number | null>(null);
+  const dragPointerIdRef = useRef<number | null>(null);
   const lastAppliedRoundIndexRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -164,59 +171,123 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     return () => clearInterval(interval);
   }, [phase, deadlineTs]);
 
-  const handleDragStart = (card: Card) => {
-    draggedCardRef.current = card;
+  const canInteract = state === 'prep' && !confirmed;
+
+  useEffect(() => {
+    if (dragState) {
+      document.body.classList.add('dragging');
+    } else {
+      document.body.classList.remove('dragging');
+    }
+    return () => {
+      document.body.classList.remove('dragging');
+    };
+  }, [dragState]);
+
+  useEffect(() => {
+    if (!canInteract && dragState) {
+      dragPointerIdRef.current = null;
+      setDragState(null);
+      setHoveredSlotIndex(null);
+    }
+  }, [canInteract, dragState]);
+
+  const toCardCode = (v: Card | null): string | null => {
+    if (!v) return null;
+    if (typeof v === 'string') {
+      if (v === 'GRASS') return null;
+      return v;
+    }
+    if (typeof v === 'object' && 'id' in v) return (v as any).id;
+    if (typeof v === 'object' && 'code' in v) return (v as any).code;
+    if (typeof v === 'object' && 'type' in v) return (v as any).type;
+    return null;
   };
 
-  const handleDragEnd = () => {
-    draggedCardRef.current = null;
-    draggedSlotRef.current = null;
+  const getSlotIndexAtPoint = (x: number, y: number): number | null => {
+    const el = document.elementFromPoint(x, y);
+    const slotEl = el?.closest('[data-slot-index]') as HTMLElement | null;
+    if (!slotEl) return null;
+    const slotIndex = Number(slotEl.dataset.slotIndex);
+    return Number.isFinite(slotIndex) ? slotIndex : null;
   };
 
-  const handleSlotDrop = (slotIndex: number) => {
-    const card = draggedCardRef.current;
-    if (!card || confirmed) return;
-
+  const applyDropToSlot = (card: Card, slotIndex: number) => {
+    if (!canInteract) return;
     setSlots(prev => {
       const newSlots = [...prev];
       const oldSlotIndex = prev.indexOf(card);
-      
-      // Если карта уже в слоте, освобождаем старый слот
+
       if (oldSlotIndex !== -1) {
         newSlots[oldSlotIndex] = null;
       }
-      
-      // Если в целевом слоте уже есть карта, она будет заменена
+
       newSlots[slotIndex] = card;
-      
-      // Отправляем draft на сервер
-      const toCardCode = (v: Card | null): string | null => {
-        if (!v) return null;
-        if (typeof v === "string") {
-          // Убеждаемся что это не GRASS (только ATTACK/DEFENSE/HEAL/COUNTER)
-          if (v === "GRASS") return null;
-          return v;
-        }
-        if (typeof v === "object" && "id" in v) return (v as any).id;
-        if (typeof v === "object" && "code" in v) return (v as any).code;
-        if (typeof v === "object" && "type" in v) return (v as any).type;
-        return null;
-      };
-      
+
       const layoutWithNulls: (string | null)[] = newSlots.map(toCardCode);
-      
-      // Отправляем только если длина 3 и известен currentMatchId
       if (layoutWithNulls.length === 3 && currentMatchId) {
         socketManager.layoutDraft(currentMatchId, layoutWithNulls);
       }
-      
+
       return newSlots;
     });
   };
 
-  const handleSlotDragOver = (e: React.DragEvent, slotIndex: number) => {
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>, card: Card) => {
+    if (!canInteract) return;
+    if (card === 'GRASS') return;
+    if (slots.includes(card)) return;
+
     e.preventDefault();
-    draggedSlotRef.current = slotIndex;
+    const target = e.currentTarget as HTMLElement;
+    target.setPointerCapture(e.pointerId);
+    dragPointerIdRef.current = e.pointerId;
+
+    const rect = target.getBoundingClientRect();
+    const offsetX = e.clientX - rect.left;
+    const offsetY = e.clientY - rect.top;
+
+    setDragState({
+      card,
+      x: e.clientX - offsetX,
+      y: e.clientY - offsetY,
+      offsetX,
+      offsetY
+    });
+    setHoveredSlotIndex(null);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragState) return;
+    if (dragPointerIdRef.current !== e.pointerId) return;
+
+    e.preventDefault();
+    const nextX = e.clientX - dragState.offsetX;
+    const nextY = e.clientY - dragState.offsetY;
+    setDragState({ ...dragState, x: nextX, y: nextY });
+
+    const slotIndex = getSlotIndexAtPoint(e.clientX, e.clientY);
+    setHoveredSlotIndex(slotIndex);
+  };
+
+  const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragState) return;
+    if (dragPointerIdRef.current !== e.pointerId) return;
+
+    e.preventDefault();
+    const slotIndex = getSlotIndexAtPoint(e.clientX, e.clientY);
+    if (slotIndex !== null && canInteract) {
+      applyDropToSlot(dragState.card, slotIndex);
+    }
+
+    dragPointerIdRef.current = null;
+    setDragState(null);
+    setHoveredSlotIndex(null);
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
   };
 
   const handleConfirm = () => {
@@ -405,17 +476,29 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
             const revealed = revealedCards[index];
             const displayCard = revealed ? revealed.yourCard : card;
             const isCurrentStep = currentStepIndex === index;
+            const isHovered = dragState !== null && hoveredSlotIndex === index;
+            const hoverBorder = isHovered
+              ? canInteract
+                ? '3px solid #4caf50'
+                : '3px solid #f44336'
+              : null;
+            const stepBorder = isCurrentStep ? '3px solid #ff6b6b' : 'none';
+            const border = hoverBorder || stepBorder;
             
             return (
               <div
                 key={index}
-                onDrop={() => handleSlotDrop(index)}
-                onDragOver={(e) => handleSlotDragOver(e, index)}
+                data-slot-index={index}
                 style={{
-                  border: isCurrentStep ? '3px solid #ff6b6b' : 'none',
+                  border,
                   borderRadius: '12px',
-                  padding: isCurrentStep ? '2px' : '0',
-                  cursor: confirmed || state !== 'prep' ? 'default' : 'pointer'
+                  padding: border !== 'none' ? '2px' : '0',
+                  cursor: canInteract ? 'pointer' : 'default',
+                  boxShadow: isHovered
+                    ? canInteract
+                      ? '0 0 0 3px rgba(76, 175, 80, 0.2)'
+                      : '0 0 0 3px rgba(244, 67, 54, 0.2)'
+                    : 'none'
                 }}
               >
                 {displayCard ? (
@@ -445,17 +528,20 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
             {availableCards.map((card) => {
               const inSlot = slots.includes(card);
+              const isDraggingCard = dragState?.card === card;
               const cardElement = renderCard(card, 'HAND');
               
               return (
                 <div
                   key={card}
-                  draggable={!confirmed && !inSlot}
-                  onDragStart={() => handleDragStart(card)}
-                  onDragEnd={handleDragEnd}
+                  className="battle-card"
+                  onPointerDown={(e) => handlePointerDown(e, card)}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerEnd}
+                  onPointerCancel={handlePointerEnd}
                   style={{
-                    opacity: inSlot ? 0.5 : 1,
-                    cursor: confirmed || inSlot ? 'default' : 'grab',
+                    opacity: inSlot ? 0.5 : isDraggingCard ? 0.2 : 1,
+                    cursor: canInteract && !inSlot ? 'grab' : 'default',
                     userSelect: 'none'
                   }}
                 >
@@ -523,6 +609,21 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           >
             Back to Menu
           </button>
+        </div>
+      )}
+
+      {dragState && (
+        <div
+          className="battle-card"
+          style={{
+            position: 'fixed',
+            left: dragState.x,
+            top: dragState.y,
+            zIndex: 9999,
+            pointerEvents: 'none'
+          }}
+        >
+          {renderCard(dragState.card, 'HAND')}
         </div>
       )}
     </div>
