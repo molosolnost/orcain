@@ -51,6 +51,7 @@ class SocketManager {
   }
 
   layoutDraft(layout: (string | null)[]) {
+    console.log("[SOCKET] emit layout_draft", layout);
     this.socket?.emit('layout_draft', { layout });
   }
 

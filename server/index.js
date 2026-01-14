@@ -304,7 +304,8 @@ function fillAfkLayout(playerData, matchId = null) {
     playerData.layout = finalLayout;
     playerData.confirmed = true;
     playerData.wasAfkFilledThisRound = false; // Игрок не AFK, он хотя бы что-то делал
-    log(`[DRAFT_APPLY] match=${matchId || playerData.matchId || 'unknown'} draft=${JSON.stringify(playerData.draftLayout)} final=${JSON.stringify(finalLayout)}`);
+    const sessionId = playerData.matchId ? 'sessionId' : 'unknown';
+    log(`[DRAFT_APPLY] match=${matchId || playerData.matchId || 'unknown'} sid=${sessionId} draft=${JSON.stringify(playerData.draftLayout)} final=${JSON.stringify(finalLayout)}`);
   } else {
     // Вообще ничего не ставил - полный GRASS
     playerData.layout = [CARD_GRASS, CARD_GRASS, CARD_GRASS];
@@ -1508,37 +1509,46 @@ io.on('connection', (socket) => {
 
   socket.on('layout_draft', (data) => {
     const sessionId = getSessionIdBySocket(socket.id);
+    const match = getMatch(socket.id);
+    
+    log(`[DRAFT_RECV] sid=${socket.id} matchId=${match?.id || 'none'} layout=${JSON.stringify(data?.layout)}`);
+    
     if (!sessionId) {
       return;
     }
     
-    const match = getMatch(socket.id);
     // Только если match.state === 'prep' и не confirmed
     if (!match || match.state !== 'prep') {
+      log(`[DRAFT_REJECT] sid=${socket.id} reason=no_match_or_wrong_state matchId=${match?.id || 'none'} state=${match?.state || 'none'}`);
       return;
     }
 
     const playerData = getPlayerData(sessionId);
     if (!playerData || playerData.confirmed) {
+      log(`[DRAFT_REJECT] sid=${socket.id} reason=no_player_or_confirmed confirmed=${playerData?.confirmed || 'no_player'}`);
       return;
     }
 
     // Валидация draft layout
     if (!data.layout || !Array.isArray(data.layout) || data.layout.length !== 3) {
+      log(`[DRAFT_REJECT] sid=${socket.id} reason=invalid_layout layout=${JSON.stringify(data?.layout)}`);
       return;
     }
 
     // Каждый элемент должен быть либо картой из CARDS, либо null
+    // Также проверяем что GRASS не отправляется
     const validDraft = data.layout.every(card => 
-      card === null || (typeof card === 'string' && CARDS.includes(card))
+      card === null || (typeof card === 'string' && CARDS.includes(card) && card !== CARD_GRASS)
     );
 
     if (!validDraft) {
+      log(`[DRAFT_REJECT] sid=${socket.id} reason=invalid_cards layout=${JSON.stringify(data?.layout)}`);
       return;
     }
 
     // Сохраняем draftLayout
     playerData.draftLayout = [...data.layout];
+    log(`[DRAFT_SAVE] sid=${socket.id} saved=${JSON.stringify(playerData.draftLayout)}`);
   });
 
   socket.on('layout_confirm', (data) => {

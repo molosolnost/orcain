@@ -190,8 +190,26 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       newSlots[slotIndex] = card;
       
       // Отправляем draft на сервер
-      const layoutWithNulls: (string | null)[] = newSlots.map(s => s || null);
-      socketManager.layoutDraft(layoutWithNulls);
+      const toCardCode = (v: Card | null): string | null => {
+        if (!v) return null;
+        if (typeof v === "string") {
+          // Убеждаемся что это не GRASS (только ATTACK/DEFENSE/HEAL/COUNTER)
+          if (v === "GRASS") return null;
+          return v;
+        }
+        if (typeof v === "object" && "id" in v) return (v as any).id;
+        if (typeof v === "object" && "code" in v) return (v as any).code;
+        if (typeof v === "object" && "type" in v) return (v as any).type;
+        return null;
+      };
+      
+      const layoutWithNulls: (string | null)[] = newSlots.map(toCardCode);
+      
+      // Отправляем только если длина 3
+      if (layoutWithNulls.length === 3) {
+        console.log("[DRAFT_SEND]", layoutWithNulls);
+        socketManager.layoutDraft(layoutWithNulls);
+      }
       
       return newSlots;
     });
