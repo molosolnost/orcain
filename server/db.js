@@ -79,6 +79,64 @@ function createGuestAccount() {
   return { accountId, authToken, tokens };
 }
 
+function getOrCreateTelegramAccount(telegramUserId) {
+  try {
+    // Ищем существующий аккаунт по telegramUserId
+    // Пробуем выбрать с nickname (если колонка есть)
+    let findStmt;
+    try {
+      findStmt = db.prepare('SELECT accountId, authToken, tokens, nickname FROM accounts WHERE telegramUserId = ?');
+    } catch (e) {
+      // Если nickname колонка отсутствует, выбираем без неё
+      findStmt = db.prepare('SELECT accountId, authToken, tokens FROM accounts WHERE telegramUserId = ?');
+    }
+    
+    const existing = findStmt.get(telegramUserId);
+    
+    if (existing) {
+      return { 
+        accountId: existing.accountId, 
+        authToken: existing.authToken, 
+        tokens: existing.tokens,
+        nickname: existing.nickname || null
+      };
+    }
+    
+    // Создаём новый аккаунт
+    const accountId = require('crypto').randomUUID();
+    const authToken = require('crypto').randomUUID();
+    const tokens = 10;
+    const createdAt = Date.now();
+    
+    try {
+      // Пробуем вставить с nickname (если колонка есть)
+      const insertStmt = db.prepare('INSERT INTO accounts (accountId, authToken, tokens, createdAt, telegramUserId, nickname, nicknameLower) VALUES (?, ?, ?, ?, ?, NULL, NULL)');
+      insertStmt.run(accountId, authToken, tokens, createdAt, telegramUserId);
+    } catch (e) {
+      // Если nickname колонки отсутствуют, вставляем без них
+      const insertStmt = db.prepare('INSERT INTO accounts (accountId, authToken, tokens, createdAt, telegramUserId) VALUES (?, ?, ?, ?, ?)');
+      insertStmt.run(accountId, authToken, tokens, createdAt, telegramUserId);
+    }
+    
+    return { accountId, authToken, tokens, nickname: null };
+  } catch (error) {
+    // Если telegramUserId колонка отсутствует, попробуем без неё (fallback для старых БД)
+    if (error.message && error.message.includes('no such column: telegramUserId')) {
+      // Создаём аккаунт без telegramUserId (старая схема)
+      const accountId = require('crypto').randomUUID();
+      const authToken = require('crypto').randomUUID();
+      const tokens = 10;
+      const createdAt = Date.now();
+      
+      const insertStmt = db.prepare('INSERT INTO accounts (accountId, authToken, tokens, createdAt) VALUES (?, ?, ?, ?)');
+      insertStmt.run(accountId, authToken, tokens, createdAt);
+      
+      return { accountId, authToken, tokens, nickname: null };
+    }
+    throw error;
+  }
+}
+
 function getAccountByAuthToken(authToken) {
   const stmt = db.prepare('SELECT accountId, tokens, nickname FROM accounts WHERE authToken = ?');
   const row = stmt.get(authToken);
@@ -139,6 +197,7 @@ function getNickname(accountId) {
 
 module.exports = {
   createGuestAccount,
+  getOrCreateTelegramAccount,
   getAccountByAuthToken,
   getAccountById,
   getTokens,

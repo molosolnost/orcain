@@ -1573,14 +1573,31 @@ app.post('/auth/telegram', (req, res) => {
     }
     
     // Находим/создаём аккаунт по telegram_user_id
+    if (!db.getOrCreateTelegramAccount || typeof db.getOrCreateTelegramAccount !== 'function') {
+      console.error('[auth/telegram] CRITICAL: db.getOrCreateTelegramAccount is not a function');
+      return res.status(500).json({ 
+        error: 'INTERNAL_ERROR',
+        message: 'Database function not available'
+      });
+    }
+    
     const account = db.getOrCreateTelegramAccount(user.id);
+    
+    if (!account || !account.accountId || !account.authToken) {
+      console.error('[auth/telegram] CRITICAL: getOrCreateTelegramAccount returned invalid account:', account);
+      return res.status(500).json({ 
+        error: 'INTERNAL_ERROR',
+        message: 'Failed to create or retrieve account'
+      });
+    }
     
     console.log('[auth/telegram] success, tgId=', user.id, 'acc=', account.accountId);
     
     res.json({
       accountId: account.accountId,
       authToken: account.authToken,
-      tokens: account.tokens
+      tokens: account.tokens,
+      nickname: account.nickname || null
     });
   } catch (error) {
     console.error('[auth/telegram] exception:', error);
