@@ -188,6 +188,11 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       
       // Если в целевом слоте уже есть карта, она будет заменена
       newSlots[slotIndex] = card;
+      
+      // Отправляем draft на сервер
+      const layoutWithNulls: (string | null)[] = newSlots.map(s => s || null);
+      socketManager.layoutDraft(layoutWithNulls);
+      
       return newSlots;
     });
   };
