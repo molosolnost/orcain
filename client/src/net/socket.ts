@@ -50,9 +50,9 @@ class SocketManager {
     this.socket?.emit('queue_leave');
   }
 
-  layoutDraft(layout: (string | null)[]) {
-    console.log("[SOCKET] emit layout_draft", layout);
-    this.socket?.emit('layout_draft', { layout });
+  layoutDraft(matchId: string, layout: (string | null)[]) {
+    console.log("[SOCKET] emit layout_draft", { matchId, layout });
+    this.socket?.emit('layout_draft', { matchId, layout });
   }
 
   layoutConfirm(layout: string[]) {

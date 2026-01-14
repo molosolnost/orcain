@@ -53,3 +53,8 @@ export type MatchEndPayload = {
 export type HelloOkPayload = {
   tokens: number;
 };
+
+export type DraftLayoutPayload = {
+  matchId: string;
+  layout: (Card | null)[];
+};

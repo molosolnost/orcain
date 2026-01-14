@@ -205,10 +205,10 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       
       const layoutWithNulls: (string | null)[] = newSlots.map(toCardCode);
       
-      // Отправляем только если длина 3
-      if (layoutWithNulls.length === 3) {
+      // Отправляем только если длина 3 и известен currentMatchId
+      if (layoutWithNulls.length === 3 && currentMatchId) {
         console.log("[DRAFT_SEND]", layoutWithNulls);
-        socketManager.layoutDraft(layoutWithNulls);
+        socketManager.layoutDraft(currentMatchId, layoutWithNulls);
       }
       
       return newSlots;
