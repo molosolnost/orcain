@@ -41,10 +41,6 @@ function App() {
       
       // Проверяем initData для автологина
       const initData = tg.initData;
-<<<<<<< HEAD
-=======
-      const hasInitData = typeof initData === 'string' && initData.trim().length > 0;
->>>>>>> 45af369 (Fix: Vercel build (remove unused vars in App.tsx))
       
       if (initData && typeof initData === 'string' && initData.trim().length > 0) {
         // Автологин через Telegram
@@ -270,8 +266,6 @@ function App() {
     return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Authenticating...</div>;
   }
 
-<<<<<<< HEAD
-=======
   // Показываем ошибку Telegram auth если есть
   if (!authToken && telegramAuthError) {
     return (
@@ -284,7 +278,6 @@ function App() {
     );
   }
 
->>>>>>> 45af369 (Fix: Vercel build (remove unused vars in App.tsx))
   if (!connected) {
     return <div>Connecting...</div>;
   }
