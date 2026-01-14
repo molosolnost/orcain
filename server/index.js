@@ -116,8 +116,7 @@ function createMatch(player1Socket, player2Socket) {
     stepTimer: null,
     watchdogTimer: null,
     bothAfkStreak: 0,
-    p1AfkStreak: 0,
-    p2AfkStreak: 0
+    afkStreakBySid: new Map() // sessionId -> streak count
   };
 
   // Сохраняем матч по ID и по socketId
@@ -306,13 +305,32 @@ function fillAfkLayout(playerData, matchId = null) {
     }
     playerData.layout = finalLayout;
     playerData.confirmed = true;
-    playerData.wasAfkFilledThisRound = false; // Игрок не AFK, он хотя бы что-то делал (отправил draft)
   } else {
     // DraftLayout пустой (все null) - игрок вообще ничего не ставил
     playerData.layout = [CARD_GRASS, CARD_GRASS, CARD_GRASS];
     playerData.confirmed = true;
-    playerData.wasAfkFilledThisRound = true; // Игрок AFK - не отправил даже draft
   }
+}
+
+function finalizeLayoutsAndAfk(match) {
+  const p1Data = getPlayerData(match.sessions[0]);
+  const p2Data = getPlayerData(match.sessions[1]);
+  
+  if (!p1Data || !p2Data) return { p1IsAfk: false, p2IsAfk: false };
+  
+  // Финализируем layouts для каждого игрока
+  if (!p1Data.layout || !p1Data.confirmed) {
+    fillAfkLayout(p1Data, match.id);
+  }
+  if (!p2Data.layout || !p2Data.confirmed) {
+    fillAfkLayout(p2Data, match.id);
+  }
+  
+  // Определяем AFK по финальному layout: все карты должны быть GRASS
+  const p1IsAfk = p1Data.layout && p1Data.layout.length === 3 && p1Data.layout.every(c => c === CARD_GRASS);
+  const p2IsAfk = p2Data.layout && p2Data.layout.length === 3 && p2Data.layout.every(c => c === CARD_GRASS);
+  
+  return { p1IsAfk, p2IsAfk };
 }
 
 function applyStepLogic(player1Card, player2Card, player1Hp, player2Hp) {
@@ -388,15 +406,54 @@ function startPlay(match) {
     return;
   }
 
+  // Финализируем layouts и определяем AFK по финальному layout
+  const { p1IsAfk, p2IsAfk } = finalizeLayoutsAndAfk(match);
+  
   const p1Data = getPlayerData(match.sessions[0]);
   const p2Data = getPlayerData(match.sessions[1]);
   
-  // Проверка на оба AFK: оба должны быть wasAfkFilledThisRound === true
   if (p1Data && p2Data) {
-    const p1Afk = p1Data.wasAfkFilledThisRound === true;
-    const p2Afk = p2Data.wasAfkFilledThisRound === true;
-    const bothAfk = p1Afk && p2Afk;
+    // Обновляем индивидуальные AFK streak
+    const p1Sid = match.sessions[0];
+    const p2Sid = match.sessions[1];
     
+    if (p1IsAfk) {
+      const currentStreak = match.afkStreakBySid.get(p1Sid) || 0;
+      match.afkStreakBySid.set(p1Sid, currentStreak + 1);
+    } else {
+      match.afkStreakBySid.set(p1Sid, 0);
+    }
+    
+    if (p2IsAfk) {
+      const currentStreak = match.afkStreakBySid.get(p2Sid) || 0;
+      match.afkStreakBySid.set(p2Sid, currentStreak + 1);
+    } else {
+      match.afkStreakBySid.set(p2Sid, 0);
+    }
+    
+    const p1Streak = match.afkStreakBySid.get(p1Sid) || 0;
+    const p2Streak = match.afkStreakBySid.get(p2Sid) || 0;
+    
+    // Логируем статус AFK
+    log(`[AFK_STATUS] match=${match.id} p1=${p1Sid} afk=${p1IsAfk} streak=${p1Streak} layout=${JSON.stringify(p1Data.layout)} | p2=${p2Sid} afk=${p2IsAfk} streak=${p2Streak} layout=${JSON.stringify(p2Data.layout)}`);
+    
+    // Проверка на forfeit одного AFK игрока
+    if (p1Streak >= AFK_FORFEIT_ROUNDS && p2Streak < AFK_FORFEIT_ROUNDS) {
+      // P1 AFK, P2 активен - P2 побеждает
+      log(`[AFK_FORFEIT] match=${match.id} loser=${p1Sid} winner=${p2Sid}`);
+      endMatchAfkForfeit(match, p1Sid, p2Sid);
+      return;
+    }
+    
+    if (p2Streak >= AFK_FORFEIT_ROUNDS && p1Streak < AFK_FORFEIT_ROUNDS) {
+      // P2 AFK, P1 активен - P1 побеждает
+      log(`[AFK_FORFEIT] match=${match.id} loser=${p2Sid} winner=${p1Sid}`);
+      endMatchAfkForfeit(match, p2Sid, p1Sid);
+      return;
+    }
+    
+    // Проверка на оба AFK (burn)
+    const bothAfk = p1IsAfk && p2IsAfk;
     if (bothAfk) {
       match.bothAfkStreak++;
       
@@ -495,14 +552,7 @@ function startPlay(match) {
   
   log(`[WATCHDOG_START] match=${match.id} timeout=${PLAY_STEP_TIMEOUT_MS}ms`);
   
-  // Если игроки не подтвердили, заполняем AFK расклады
-  // fillAfkLayout сам устанавливает wasAfkFilledThisRound правильно
-  if (!p1Data.layout || !p1Data.confirmed) {
-    fillAfkLayout(p1Data, match.id);
-  }
-  if (!p2Data.layout || !p2Data.confirmed) {
-    fillAfkLayout(p2Data, match.id);
-  }
+  // Layouts уже финализированы в finalizeLayoutsAndAfk выше
 
   // Логируем начало раунда и финальные layouts
   log(`[PLAY] match=${match.id} round=${match.roundIndex} sudden=${match.suddenDeath}`);
@@ -780,11 +830,9 @@ function startPrepPhase(match) {
   p1Data.confirmed = false;
   p1Data.layout = null;
   p1Data.draftLayout = [null, null, null];
-  p1Data.wasAfkFilledThisRound = false;
   p2Data.confirmed = false;
   p2Data.layout = null;
   p2Data.draftLayout = [null, null, null];
-  p2Data.wasAfkFilledThisRound = false;
 
   const deadlineTs = Date.now() + PREP_TIME_MS;
   match.prepDeadline = deadlineTs;
@@ -1448,7 +1496,6 @@ io.on('connection', (socket) => {
         confirmed: false,
         layout: null,
         draftLayout: [null, null, null],
-        wasAfkFilledThisRound: false,
         matchId: null
       };
       players.set(sessionId, playerData);
