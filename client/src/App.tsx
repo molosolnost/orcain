@@ -66,8 +66,11 @@ function App() {
         setConnected(false);
         setTokens(null);
         setIsSearching(false);
-      } else if (isSearching) {
-        setIsSearching(false);
+      } else {
+        // Другие ошибки (например, self-match)
+        if (isSearching) {
+          setIsSearching(false);
+        }
         alert(payload.message);
       }
     });

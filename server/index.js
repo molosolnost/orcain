@@ -1599,13 +1599,27 @@ io.on('connection', (socket) => {
       const player2Socket = s2SocketId ? io.sockets.sockets.get(s2SocketId) : null;
 
       if (player1Socket && player2Socket) {
+        // Проверка на self-match: один accountId не может играть против себя
+        const acc1AccountId = getAccountIdBySessionId(s1SessionId);
+        const acc2AccountId = getAccountIdBySessionId(s2SessionId);
+        
+        if (acc1AccountId && acc2AccountId && acc1AccountId === acc2AccountId) {
+          // Блокируем self-match
+          log(`[SELF_MATCH_BLOCK] acc=${acc1AccountId} s1=${s1SessionId} s2=${s2SessionId}`);
+          
+          // Отправляем ошибку обоим игрокам
+          player1Socket.emit('error_msg', { message: 'You cannot fight yourself' });
+          player2Socket.emit('error_msg', { message: 'You cannot fight yourself' });
+          
+          // Оба уже удалены из очереди через shift(), ничего дополнительно делать не нужно
+          return;
+        }
+        
         const match = createMatch(player1Socket, player2Socket);
 
         const p1Data = getPlayerData(s1SessionId);
         const p2Data = getPlayerData(s2SessionId);
         
-        const acc1AccountId = getAccountIdBySessionId(s1SessionId);
-        const acc2AccountId = getAccountIdBySessionId(s2SessionId);
         const acc1Tokens = acc1AccountId ? (db.getTokens(acc1AccountId) !== null ? db.getTokens(acc1AccountId) : START_TOKENS) : START_TOKENS;
         const acc2Tokens = acc2AccountId ? (db.getTokens(acc2AccountId) !== null ? db.getTokens(acc2AccountId) : START_TOKENS) : START_TOKENS;
 
