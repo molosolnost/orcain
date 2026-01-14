@@ -67,6 +67,8 @@ function App() {
                 errorMessage = text || `Server error ${response.status}`;
               }
               
+              setIsTelegramAuthPending(false);
+              setTelegramAuthError(errorMessage);
               throw new Error(errorMessage);
             }
             return response.json();
@@ -93,6 +95,7 @@ function App() {
           .catch((error) => {
             console.error('[AUTH_TG_FAIL]', 'network error', error);
             setIsTelegramAuthPending(false);
+            setTelegramAuthError(error.message || 'Failed to authenticate with Telegram');
             // НЕ молча уходим в guest - показываем ошибку
             // Но все равно fallback к guest для возможности продолжить
             alert(error.message || 'Failed to authenticate with Telegram. Using guest mode.');
