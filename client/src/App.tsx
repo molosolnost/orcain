@@ -5,7 +5,6 @@ import type { MatchEndPayload, PrepStartPayload } from './net/types';
 import Login from './screens/Login';
 import Menu from './screens/Menu';
 import Battle from './screens/Battle';
-import Onboarding from './screens/Onboarding';
 import './App.css';
 
 type Screen = 'login' | 'menu' | 'battle';
@@ -20,8 +19,6 @@ function App() {
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [lastPrepStart, setLastPrepStart] = useState<PrepStartPayload | null>(null);
   const [isTelegramAuthPending, setIsTelegramAuthPending] = useState(false);
-  const [hasTelegramWebApp, setHasTelegramWebApp] = useState(false);
-  const [hasTelegramInitData, setHasTelegramInitData] = useState(false);
   const [telegramAuthError, setTelegramAuthError] = useState<string | null>(null);
   const [nickname, setNickname] = useState<string | null>(null);
 
@@ -44,6 +41,10 @@ function App() {
       
       // Проверяем initData для автологина
       const initData = tg.initData;
+<<<<<<< HEAD
+=======
+      const hasInitData = typeof initData === 'string' && initData.trim().length > 0;
+>>>>>>> 45af369 (Fix: Vercel build (remove unused vars in App.tsx))
       
       if (initData && typeof initData === 'string' && initData.trim().length > 0) {
         // Автологин через Telegram
@@ -245,10 +246,6 @@ function App() {
     // После guest login тоже нужно проверить nickname через hello_ok
   };
 
-  const handleNicknameSet = (newNickname: string) => {
-    setNickname(newNickname);
-    setScreen('menu');
-  };
 
   const handleStartBattle = () => {
     setIsSearching(true);
@@ -273,6 +270,21 @@ function App() {
     return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Authenticating...</div>;
   }
 
+<<<<<<< HEAD
+=======
+  // Показываем ошибку Telegram auth если есть
+  if (!authToken && telegramAuthError) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: '12px' }}>
+        <div>Telegram authentication failed.</div>
+        <div style={{ fontSize: '12px', color: '#888' }}>
+          {telegramAuthError}
+        </div>
+      </div>
+    );
+  }
+
+>>>>>>> 45af369 (Fix: Vercel build (remove unused vars in App.tsx))
   if (!connected) {
     return <div>Connecting...</div>;
   }
