@@ -19,10 +19,50 @@ function App() {
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [lastPrepStart, setLastPrepStart] = useState<PrepStartPayload | null>(null);
 
-  // Инициализация: читаем authToken из localStorage при старте
+  // Инициализация: проверяем Telegram Mini App или читаем authToken из localStorage
   useEffect(() => {
-    const token = getAuthToken();
-    setAuthToken(token);
+    // Проверяем Telegram Mini App
+    const tgWebApp = (window as any).Telegram?.WebApp;
+    if (tgWebApp?.initData) {
+      const API_BASE = import.meta.env.VITE_API_BASE || 'https://orcain-server.onrender.com';
+      
+      fetch(`${API_BASE}/auth/telegram`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ initData: tgWebApp.initData }),
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({ error: 'Failed to authenticate' }));
+            throw new Error(error.error || 'Failed to authenticate with Telegram');
+          }
+          return response.json();
+        })
+        .then((data) => {
+          const { accountId, authToken, tokens } = data;
+          
+          // Сохраняем authToken и accountId в localStorage
+          localStorage.setItem('orcain_authToken', authToken);
+          localStorage.setItem('orcain_accountId', accountId);
+          
+          setAuthToken(authToken);
+          setTokens(tokens);
+          setScreen('menu');
+        })
+        .catch((error) => {
+          console.error('Telegram auth error:', error);
+          alert(error.message || 'Failed to authenticate with Telegram');
+          // Fallback к guest auth
+          const token = getAuthToken();
+          setAuthToken(token);
+        });
+    } else {
+      // Fallback: читаем authToken из localStorage (guest)
+      const token = getAuthToken();
+      setAuthToken(token);
+    }
   }, []);
 
   // Подключение к socket и отправка hello при наличии authToken

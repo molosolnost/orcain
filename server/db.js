@@ -21,6 +21,13 @@ db.exec(`
   )
 `);
 
+// Добавляем колонку telegramUserId если её нет (миграция)
+try {
+  db.exec('ALTER TABLE accounts ADD COLUMN telegramUserId INTEGER UNIQUE');
+} catch (e) {
+  // Колонка уже существует, игнорируем ошибку
+}
+
 // Функции для работы с аккаунтами
 function createGuestAccount() {
   const accountId = require('crypto').randomUUID();
@@ -28,9 +35,30 @@ function createGuestAccount() {
   const tokens = 10;
   const createdAt = Date.now();
 
-  const stmt = db.prepare('INSERT INTO accounts (accountId, authToken, tokens, createdAt) VALUES (?, ?, ?, ?)');
+  const stmt = db.prepare('INSERT INTO accounts (accountId, authToken, tokens, createdAt, telegramUserId) VALUES (?, ?, ?, ?, NULL)');
   stmt.run(accountId, authToken, tokens, createdAt);
 
+  return { accountId, authToken, tokens };
+}
+
+function getOrCreateTelegramAccount(telegramUserId) {
+  // Ищем существующий аккаунт по telegramUserId
+  const findStmt = db.prepare('SELECT accountId, authToken, tokens FROM accounts WHERE telegramUserId = ?');
+  const existing = findStmt.get(telegramUserId);
+  
+  if (existing) {
+    return { accountId: existing.accountId, authToken: existing.authToken, tokens: existing.tokens };
+  }
+  
+  // Создаём новый аккаунт
+  const accountId = require('crypto').randomUUID();
+  const authToken = require('crypto').randomUUID();
+  const tokens = 10;
+  const createdAt = Date.now();
+  
+  const insertStmt = db.prepare('INSERT INTO accounts (accountId, authToken, tokens, createdAt, telegramUserId) VALUES (?, ?, ?, ?, ?)');
+  insertStmt.run(accountId, authToken, tokens, createdAt, telegramUserId);
+  
   return { accountId, authToken, tokens };
 }
 
@@ -76,6 +104,7 @@ function addTokens(accountId, amount) {
 
 module.exports = {
   createGuestAccount,
+  getOrCreateTelegramAccount,
   getAccountByAuthToken,
   getAccountById,
   getTokens,
