@@ -292,25 +292,25 @@ function generateRandomLayout() {
 }
 
 function fillAfkLayout(playerData, matchId = null) {
-  // Используем draftLayout если он содержит хотя бы одну карту из CARDS
+  // Проверяем draftLayout: если содержит хотя бы одну карту из CARDS
   const hasDraftCards = playerData.draftLayout && playerData.draftLayout.some(card => card && CARDS.includes(card));
   
   if (hasDraftCards) {
-    // Заполняем null позиции в draftLayout на GRASS
+    // Игрок отправил draft - заполняем null позиции в draftLayout на GRASS
     const finalLayout = [];
     for (let i = 0; i < 3; i++) {
       finalLayout[i] = playerData.draftLayout[i] || CARD_GRASS;
     }
     playerData.layout = finalLayout;
     playerData.confirmed = true;
-    playerData.wasAfkFilledThisRound = false; // Игрок не AFK, он хотя бы что-то делал
+    playerData.wasAfkFilledThisRound = false; // Игрок не AFK, он хотя бы что-то делал (отправил draft)
     const sessionId = playerData.matchId ? 'sessionId' : 'unknown';
     log(`[DRAFT_APPLY] match=${matchId || playerData.matchId || 'unknown'} sid=${sessionId} draft=${JSON.stringify(playerData.draftLayout)} final=${JSON.stringify(finalLayout)}`);
   } else {
-    // Вообще ничего не ставил - полный GRASS
+    // DraftLayout пустой (все null) - игрок вообще ничего не ставил
     playerData.layout = [CARD_GRASS, CARD_GRASS, CARD_GRASS];
     playerData.confirmed = true;
-    playerData.wasAfkFilledThisRound = true;
+    playerData.wasAfkFilledThisRound = true; // Игрок AFK - не отправил даже draft
   }
 }
 
@@ -390,9 +390,13 @@ function startPlay(match) {
   const p1Data = getPlayerData(match.sessions[0]);
   const p2Data = getPlayerData(match.sessions[1]);
   
-  // Проверка на оба AFK: если оба получили GRASS через AFK_FILL
+  // Проверка на оба AFK: оба должны быть wasAfkFilledThisRound === true
   if (p1Data && p2Data) {
-    const bothAfk = p1Data.wasAfkFilledThisRound && p2Data.wasAfkFilledThisRound;
+    const p1Afk = p1Data.wasAfkFilledThisRound === true;
+    const p2Afk = p2Data.wasAfkFilledThisRound === true;
+    const bothAfk = p1Afk && p2Afk;
+    
+    log(`[BOTH_AFK_CHECK] matchId=${match.id} p1Afk=${p1Afk} p2Afk=${p2Afk} streak=${match.bothAfkStreak}`);
     
     if (bothAfk) {
       match.bothAfkStreak++;
@@ -496,19 +500,14 @@ function startPlay(match) {
   log(`[WATCHDOG_START] match=${match.id} timeout=${PLAY_STEP_TIMEOUT_MS}ms`);
   
   // Если игроки не подтвердили, заполняем AFK расклады
+  // fillAfkLayout сам устанавливает wasAfkFilledThisRound правильно
   if (!p1Data.layout || !p1Data.confirmed) {
     fillAfkLayout(p1Data, match.id);
-    log(`[AFK_FILL] match=${match.id} player=${match.sessions[0]} layout=${JSON.stringify(p1Data.layout)}`);
-  } else {
-    // Если игрок confirmed, убеждаемся что wasAfkFilledThisRound = false
-    p1Data.wasAfkFilledThisRound = false;
+    log(`[AFK_FILL] match=${match.id} player=${match.sessions[0]} layout=${JSON.stringify(p1Data.layout)} wasAfk=${p1Data.wasAfkFilledThisRound}`);
   }
   if (!p2Data.layout || !p2Data.confirmed) {
     fillAfkLayout(p2Data, match.id);
-    log(`[AFK_FILL] match=${match.id} player=${match.sessions[1]} layout=${JSON.stringify(p2Data.layout)}`);
-  } else {
-    // Если игрок confirmed, убеждаемся что wasAfkFilledThisRound = false
-    p2Data.wasAfkFilledThisRound = false;
+    log(`[AFK_FILL] match=${match.id} player=${match.sessions[1]} layout=${JSON.stringify(p2Data.layout)} wasAfk=${p2Data.wasAfkFilledThisRound}`);
   }
 
   // Логируем начало раунда и финальные layouts
