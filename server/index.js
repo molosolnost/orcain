@@ -304,13 +304,11 @@ function fillAfkLayout(playerData, matchId = null) {
     playerData.layout = finalLayout;
     playerData.confirmed = true;
     playerData.wasAfkFilledThisRound = false; // Игрок не AFK, он хотя бы что-то делал (отправил draft)
-    log(`[DRAFT_APPLY] matchId=${matchId || playerData.matchId || 'unknown'} sid=sessionId draft=${JSON.stringify(playerData.draftLayout)} final=${JSON.stringify(finalLayout)} wasAfk=false`);
   } else {
     // DraftLayout пустой (все null) - игрок вообще ничего не ставил
     playerData.layout = [CARD_GRASS, CARD_GRASS, CARD_GRASS];
     playerData.confirmed = true;
     playerData.wasAfkFilledThisRound = true; // Игрок AFK - не отправил даже draft
-    log(`[DRAFT_APPLY] matchId=${matchId || playerData.matchId || 'unknown'} sid=sessionId draft=${JSON.stringify(playerData.draftLayout)} final=${JSON.stringify([CARD_GRASS, CARD_GRASS, CARD_GRASS])} wasAfk=true`);
   }
 }
 
@@ -396,11 +394,8 @@ function startPlay(match) {
     const p2Afk = p2Data.wasAfkFilledThisRound === true;
     const bothAfk = p1Afk && p2Afk;
     
-    log(`[BOTH_AFK_CHECK] matchId=${match.id} p1Afk=${p1Afk} p2Afk=${p2Afk} streak=${match.bothAfkStreak} p1Draft=${JSON.stringify(p1Data.draftLayout)} p2Draft=${JSON.stringify(p2Data.draftLayout)}`);
-    
     if (bothAfk) {
       match.bothAfkStreak++;
-      log(`[BOTH_AFK] match=${match.id} streak=${match.bothAfkStreak}`);
       
       if (match.bothAfkStreak >= BOTH_AFK_ROUNDS_TO_BURN) {
         // Завершаем матч с сгоранием pot
@@ -1189,6 +1184,7 @@ function endMatch(match, reason = 'normal') {
     
     // Единый payload для обоих игроков с winnerId/loserId
     return {
+      matchId: match.id,
       winner: isWinner ? 'YOU' : 'OPPONENT',
       winnerId: winnerSessionId,
       loserId: loserSessionId,
@@ -1509,40 +1505,32 @@ io.on('connection', (socket) => {
   socket.on('layout_draft', ({ matchId, layout }) => {
     const sessionId = getSessionIdBySocket(socket.id);
     
-    log(`[DRAFT_RECV] matchId=${matchId || 'none'} sid=${socket.id} layout=${JSON.stringify(layout)}`);
-    
     if (!sessionId) {
-      log(`[DRAFT_REJECT] matchId=${matchId || 'none'} sid=${socket.id} reason=no_sessionId`);
       return;
     }
     
     // Находим матч строго по matchId
     if (!matchId) {
-      log(`[DRAFT_REJECT] matchId=${matchId || 'none'} sid=${socket.id} reason=no_matchId`);
       return;
     }
     
     const match = matchesById.get(matchId);
     if (!match) {
-      log(`[DRAFT_REJECT] matchId=${matchId} sid=${socket.id} reason=match_not_found`);
       return;
     }
     
     // Проверяем состояние матча
     if (match.state !== 'prep') {
-      log(`[DRAFT_REJECT] matchId=${matchId} sid=${socket.id} reason=wrong_state state=${match.state}`);
       return;
     }
 
     const playerData = getPlayerData(sessionId);
     if (!playerData || playerData.confirmed) {
-      log(`[DRAFT_REJECT] matchId=${matchId} sid=${socket.id} reason=no_player_or_confirmed confirmed=${playerData?.confirmed || 'no_player'}`);
       return;
     }
 
     // Валидация draft layout
     if (!layout || !Array.isArray(layout) || layout.length !== 3) {
-      log(`[DRAFT_REJECT] matchId=${matchId} sid=${socket.id} reason=invalid_layout layout=${JSON.stringify(layout)}`);
       return;
     }
 
@@ -1553,13 +1541,11 @@ io.on('connection', (socket) => {
     );
 
     if (!validDraft) {
-      log(`[DRAFT_REJECT] matchId=${matchId} sid=${socket.id} reason=invalid_cards layout=${JSON.stringify(layout)}`);
       return;
     }
 
     // Сохраняем draftLayout
     playerData.draftLayout = [...layout];
-    log(`[DRAFT_SAVE] matchId=${matchId} sid=${socket.id} draft=${JSON.stringify(playerData.draftLayout)}`);
   });
 
   socket.on('layout_confirm', (data) => {

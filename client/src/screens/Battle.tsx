@@ -207,7 +207,6 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       
       // Отправляем только если длина 3 и известен currentMatchId
       if (layoutWithNulls.length === 3 && currentMatchId) {
-        console.log("[DRAFT_SEND]", layoutWithNulls);
         socketManager.layoutDraft(currentMatchId, layoutWithNulls);
       }
       
