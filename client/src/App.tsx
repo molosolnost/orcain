@@ -35,8 +35,18 @@ function App() {
       })
         .then(async (response) => {
           if (!response.ok) {
-            const error = await response.json().catch(() => ({ error: 'Failed to authenticate' }));
-            throw new Error(error.error || 'Failed to authenticate with Telegram');
+            const text = await response.text();
+            console.error('[AUTH_TG_FAIL]', response.status, text);
+            
+            let errorMessage = 'Failed to authenticate with Telegram';
+            try {
+              const errorJson = JSON.parse(text);
+              errorMessage = errorJson.message || errorJson.error || `Server error ${response.status}`;
+            } catch (e) {
+              errorMessage = text || `Server error ${response.status}`;
+            }
+            
+            throw new Error(errorMessage);
           }
           return response.json();
         })
@@ -52,7 +62,7 @@ function App() {
           setScreen('menu');
         })
         .catch((error) => {
-          console.error('Telegram auth error:', error);
+          console.error('[AUTH_TG_FAIL]', 'network error', error);
           alert(error.message || 'Failed to authenticate with Telegram');
           // Fallback к guest auth
           const token = getAuthToken();

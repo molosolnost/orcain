@@ -1796,7 +1796,11 @@ app.post('/auth/guest', (req, res) => {
       tokens: account.tokens
     });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to create guest account' });
+    log(`[AUTH_GUEST_FAIL] reason=exception error=${error.message}`);
+    res.status(500).json({ 
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to create guest account'
+    });
   }
 });
 
@@ -1806,13 +1810,19 @@ app.post('/auth/telegram', (req, res) => {
     
     if (!initData) {
       log(`[AUTH_TG_FAIL] reason=no_initData`);
-      return res.status(400).json({ error: 'Missing initData' });
+      return res.status(400).json({ 
+        error: 'MISSING_INITDATA',
+        message: 'Missing initData'
+      });
     }
     
     const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
     if (!TELEGRAM_BOT_TOKEN) {
       log(`[AUTH_TG_FAIL] reason=no_bot_token`);
-      return res.status(500).json({ error: 'Telegram auth not configured' });
+      return res.status(500).json({ 
+        error: 'TELEGRAM_NOT_CONFIGURED',
+        message: 'Telegram auth not configured'
+      });
     }
     
     // Парсим initData как querystring
@@ -1820,7 +1830,10 @@ app.post('/auth/telegram', (req, res) => {
     const hash = params.get('hash');
     if (!hash) {
       log(`[AUTH_TG_FAIL] reason=no_hash`);
-      return res.status(400).json({ error: 'Invalid initData: missing hash' });
+      return res.status(400).json({ 
+        error: 'INVALID_INITDATA',
+        message: 'Invalid initData: missing hash'
+      });
     }
     
     // Собираем data_check_string (key=value по сортировке, hash не включаем)
@@ -1842,14 +1855,20 @@ app.post('/auth/telegram', (req, res) => {
     // Timing-safe сравнение
     if (!crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(calculatedHash, 'hex'))) {
       log(`[AUTH_TG_FAIL] reason=invalid_hash`);
-      return res.status(401).json({ error: 'Invalid initData signature' });
+      return res.status(401).json({ 
+        error: 'INVALID_SIGNATURE',
+        message: 'Invalid initData signature'
+      });
     }
     
     // Извлекаем user из поля user (JSON строка)
     const userStr = params.get('user');
     if (!userStr) {
       log(`[AUTH_TG_FAIL] reason=no_user`);
-      return res.status(400).json({ error: 'Invalid initData: missing user' });
+      return res.status(400).json({ 
+        error: 'MISSING_USER',
+        message: 'Invalid initData: missing user'
+      });
     }
     
     let user;
@@ -1857,12 +1876,18 @@ app.post('/auth/telegram', (req, res) => {
       user = JSON.parse(userStr);
     } catch (e) {
       log(`[AUTH_TG_FAIL] reason=invalid_user_json`);
-      return res.status(400).json({ error: 'Invalid initData: invalid user JSON' });
+      return res.status(400).json({ 
+        error: 'INVALID_USER_JSON',
+        message: 'Invalid initData: invalid user JSON'
+      });
     }
     
     if (!user.id) {
       log(`[AUTH_TG_FAIL] reason=no_user_id`);
-      return res.status(400).json({ error: 'Invalid initData: missing user.id' });
+      return res.status(400).json({ 
+        error: 'MISSING_USER_ID',
+        message: 'Invalid initData: missing user.id'
+      });
     }
     
     // Находим/создаём аккаунт по telegram_user_id
@@ -1877,7 +1902,10 @@ app.post('/auth/telegram', (req, res) => {
     });
   } catch (error) {
     log(`[AUTH_TG_FAIL] reason=exception error=${error.message}`);
-    res.status(500).json({ error: 'Failed to authenticate with Telegram' });
+    res.status(500).json({ 
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to authenticate with Telegram'
+    });
   }
 });
 
