@@ -1796,6 +1796,7 @@ app.post('/auth/guest', (req, res) => {
       tokens: account.tokens
     });
   } catch (error) {
+    console.error('[AUTH_GUEST_FAIL]', error);
     log(`[AUTH_GUEST_FAIL] reason=exception error=${error.message}`);
     res.status(500).json({ 
       error: 'INTERNAL_ERROR',
@@ -1901,6 +1902,7 @@ app.post('/auth/telegram', (req, res) => {
       tokens: account.tokens
     });
   } catch (error) {
+    console.error('[AUTH_TG_FAIL]', 'exception', error);
     log(`[AUTH_TG_FAIL] reason=exception error=${error.message}`);
     res.status(500).json({ 
       error: 'INTERNAL_ERROR',
