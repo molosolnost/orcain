@@ -21,9 +21,18 @@ function App() {
 
   // Инициализация: проверяем Telegram Mini App или читаем authToken из localStorage
   useEffect(() => {
-    // Проверяем Telegram Mini App
-    const tgWebApp = (window as any).Telegram?.WebApp;
-    if (tgWebApp?.initData) {
+    const tg = (window as any).Telegram?.WebApp;
+    
+    // Инициализируем Telegram WebApp SDK
+    if (tg) {
+      tg.ready();
+      tg.expand?.();
+    }
+    
+    // Проверяем initData для авторизации
+    const initData = tg?.initData;
+    
+    if (initData && initData.trim() !== '') {
       const API_BASE = import.meta.env.VITE_API_BASE || 'https://orcain-server.onrender.com';
       
       fetch(`${API_BASE}/auth/telegram`, {
@@ -31,7 +40,7 @@ function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ initData: tgWebApp.initData }),
+        body: JSON.stringify({ initData }),
       })
         .then(async (response) => {
           if (!response.ok) {
