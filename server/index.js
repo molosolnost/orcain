@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const crypto = require('crypto');
 const db = require('./db');
 
 const app = express();
@@ -1426,6 +1427,113 @@ app.post('/auth/guest', (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to create guest account' });
+  }
+});
+
+app.post('/auth/telegram', (req, res) => {
+  console.log('[auth/telegram] request received');
+  
+  try {
+    const { initData } = req.body;
+    
+    if (!initData) {
+      console.log('[auth/telegram] missing initData');
+      return res.status(400).json({ 
+        error: 'MISSING_INITDATA',
+        message: 'Missing initData'
+      });
+    }
+    
+    const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+    if (!TELEGRAM_BOT_TOKEN) {
+      console.log('[auth/telegram] TELEGRAM_BOT_TOKEN not configured');
+      return res.status(500).json({ 
+        error: 'TELEGRAM_NOT_CONFIGURED',
+        message: 'Telegram auth not configured'
+      });
+    }
+    
+    // Парсим initData как querystring
+    const params = new URLSearchParams(initData);
+    const hash = params.get('hash');
+    if (!hash) {
+      console.log('[auth/telegram] missing hash in initData');
+      return res.status(400).json({ 
+        error: 'INVALID_INITDATA',
+        message: 'Invalid initData: missing hash'
+      });
+    }
+    
+    // Собираем data_check_string (key=value по сортировке, hash не включаем)
+    const dataCheckPairs = [];
+    for (const [key, value] of params.entries()) {
+      if (key !== 'hash') {
+        dataCheckPairs.push(`${key}=${value}`);
+      }
+    }
+    dataCheckPairs.sort();
+    const dataCheckString = dataCheckPairs.join('\n');
+    
+    // Вычисляем secret_key = HMAC_SHA256("WebAppData", bot_token)
+    const secretKey = crypto.createHmac('sha256', 'WebAppData').update(TELEGRAM_BOT_TOKEN).digest();
+    
+    // Вычисляем calculated_hash = HMAC_SHA256(secret_key, data_check_string) hex
+    const calculatedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+    
+    // Timing-safe сравнение
+    if (!crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(calculatedHash, 'hex'))) {
+      console.log('[auth/telegram] HMAC validation failed');
+      return res.status(401).json({ 
+        error: 'INVALID_SIGNATURE',
+        message: 'Invalid initData signature'
+      });
+    }
+    
+    // Извлекаем user из поля user (JSON строка)
+    const userStr = params.get('user');
+    if (!userStr) {
+      console.log('[auth/telegram] missing user in initData');
+      return res.status(400).json({ 
+        error: 'MISSING_USER',
+        message: 'Invalid initData: missing user'
+      });
+    }
+    
+    let user;
+    try {
+      user = JSON.parse(userStr);
+    } catch (e) {
+      console.log('[auth/telegram] invalid user JSON:', e.message);
+      return res.status(400).json({ 
+        error: 'INVALID_USER_JSON',
+        message: 'Invalid initData: invalid user JSON'
+      });
+    }
+    
+    if (!user.id) {
+      console.log('[auth/telegram] missing user.id');
+      return res.status(400).json({ 
+        error: 'MISSING_USER_ID',
+        message: 'Invalid initData: missing user.id'
+      });
+    }
+    
+    // Находим/создаём аккаунт по telegram_user_id
+    const account = db.getOrCreateTelegramAccount(user.id);
+    
+    console.log('[auth/telegram] success, tgId=', user.id, 'acc=', account.accountId);
+    
+    res.json({
+      accountId: account.accountId,
+      authToken: account.authToken,
+      tokens: account.tokens
+    });
+  } catch (error) {
+    console.error('[auth/telegram] exception:', error);
+    res.status(500).json({ 
+      error: 'INTERNAL_ERROR',
+      message: 'Failed to authenticate with Telegram'
+    });
   }
 });
 
