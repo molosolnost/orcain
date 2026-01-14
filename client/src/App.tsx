@@ -18,17 +18,88 @@ function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [lastPrepStart, setLastPrepStart] = useState<PrepStartPayload | null>(null);
+  const [isTelegramAuthPending, setIsTelegramAuthPending] = useState(false);
 
-  // Инициализация: читаем authToken из localStorage при старте
+  // Инициализация: проверяем Telegram Mini App или читаем authToken из localStorage
   useEffect(() => {
+    // Безопасная инициализация Telegram WebApp
     const tg = (window as any).Telegram?.WebApp;
+    
     if (tg) {
-      tg.expand();
-      tg.disableVerticalSwipes?.();
+      // Обязательно вызываем ready() перед любыми действиями
+      tg.ready();
+      
+      // Безопасные вызовы только если методы существуют
+      if (typeof tg.expand === 'function') {
+        tg.expand();
+      }
+      if (typeof tg.disableVerticalSwipes === 'function') {
+        tg.disableVerticalSwipes();
+      }
+      
+      // Проверяем initData для автологина
+      const initData = tg.initData;
+      
+      if (initData && typeof initData === 'string' && initData.trim().length > 0) {
+        // Автологин через Telegram
+        setIsTelegramAuthPending(true);
+        const API_BASE = import.meta.env.VITE_API_BASE || 'https://orcain-server.onrender.com';
+        
+        fetch(`${API_BASE}/auth/telegram`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ initData }),
+        })
+          .then(async (response) => {
+            if (!response.ok) {
+              const text = await response.text();
+              console.error('[AUTH_TG_FAIL]', response.status, text);
+              
+              let errorMessage = 'Failed to authenticate with Telegram';
+              try {
+                const errorJson = JSON.parse(text);
+                errorMessage = errorJson.message || errorJson.error || `Server error ${response.status}`;
+              } catch (e) {
+                errorMessage = text || `Server error ${response.status}`;
+              }
+              
+              throw new Error(errorMessage);
+            }
+            return response.json();
+          })
+          .then((data) => {
+            const { accountId, authToken, tokens } = data;
+            
+            // Сохраняем authToken и accountId в localStorage
+            localStorage.setItem('orcain_authToken', authToken);
+            localStorage.setItem('orcain_accountId', accountId);
+            
+            setAuthToken(authToken);
+            setTokens(tokens);
+            setScreen('menu');
+            setIsTelegramAuthPending(false);
+          })
+          .catch((error) => {
+            console.error('[AUTH_TG_FAIL]', 'network error', error);
+            setIsTelegramAuthPending(false);
+            // НЕ молча уходим в guest - показываем ошибку
+            // Но все равно fallback к guest для возможности продолжить
+            alert(error.message || 'Failed to authenticate with Telegram. Using guest mode.');
+            const token = getAuthToken();
+            setAuthToken(token);
+          });
+      } else {
+        // Нет initData - fallback к guest auth
+        const token = getAuthToken();
+        setAuthToken(token);
+      }
+    } else {
+      // Telegram WebApp не доступен - fallback к guest auth
+      const token = getAuthToken();
+      setAuthToken(token);
     }
-
-    const token = getAuthToken();
-    setAuthToken(token);
   }, []);
 
   // Подключение к socket и отправка hello при наличии authToken
@@ -166,8 +237,14 @@ function App() {
     setScreen('menu');
   };
 
-  if (screen === 'login' || !authToken) {
+  // Не показываем Login экран если идет автологин через Telegram
+  if ((screen === 'login' || !authToken) && !isTelegramAuthPending) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
+  
+  // Показываем загрузку во время автологина
+  if (isTelegramAuthPending) {
+    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Authenticating...</div>;
   }
 
   if (!connected) {
