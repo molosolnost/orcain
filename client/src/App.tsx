@@ -19,11 +19,16 @@ function App() {
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [lastPrepStart, setLastPrepStart] = useState<PrepStartPayload | null>(null);
   const [isTelegramAuthPending, setIsTelegramAuthPending] = useState(false);
+  const [hasTelegramWebApp, setHasTelegramWebApp] = useState(false);
+  const [hasTelegramInitData, setHasTelegramInitData] = useState(false);
+  const [telegramAuthError, setTelegramAuthError] = useState<string | null>(null);
 
   // Инициализация: проверяем Telegram Mini App или читаем authToken из localStorage
   useEffect(() => {
     // Безопасная инициализация Telegram WebApp
     const tg = (window as any).Telegram?.WebApp;
+    const hasTg = Boolean(tg);
+    setHasTelegramWebApp(hasTg);
     
     if (tg) {
       // Обязательно вызываем ready() перед любыми действиями
@@ -39,13 +44,25 @@ function App() {
       
       // Проверяем initData для автологина
       const initData = tg.initData;
+      const hasInitData = typeof initData === 'string' && initData.trim().length > 0;
+      setHasTelegramInitData(hasInitData);
       
-      if (initData && typeof initData === 'string' && initData.trim().length > 0) {
+      if (hasInitData) {
         // Автологин через Telegram
         setIsTelegramAuthPending(true);
-        const API_BASE = import.meta.env.VITE_API_BASE || 'https://orcain-server.onrender.com';
+        setTelegramAuthError(null);
+        const API_BASE = import.meta.env.VITE_API_BASE;
+
+        if (!API_BASE || !/^https?:\/\//.test(API_BASE)) {
+          console.error('VITE_API_BASE is missing or invalid');
+          setIsTelegramAuthPending(false);
+          setTelegramAuthError('VITE_API_BASE is missing or invalid');
+          return;
+        }
+
+        const authUrl = API_BASE.replace(/\/$/, '') + '/auth/telegram';
         
-        fetch(`${API_BASE}/auth/telegram`, {
+        fetch(authUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -84,11 +101,7 @@ function App() {
           .catch((error) => {
             console.error('[AUTH_TG_FAIL]', 'network error', error);
             setIsTelegramAuthPending(false);
-            // НЕ молча уходим в guest - показываем ошибку
-            // Но все равно fallback к guest для возможности продолжить
-            alert(error.message || 'Failed to authenticate with Telegram. Using guest mode.');
-            const token = getAuthToken();
-            setAuthToken(token);
+            setTelegramAuthError(error.message || 'Failed to authenticate with Telegram');
           });
       } else {
         // Нет initData - fallback к guest auth
@@ -96,6 +109,7 @@ function App() {
         setAuthToken(token);
       }
     } else {
+      setHasTelegramInitData(false);
       // Telegram WebApp не доступен - fallback к guest auth
       const token = getAuthToken();
       setAuthToken(token);
@@ -238,13 +252,24 @@ function App() {
   };
 
   // Не показываем Login экран если идет автологин через Telegram
-  if ((screen === 'login' || !authToken) && !isTelegramAuthPending) {
+  if ((screen === 'login' || !authToken) && !isTelegramAuthPending && (!hasTelegramWebApp || !hasTelegramInitData)) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
   
   // Показываем загрузку во время автологина
   if (isTelegramAuthPending) {
     return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Authenticating...</div>;
+  }
+
+  if (!authToken && hasTelegramWebApp && hasTelegramInitData) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: '12px' }}>
+        <div>Telegram authentication failed.</div>
+        <div style={{ fontSize: '12px', color: '#888' }}>
+          {telegramAuthError || 'Please retry from Telegram.'}
+        </div>
+      </div>
+    );
   }
 
   if (!connected) {
