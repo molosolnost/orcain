@@ -454,22 +454,31 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
   // Общий компонент/функция renderCard
   const renderCard = (card: Card | null, mode: 'HAND' | 'SLOT' | 'BACK' | 'REVEAL', slotIndex?: number) => {
+    // Calculate card size based on mode - hand cards need to be smaller to fit 4 in a row
+    // Hand: 4 cards, padding 24px (12px*2), gaps 12px (4px*3) = (100vw - 24px - 12px) / 4
+    // Slots: 3 cards, padding 24px, gaps 12px (6px*2) = (100vw - 24px - 12px) / 3
+    const isHand = mode === 'HAND';
+    const cardWidth = isHand 
+      ? 'clamp(55px, calc((100vw - 36px) / 4), 75px)' // 4 cards: padding 24px + gaps 12px
+      : 'clamp(65px, calc((100vw - 36px) / 3), 85px)'; // 3 cards: padding 24px + gaps 12px
+    
     if (mode === 'BACK') {
       return (
         <div
           style={{
-            width: '100px',
-            height: '140px',
+            width: cardWidth,
+            aspectRatio: '3 / 4',
             border: '2px solid #333',
-            borderRadius: '12px',
+            borderRadius: '8px',
             backgroundColor: '#1a1a1a',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
             color: '#fff',
-            fontSize: '32px',
-            fontWeight: 'bold'
+            fontSize: 'clamp(20px, 4vw, 28px)',
+            fontWeight: 'bold',
+            flexShrink: 0
           }}
         >
           ?
@@ -482,21 +491,22 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
         return (
           <div
             style={{
-              width: '100px',
-              height: '140px',
+              width: cardWidth,
+              aspectRatio: '3 / 4',
               border: '2px dashed #999',
-              borderRadius: '12px',
-              backgroundColor: '#f9f9f9',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(255, 255, 255, 0.05)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               color: '#999',
-              fontSize: '12px',
+              fontSize: 'clamp(8px, 1.5vw, 10px)',
               textAlign: 'center',
-              padding: '8px'
+              padding: '4px',
+              flexShrink: 0
             }}
           >
-            Drop here
+            Drop
           </div>
         );
       }
@@ -509,10 +519,10 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     return (
       <div
         style={{
-          width: '100px',
-          height: '140px',
+          width: cardWidth,
+          aspectRatio: '3 / 4',
           border: `2px solid ${colors.border}`,
-          borderRadius: '12px',
+          borderRadius: '8px',
           backgroundColor: colors.bg,
           display: 'flex',
           flexDirection: 'column',
@@ -520,14 +530,15 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           justifyContent: 'center',
           boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
           color: colors.text,
-          padding: '8px',
-          textAlign: 'center'
+          padding: 'clamp(4px, 1vw, 6px)',
+          textAlign: 'center',
+          flexShrink: 0
         }}
       >
-        <div style={{ fontSize: '24px', marginBottom: '4px' }}>{colors.icon}</div>
-        <div style={{ fontSize: '12px', fontWeight: 'bold' }}>{cardName}</div>
+        <div style={{ fontSize: 'clamp(16px, 3vw, 20px)', marginBottom: '2px' }}>{colors.icon}</div>
+        <div style={{ fontSize: 'clamp(8px, 1.5vw, 10px)', fontWeight: 'bold', lineHeight: '1.1' }}>{cardName}</div>
         {mode === 'SLOT' && slotIndex !== undefined && (
-          <div style={{ fontSize: '10px', marginTop: '4px', color: '#666' }}>Step {slotIndex + 1}</div>
+          <div style={{ fontSize: 'clamp(7px, 1.2vw, 9px)', marginTop: '2px', color: '#666' }}>S{slotIndex + 1}</div>
         )}
       </div>
     );
@@ -535,99 +546,68 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
   return (
     <div style={{ 
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
       height: '100dvh',
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
       paddingTop: 'env(safe-area-inset-top, 0)',
       paddingBottom: 'env(safe-area-inset-bottom, 0)',
-      paddingLeft: 'clamp(8px, 2vw, 16px)',
-      paddingRight: 'clamp(8px, 2vw, 16px)',
-      maxWidth: '800px',
-      margin: '0 auto',
-      boxSizing: 'border-box',
-      position: 'relative'
+      backgroundColor: '#242424',
+      color: 'rgba(255, 255, 255, 0.87)',
+      zIndex: 1
     }}>
-      {/* TopBar: Round/Phase/Tokens/HP + nicknames - 15-20% высоты */}
-      <div style={{
-        flex: '0 0 auto',
-        minHeight: '15vh',
-        maxHeight: '20vh',
+      {/* Compact Top Bar */}
+      <div style={{ 
+        flexShrink: 0,
+        padding: '8px 12px',
         display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        paddingTop: 'clamp(4px, 1vh, 8px)',
-        paddingBottom: 'clamp(4px, 1vh, 8px)',
-        borderBottom: '1px solid #444'
+        flexWrap: 'wrap',
+        gap: '8px 16px',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        fontSize: '11px',
+        lineHeight: '1.2',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
       }}>
-        <div style={{ 
-          fontSize: 'clamp(14px, 3.5vw, 20px)', 
-          fontWeight: 'bold',
-          textAlign: 'center',
-          marginBottom: 'clamp(2px, 0.5vh, 4px)'
-        }}>
-          Round {roundIndex} {suddenDeath && '(SD)'}
-        </div>
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          fontSize: 'clamp(11px, 2.5vw, 14px)',
-          gap: 'clamp(8px, 2vw, 12px)',
-          marginBottom: 'clamp(4px, 1vh, 8px)'
-        }}>
-          <div>Tokens: {tokens === null ? '—' : tokens}</div>
-          <div>Pot: {pot}</div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 'bold' }}>R{roundIndex}{suddenDeath ? ' SD' : ''}</span>
+          <span style={{ opacity: 0.7 }}>{phase}</span>
           {phase === 'PREP' && deadlineTs !== null && computedSeconds !== null && (
-            <div>Time: {computedSeconds}s</div>
+            <span style={{ color: computedSeconds <= 5 ? '#ff6b6b' : '#fff' }}>{computedSeconds}s</span>
           )}
         </div>
-        {/* HP Display with Nicknames */}
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          fontSize: 'clamp(14px, 3.5vw, 20px)',
-          gap: 'clamp(8px, 2vw, 12px)'
-        }}>
-          <div style={{ flex: 1, textAlign: 'center' }}>
-            <div style={{ fontSize: 'clamp(10px, 2.5vw, 12px)', color: '#888', marginBottom: '2px' }}>
-              {yourNickname || 'You'}
-            </div>
-            <div>HP: {yourHp}</div>
-          </div>
-          <div style={{ flex: 1, textAlign: 'center' }}>
-            <div style={{ fontSize: 'clamp(10px, 2.5vw, 12px)', color: '#888', marginBottom: '2px' }}>
-              {oppNickname || 'Opponent'}
-            </div>
-            <div>HP: {oppHp}</div>
-          </div>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <span>💰{tokens === null ? '—' : tokens}</span>
+          <span>🏆{pot}</span>
+        </div>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', fontSize: '12px', fontWeight: 'bold' }}>
+          <span style={{ color: '#4caf50' }}>
+            {yourNickname ? `${yourNickname}: ` : 'You: '}{yourHp}
+          </span>
+          <span style={{ color: '#f44336' }}>
+            {oppNickname ? `${oppNickname}: ` : 'Opp: '}{oppHp}
+          </span>
         </div>
       </div>
 
-      {/* OpponentRow: 3 карты - 20-22% высоты */}
-      <div style={{
-        flex: '0 0 auto',
-        minHeight: '20vh',
-        maxHeight: '22vh',
+      {/* Opponent Cards Row */}
+      <div style={{ 
+        flexShrink: 0,
+        padding: '8px 12px',
         display: 'flex',
-        flexDirection: 'column',
+        gap: '6px',
         justifyContent: 'center',
-        paddingTop: 'clamp(4px, 1vh, 8px)',
-        paddingBottom: 'clamp(4px, 1vh, 8px)'
+        alignItems: 'center'
       }}>
-        <div style={{ 
-          fontSize: 'clamp(12px, 3vw, 16px)', 
-          marginBottom: 'clamp(4px, 1vh, 8px)',
-          textAlign: 'center'
-        }}>
+        <div style={{ fontSize: '10px', opacity: 0.7, marginRight: '4px' }}>
           {oppNickname || 'Opponent'}
         </div>
-        <div style={{ 
-          display: 'flex', 
-          gap: 'clamp(4px, 1.5vw, 8px)', 
-          justifyContent: 'center',
-          alignItems: 'center',
-          flex: 1
-        }}>
+        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
           {[0, 1, 2].map((index) => {
             const revealed = revealedCards[index];
             const isCurrentStep = currentStepIndex === index;
@@ -638,9 +618,9 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
               <div
                 key={index}
                 style={{
-                  border: isCurrentStep ? '3px solid #ff6b6b' : 'none',
-                  borderRadius: '12px',
-                  padding: isCurrentStep ? '2px' : '0'
+                  border: isCurrentStep ? '2px solid #ff6b6b' : 'none',
+                  borderRadius: '8px',
+                  padding: isCurrentStep ? '1px' : '0'
                 }}
               >
                 {shouldShowRevealed ? (
@@ -654,38 +634,26 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
         </div>
       </div>
 
-      {/* YourSlotsRow: 3 слота - 20-22% высоты */}
-      <div style={{
-        flex: '0 0 auto',
-        minHeight: '20vh',
-        maxHeight: '22vh',
+      {/* Your Slots Row */}
+      <div style={{ 
+        flexShrink: 0,
+        padding: '8px 12px',
         display: 'flex',
-        flexDirection: 'column',
+        gap: '6px',
         justifyContent: 'center',
-        paddingTop: 'clamp(4px, 1vh, 8px)',
-        paddingBottom: 'clamp(4px, 1vh, 8px)'
+        alignItems: 'center'
       }}>
-        <div style={{ 
-          fontSize: 'clamp(12px, 3vw, 16px)', 
-          marginBottom: 'clamp(4px, 1vh, 8px)',
-          textAlign: 'center'
-        }}>
-          {(yourNickname || 'Your')} Slots {state === 'prep' && !confirmed && <span style={{ fontSize: 'clamp(10px, 2.5vw, 12px)', color: '#888' }}>(drop here)</span>}
+        <div style={{ fontSize: '10px', opacity: 0.7, marginRight: '4px' }}>
+          {yourNickname || 'Your'} Slots{state === 'prep' && !confirmed && ' (drop)'}
         </div>
-        <div style={{ 
-          display: 'flex', 
-          gap: 'clamp(4px, 1.5vw, 8px)', 
-          justifyContent: 'center',
-          alignItems: 'center',
-          flex: 1
-        }}>
+        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
           {slots.map((card, index) => {
             const revealed = revealedCards[index];
             const displayCard = revealed ? revealed.yourCard : card;
             const isCurrentStep = currentStepIndex === index;
             const isHovered = dragState !== null && hoveredSlotIndex === index;
-            const hoverBorder = isHovered ? '3px solid #4caf50' : null;
-            const stepBorder = isCurrentStep ? '3px solid #ff6b6b' : 'none';
+            const hoverBorder = isHovered ? '2px solid #4caf50' : null;
+            const stepBorder = isCurrentStep ? '2px solid #ff6b6b' : 'none';
             const border = hoverBorder || stepBorder;
 
             return (
@@ -694,10 +662,10 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                 data-slot-index={index}
                 style={{
                   border,
-                  borderRadius: '12px',
-                  padding: border !== 'none' ? '2px' : '0',
+                  borderRadius: '8px',
+                  padding: border !== 'none' ? '1px' : '0',
                   cursor: canInteract ? 'pointer' : 'default',
-                  boxShadow: isHovered ? '0 0 0 3px rgba(76, 175, 80, 0.2)' : 'none'
+                  boxShadow: isHovered ? '0 0 0 2px rgba(76, 175, 80, 0.2)' : 'none'
                 }}
               >
                 {displayCard ? (
@@ -719,35 +687,38 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
         </div>
       </div>
       
-      {/* HandRow: карты в руке - 22-25% высоты */}
-      {state === 'prep' && !confirmed && (
-        <div style={{
-          flex: '0 0 auto',
-          minHeight: '22vh',
-          maxHeight: '25vh',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          paddingTop: 'clamp(4px, 1vh, 8px)',
-          paddingBottom: 'clamp(4px, 1vh, 8px)'
+      {/* Step Result Text - Compact */}
+      {currentStepIndex !== null && revealedCards[currentStepIndex] && (
+        <div style={{ 
+          flexShrink: 0,
+          textAlign: 'center', 
+          padding: '4px 12px',
+          fontSize: '11px',
+          opacity: 0.8
         }}>
+          Step {currentStepIndex + 1}: You {yourHp} / Opp {oppHp}
+        </div>
+      )}
+
+      {/* Hand Row - 4 cards in one row, flexible */}
+      <div style={{ 
+        flex: '1 1 auto',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'flex-end',
+        minHeight: 0,
+        overflow: 'hidden'
+      }}>
+        {state === 'prep' && !confirmed && (
           <div style={{ 
-            fontSize: 'clamp(12px, 3vw, 16px)', 
-            marginBottom: 'clamp(4px, 1vh, 8px)',
-            textAlign: 'center'
-          }}>
-            Your Cards
-          </div>
-          <div style={{ 
-            display: 'flex', 
-            gap: 'clamp(4px, 1.5vw, 8px)', 
+            flexShrink: 0,
+            padding: '8px 12px',
+            display: 'flex',
+            gap: '4px',
             justifyContent: 'center',
             alignItems: 'center',
-            flex: 1,
-            overflowX: 'auto',
-            overflowY: 'hidden',
-            WebkitOverflowScrolling: 'touch',
-            paddingBottom: '4px'
+            width: '100%',
+            boxSizing: 'border-box'
           }}>
             {availableCards.map((card) => {
               const inSlot = slots.includes(card);
@@ -765,7 +736,8 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                   style={{
                     opacity: inSlot ? 0.5 : isDraggingCard ? 0.25 : 1,
                     cursor: canInteract && !inSlot ? 'grab' : 'default',
-                    userSelect: 'none'
+                    userSelect: 'none',
+                    touchAction: 'none'
                   }}
                 >
                   {cardElement}
@@ -773,59 +745,46 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
               );
             })}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* ConfirmRow: кнопка - 8-10% высоты */}
-      <div style={{
-        flex: '0 0 auto',
-        minHeight: '8vh',
-        maxHeight: '10vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingTop: 'clamp(4px, 1vh, 8px)',
-        paddingBottom: 'clamp(4px, 1vh, 8px)',
-        borderTop: '1px solid #444'
-      }}>
-        {state === 'prep' && !confirmed ? (
+      {/* Confirm Button Row - Fixed at bottom */}
+      {state === 'prep' && !confirmed && (
+        <div style={{ 
+          flexShrink: 0,
+          padding: '8px 12px',
+          textAlign: 'center',
+          borderTop: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
           <button
             onClick={handleConfirm}
             disabled={slots.filter(c => c !== null).length !== 3}
             style={{
-              padding: 'clamp(8px, 2vh, 12px) clamp(16px, 4vw, 24px)',
-              fontSize: 'clamp(14px, 3.5vw, 18px)',
+              padding: '8px 20px',
+              fontSize: '14px',
               cursor: slots.filter(c => c !== null).length === 3 ? 'pointer' : 'not-allowed',
-              width: '100%',
-              maxWidth: '400px'
+              minWidth: '120px'
             }}
           >
             Confirm
           </button>
-        ) : confirmed && state === 'prep' ? (
-          <p style={{ margin: 0, fontSize: 'clamp(12px, 3vw, 16px)' }}>Waiting for opponent...</p>
-        ) : null}
-      </div>
-      
-      {/* Step Result Text - показываем только если есть */}
-      {currentStepIndex !== null && revealedCards[currentStepIndex] && phase === 'REVEAL' && (
-        <div style={{ 
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          backgroundColor: 'rgba(0, 0, 0, 0.8)',
-          padding: 'clamp(8px, 2vw, 12px)',
-          borderRadius: '8px',
-          fontSize: 'clamp(12px, 3vw, 16px)',
-          zIndex: 1000,
-          textAlign: 'center'
-        }}>
-          Step {currentStepIndex + 1} resolved. HP: You {yourHp} / Opp {oppHp}
         </div>
       )}
 
-      {/* Match End - overlay */}
+      {confirmed && state === 'prep' && (
+        <div style={{ 
+          flexShrink: 0,
+          textAlign: 'center', 
+          padding: '8px 12px',
+          fontSize: '12px',
+          opacity: 0.7,
+          borderTop: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+          Waiting for opponent...
+        </div>
+      )}
+
+      {/* Match End */}
       {matchEndPayload && (
         <div style={{ 
           position: 'absolute',
@@ -838,27 +797,24 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 2000,
-          padding: 'clamp(16px, 4vw, 24px)'
+          zIndex: 10000,
+          padding: '20px',
+          textAlign: 'center'
         }}>
-          <h2 style={{ fontSize: 'clamp(24px, 6vw, 32px)', marginBottom: 'clamp(8px, 2vh, 16px)' }}>
+          <h2 style={{ fontSize: '24px', marginBottom: '12px' }}>
             {matchEndPayload.winner === 'YOU' ? 'YOU WIN' : 'YOU LOSE'}
           </h2>
           {matchEndPayload.reason === 'disconnect' && (
-            <p style={{ fontSize: 'clamp(12px, 3vw, 14px)', color: '#666', marginBottom: 'clamp(16px, 4vh, 24px)' }}>
-              Opponent disconnected
-            </p>
+            <p style={{ fontSize: '12px', color: '#999', marginBottom: '16px' }}>Opponent disconnected</p>
           )}
           {matchEndPayload.reason === 'timeout' && (
-            <p style={{ fontSize: 'clamp(12px, 3vw, 14px)', color: '#666', marginBottom: 'clamp(16px, 4vh, 24px)' }}>
-              Match timed out
-            </p>
+            <p style={{ fontSize: '12px', color: '#999', marginBottom: '16px' }}>Match timed out</p>
           )}
           <button
             onClick={onBackToMenu}
             style={{
-              padding: 'clamp(10px, 2.5vh, 14px) clamp(20px, 5vw, 28px)',
-              fontSize: 'clamp(14px, 3.5vw, 18px)',
+              padding: '10px 20px',
+              fontSize: '14px',
               cursor: 'pointer'
             }}
           >
