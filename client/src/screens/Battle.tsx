@@ -536,7 +536,6 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   return (
     <div style={{ 
       height: '100dvh',
-      height: '100vh', // fallback
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
