@@ -19,6 +19,7 @@ const io = new Server(server, {
 
 // Constants
 const CARDS = ['ATTACK', 'DEFENSE', 'HEAL', 'COUNTER'];
+const GRASS = 'GRASS';
 const MAX_HP = 10;
 const START_HP = 10;
 const PREP_TIME_MS = 20000; // 20 seconds
@@ -131,11 +132,13 @@ function createMatch(player1Socket, player2Socket) {
   p1Data.hp = START_HP;
   p1Data.confirmed = false;
   p1Data.layout = null;
+  p1Data.draftLayout = null;
   p1Data.matchId = matchId;
 
   p2Data.hp = START_HP;
   p2Data.confirmed = false;
   p2Data.layout = null;
+  p2Data.draftLayout = null;
   p2Data.matchId = matchId;
 
   return match;
@@ -281,19 +284,45 @@ function validateLayout(layout) {
   return layout.every(card => CARDS.includes(card));
 }
 
-function generateRandomLayout() {
-  // Shuffle 4 карты -> взять первые 3 -> shuffle эти 3
-  const shuffled4 = [...CARDS].sort(() => Math.random() - 0.5);
-  const first3 = shuffled4.slice(0, 3);
-  const shuffled3 = first3.sort(() => Math.random() - 0.5);
-  return shuffled3;
+// Валидация draft layout (может содержать null)
+function validateDraftLayout(layout) {
+  if (!Array.isArray(layout) || layout.length !== 3) return false;
+  return layout.every(card => card === null || CARDS.includes(card));
+}
+
+// Финализация layout по правилам MVP:
+// 1. Если есть confirmedLayout → используем его
+// 2. Если есть draftLayout с реальными картами → заполняем null => GRASS
+// 3. Иначе (нет draft или draft полностью пустой) → [GRASS, GRASS, GRASS] (AFK)
+function finalizeLayout(confirmedLayout, draftLayout) {
+  // Если есть confirmed layout - используем его
+  if (confirmedLayout && Array.isArray(confirmedLayout) && confirmedLayout.length === 3) {
+    return confirmedLayout;
+  }
+  
+  // Если есть draft с реальными картами - заполняем null => GRASS
+  if (draftLayout && Array.isArray(draftLayout) && draftLayout.length === 3) {
+    const hasRealCard = draftLayout.some(card => card !== null && CARDS.includes(card));
+    if (hasRealCard) {
+      // Partial Play: заполняем null => GRASS
+      return draftLayout.map(card => card === null ? GRASS : card);
+    }
+  }
+  
+  // AFK: нет draft или draft полностью пустой → все GRASS
+  return [GRASS, GRASS, GRASS];
 }
 
 function applyStepLogic(player1Card, player2Card, player1Hp, player2Hp) {
   let newP1Hp = player1Hp;
   let newP2Hp = player2Hp;
 
-  // (1) HEAL всегда +1 HP
+  // GRASS не делает ничего - пропускаем обработку
+  if (player1Card === GRASS && player2Card === GRASS) {
+    return { p1Hp: newP1Hp, p2Hp: newP2Hp };
+  }
+
+  // (1) HEAL всегда +1 HP (только если не GRASS)
   if (player1Card === 'HEAL') {
     newP1Hp = Math.min(newP1Hp + 1, MAX_HP);
   }
@@ -308,7 +337,7 @@ function applyStepLogic(player1Card, player2Card, player1Hp, player2Hp) {
   // DEFENSE сам по себе ничего не делает
   // COUNTER сам по себе ничего не делает
 
-  // Обработка player1Card === 'ATTACK'
+  // Обработка player1Card === 'ATTACK' (только если не GRASS)
   if (player1Card === 'ATTACK') {
     if (player2Card === 'DEFENSE') {
       // 0 урона
@@ -319,23 +348,25 @@ function applyStepLogic(player1Card, player2Card, player1Hp, player2Hp) {
     } else if (player2Card === 'COUNTER') {
       // Только атакующий получает урон
       newP1Hp = Math.max(0, newP1Hp - 2);
-    } else {
-      // ATTACK vs HEAL или другой случай
+    } else if (player2Card !== GRASS) {
+      // ATTACK vs HEAL или другой случай (но не GRASS)
       newP2Hp = Math.max(0, newP2Hp - 2);
     }
+    // ATTACK vs GRASS - ничего не происходит
   }
 
-  // Обработка player2Card === 'ATTACK' (только если player1Card !== 'ATTACK', чтобы не дублировать)
+  // Обработка player2Card === 'ATTACK' (только если player1Card !== 'ATTACK', чтобы не дублировать, и не GRASS)
   if (player2Card === 'ATTACK' && player1Card !== 'ATTACK') {
     if (player1Card === 'DEFENSE') {
       // 0 урона
     } else if (player1Card === 'COUNTER') {
       // Только атакующий получает урон
       newP2Hp = Math.max(0, newP2Hp - 2);
-    } else {
-      // ATTACK vs HEAL или другой случай
+    } else if (player1Card !== GRASS) {
+      // ATTACK vs HEAL или другой случай (но не GRASS)
       newP1Hp = Math.max(0, newP1Hp - 2);
     }
+    // ATTACK vs GRASS - ничего не происходит
   }
 
   return { p1Hp: newP1Hp, p2Hp: newP2Hp };
@@ -423,12 +454,18 @@ function startPlay(match) {
           const p2Data = getPlayerData(currentMatch.sessions[1]);
           
           if (!p1Data.confirmed) {
-            p1Data.layout = generateRandomLayout();
+            const finalized = finalizeLayout(p1Data.layout, p1Data.draftLayout);
+            p1Data.layout = finalized;
             p1Data.confirmed = true;
+            const isAfk = finalized.every(card => card === GRASS);
+            console.log(`[FINALIZE] match=${currentMatch.id} round=${currentMatch.roundIndex} sessionId=${currentMatch.sessions[0]} hadDraft=${!!p1Data.draftLayout} draftLayout=${JSON.stringify(p1Data.draftLayout || [])} finalLayout=${JSON.stringify(finalized)} afk=${isAfk}`);
           }
           if (!p2Data.confirmed) {
-            p2Data.layout = generateRandomLayout();
+            const finalized = finalizeLayout(p2Data.layout, p2Data.draftLayout);
+            p2Data.layout = finalized;
             p2Data.confirmed = true;
+            const isAfk = finalized.every(card => card === GRASS);
+            console.log(`[FINALIZE] match=${currentMatch.id} round=${currentMatch.roundIndex} sessionId=${currentMatch.sessions[1]} hadDraft=${!!p2Data.draftLayout} draftLayout=${JSON.stringify(p2Data.draftLayout || [])} finalLayout=${JSON.stringify(finalized)} afk=${isAfk}`);
           }
           
           startPlay(currentMatch);
@@ -442,12 +479,18 @@ function startPlay(match) {
   const p1Data = getPlayerData(match.sessions[0]);
   const p2Data = getPlayerData(match.sessions[1]);
   
-  // Если игроки не подтвердили, генерируем случайные расклады
+  // Финализируем layouts для обоих игроков
   if (!p1Data.layout) {
-    p1Data.layout = generateRandomLayout();
+    const finalized = finalizeLayout(p1Data.layout, p1Data.draftLayout);
+    p1Data.layout = finalized;
+    const isAfk = finalized.every(card => card === GRASS);
+    console.log(`[FINALIZE] match=${match.id} round=${match.roundIndex} sessionId=${match.sessions[0]} hadDraft=${!!p1Data.draftLayout} draftLayout=${JSON.stringify(p1Data.draftLayout || [])} finalLayout=${JSON.stringify(finalized)} afk=${isAfk}`);
   }
   if (!p2Data.layout) {
-    p2Data.layout = generateRandomLayout();
+    const finalized = finalizeLayout(p2Data.layout, p2Data.draftLayout);
+    p2Data.layout = finalized;
+    const isAfk = finalized.every(card => card === GRASS);
+    console.log(`[FINALIZE] match=${match.id} round=${match.roundIndex} sessionId=${match.sessions[1]} hadDraft=${!!p2Data.draftLayout} draftLayout=${JSON.stringify(p2Data.draftLayout || [])} finalLayout=${JSON.stringify(finalized)} afk=${isAfk}`);
   }
 
   // Логируем начало раунда и финальные layouts
@@ -745,8 +788,10 @@ function startPrepPhase(match) {
   // Сбрасываем состояние подготовки
   p1Data.confirmed = false;
   p1Data.layout = null;
+  p1Data.draftLayout = null;
   p2Data.confirmed = false;
   p2Data.layout = null;
+  p2Data.draftLayout = null;
 
   const deadlineTs = Date.now() + PREP_TIME_MS;
   match.prepDeadline = deadlineTs;
@@ -810,15 +855,21 @@ function startPrepPhase(match) {
     const p2 = getPlayerData(sid2);
     if (!p1 || !p2) return;
     
-    // ВСЕГДА генерируем layouts для тех, кто не confirmed
+    // ВСЕГДА финализируем layouts для тех, кто не confirmed
     if (!p1.confirmed) {
-      p1.layout = generateRandomLayout();
+      const finalized = finalizeLayout(p1.layout, p1.draftLayout);
+      p1.layout = finalized;
       p1.confirmed = true;
+      const isAfk = finalized.every(card => card === GRASS);
+      console.log(`[FINALIZE] match=${currentMatch.id} round=${currentMatch.roundIndex} sessionId=${sid1} hadDraft=${!!p1.draftLayout} draftLayout=${JSON.stringify(p1.draftLayout || [])} finalLayout=${JSON.stringify(finalized)} afk=${isAfk}`);
       log(`[PREP_TIMEOUT] match=${currentMatch.id} sessionId=${sid1} layout=${JSON.stringify(p1.layout)}`);
     }
     if (!p2.confirmed) {
-      p2.layout = generateRandomLayout();
+      const finalized = finalizeLayout(p2.layout, p2.draftLayout);
+      p2.layout = finalized;
       p2.confirmed = true;
+      const isAfk = finalized.every(card => card === GRASS);
+      console.log(`[FINALIZE] match=${currentMatch.id} round=${currentMatch.roundIndex} sessionId=${sid2} hadDraft=${!!p2.draftLayout} draftLayout=${JSON.stringify(p2.draftLayout || [])} finalLayout=${JSON.stringify(finalized)} afk=${isAfk}`);
       log(`[PREP_TIMEOUT] match=${currentMatch.id} sessionId=${sid2} layout=${JSON.stringify(p2.layout)}`);
     }
     
@@ -967,11 +1018,13 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
   p1Data.matchId = null;
   p1Data.confirmed = false;
   p1Data.layout = null;
+  p1Data.draftLayout = null;
   p1Data.hp = START_HP; // Сбрасываем HP на 10 после матча
 
   p2Data.matchId = null;
   p2Data.confirmed = false;
   p2Data.layout = null;
+  p2Data.draftLayout = null;
   p2Data.hp = START_HP; // Сбрасываем HP на 10 после матча
 
   // Удаляем матч из хранилищ
@@ -1229,6 +1282,7 @@ io.on('connection', (socket) => {
         hp: START_HP,
         confirmed: false,
         layout: null,
+        draftLayout: null,
         matchId: null
       };
       players.set(sessionId, playerData);
@@ -1398,6 +1452,51 @@ io.on('connection', (socket) => {
     socket.emit('queue_left');
   });
 
+  socket.on('layout_draft', (data) => {
+    const sessionId = getSessionIdBySocket(socket.id);
+    if (!sessionId) {
+      return;
+    }
+    
+    const match = getMatch(socket.id);
+    // Жёсткая валидация состояния: только если match.state === 'prep'
+    if (!match || match.state !== 'prep') {
+      log(`[IGNORED_DRAFT] sid=${socket.id} sessionId=${sessionId} reason=wrong_state`);
+      return;
+    }
+
+    // Игнорируем draft если уже confirmed
+    const playerData = getPlayerData(sessionId);
+    if (!playerData || playerData.confirmed) {
+      log(`[IGNORED_DRAFT] sid=${socket.id} sessionId=${sessionId} reason=already_confirmed`);
+      return;
+    }
+
+    // Валидация matchId
+    if (data.matchId && data.matchId !== match.id) {
+      log(`[IGNORED_DRAFT] sid=${socket.id} sessionId=${sessionId} reason=matchId_mismatch`);
+      return;
+    }
+
+    // Валидация draft layout (может содержать null)
+    if (!validateDraftLayout(data.layout)) {
+      log(`[IGNORED_DRAFT] sid=${socket.id} sessionId=${sessionId} reason=invalid_layout`);
+      return;
+    }
+
+    // Валидация: все карты должны быть из hand игрока (CARDS)
+    const invalidCard = data.layout.find(card => card !== null && !CARDS.includes(card));
+    if (invalidCard) {
+      log(`[IGNORED_DRAFT] sid=${socket.id} sessionId=${sessionId} reason=invalid_card card=${invalidCard}`);
+      return;
+    }
+
+    // Сохраняем draft layout (не финализируем до prepTimer или confirm)
+    playerData.draftLayout = [...data.layout];
+    
+    log(`[DRAFT] match=${match.id} sessionId=${sessionId} draft=${JSON.stringify(playerData.draftLayout)}`);
+  });
+
   socket.on('layout_confirm', (data) => {
     const sessionId = getSessionIdBySocket(socket.id);
     if (!sessionId) {
@@ -1429,7 +1528,15 @@ io.on('connection', (socket) => {
 
     // Валидация расклада
     if (!validateLayout(data.layout)) {
+      log(`[IGNORED_CONFIRM] sid=${socket.id} sessionId=${sessionId} reason=invalid_layout`);
       return; // Игнорируем молча
+    }
+
+    // Валидация: все карты должны быть из hand игрока (CARDS)
+    const invalidCard = data.layout.find(card => !CARDS.includes(card));
+    if (invalidCard) {
+      log(`[IGNORED_CONFIRM] sid=${socket.id} sessionId=${sessionId} reason=invalid_card card=${invalidCard}`);
+      return;
     }
 
     playerData.confirmed = true;
