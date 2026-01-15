@@ -2,13 +2,14 @@ const BUILD = import.meta.env.VITE_BUILD_ID ?? "dev";
 
 interface MenuProps {
   onStartBattle: () => void;
+  onStartPvE: () => void;
   onCancelSearch: () => void;
   isSearching: boolean;
   tokens: number | null;
   nickname: string | null;
 }
 
-export default function Menu({ onStartBattle, onCancelSearch, isSearching, tokens, nickname }: MenuProps) {
+export default function Menu({ onStartBattle, onStartPvE, onCancelSearch, isSearching, tokens, nickname }: MenuProps) {
   // Кнопка Start Battle disabled если tokens !== null && tokens < 1
   const hasEnoughTokens = tokens !== null && tokens >= 1;
 
@@ -45,18 +46,34 @@ export default function Menu({ onStartBattle, onCancelSearch, isSearching, token
           </button>
         </>
       ) : (
-        <button 
-          onClick={onStartBattle}
-          disabled={!hasEnoughTokens}
-          style={{
-            padding: '12px 24px',
-            fontSize: '18px',
-            cursor: hasEnoughTokens ? 'pointer' : 'not-allowed',
-            opacity: hasEnoughTokens ? 1 : 0.5
-          }}
-        >
-          {hasEnoughTokens ? 'Start Battle' : 'Not enough tokens'}
-        </button>
+        <>
+          <button 
+            onClick={onStartBattle}
+            disabled={!hasEnoughTokens}
+            style={{
+              padding: '12px 24px',
+              fontSize: '18px',
+              cursor: hasEnoughTokens ? 'pointer' : 'not-allowed',
+              opacity: hasEnoughTokens ? 1 : 0.5
+            }}
+          >
+            {hasEnoughTokens ? 'Start Battle' : 'Not enough tokens'}
+          </button>
+          <button 
+            onClick={onStartPvE}
+            style={{
+              padding: '12px 24px',
+              fontSize: '18px',
+              cursor: 'pointer',
+              backgroundColor: '#4caf50',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '4px'
+            }}
+          >
+            Start PvE Training
+          </button>
+        </>
       )}
       <div style={{ 
         position: 'absolute', 

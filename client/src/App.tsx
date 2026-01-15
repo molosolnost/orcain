@@ -383,6 +383,12 @@ function App() {
     socketManager.queueJoin();
   };
 
+  const handleStartPvE = () => {
+    // PvE is immediate - no queue, no tokens
+    socketManager.pveStart();
+    // match_found will be sent, which will switch to battle screen
+  };
+
   const handleCancelSearch = () => {
     socketManager.queueLeave();
   };
@@ -525,7 +531,8 @@ function App() {
       <div>
         {screen === 'menu' && (
           <Menu 
-            onStartBattle={handleStartBattle} 
+            onStartBattle={handleStartBattle}
+            onStartPvE={handleStartPvE}
             onCancelSearch={handleCancelSearch}
             isSearching={isSearching}
             tokens={tokens}

@@ -50,6 +50,10 @@ class SocketManager {
     this.socket?.emit('queue_leave');
   }
 
+  pveStart() {
+    this.socket?.emit('pve_start');
+  }
+
   layoutDraft(matchId: string, layout: (string | null)[]) {
     this.socket?.emit('layout_draft', { matchId, layout });
   }

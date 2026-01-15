@@ -153,6 +153,7 @@ function createMatch(player1Socket, player2Socket) {
   
   const match = {
     id: matchId,
+    mode: 'PVP', // 'PVP' | 'PVE'
     sessions: [s1SessionId, s2SessionId],
     socketIds: [player1Socket.id, player2Socket.id],
     player1: player1Socket.id,
@@ -177,7 +178,9 @@ function createMatch(player1Socket, player2Socket) {
     afkStreakByPlayer: new Map(), // sessionId -> number (streak count)
     bothAfkStreak: 0, // счетчик подряд идущих раундов где оба AFK
     // Invariant tracking
-    finalizedRoundIndex: null // Последний финализированный roundIndex (для single-run guard)
+    finalizedRoundIndex: null, // Последний финализированный roundIndex (для single-run guard)
+    // Bot tracking (PVE only)
+    botLastOpponentCard: null // Last card revealed by opponent (for bot decision)
   };
   
   // Store hands in match
@@ -210,6 +213,167 @@ function createMatch(player1Socket, player2Socket) {
   p2Data.matchId = matchId;
 
   return match;
+}
+
+// BOT constants
+const BOT_SESSION_ID = 'BOT';
+const BOT_ACCOUNT_ID = 'BOT';
+const BOT_NICKNAME = 'Orc Bot';
+const BOT_HAND = ['attack', 'defense', 'heal', 'counter']; // Fixed hand for bot
+
+// Create PvE match (player vs bot)
+function createPvEMatch(playerSocket) {
+  const matchId = `pve_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
+  const playerSessionId = getSessionIdBySocket(playerSocket.id);
+  if (!playerSessionId) {
+    throw new Error('Cannot create PvE match: missing sessionId');
+  }
+  
+  const playerAccountId = getAccountIdBySessionId(playerSessionId);
+  if (!playerAccountId) {
+    throw new Error('Cannot create PvE match: missing accountId');
+  }
+  
+  // PvE is FREE - no token deduction
+  const pot = 0; // No pot in PvE
+  
+  // Get player hand
+  const playerHand = getHandForAccount(playerAccountId);
+  if (playerHand.length !== 4) {
+    console.error(`[INVARIANT_FAIL] code=HAND_SIZE_PLAYER handSize=${playerHand.length} expected=4`);
+    throw new Error(`Invalid hand size for player: ${playerHand.length}, expected 4`);
+  }
+  
+  // Create bot player data
+  const botData = getPlayerData(BOT_SESSION_ID);
+  botData.hp = START_HP;
+  botData.confirmed = false;
+  botData.layout = null;
+  botData.draftLayout = null;
+  botData.matchId = matchId;
+  
+  // Create player data
+  const playerData = getPlayerData(playerSessionId);
+  playerData.hp = START_HP;
+  playerData.confirmed = false;
+  playerData.layout = null;
+  playerData.draftLayout = null;
+  playerData.matchId = matchId;
+  
+  // Create match structure
+  const match = {
+    id: matchId,
+    mode: 'PVE', // PvE mode
+    sessions: [playerSessionId, BOT_SESSION_ID],
+    socketIds: [playerSocket.id, null], // Bot has no socket
+    player1: playerSocket.id,
+    player2: null, // Bot has no socket
+    roundIndex: 1,
+    suddenDeath: false,
+    state: 'prep',
+    prepDeadline: null,
+    prepTimer: null,
+    roundInProgress: false,
+    playAbortToken: 0,
+    pot: pot,
+    paused: false,
+    pauseReason: null,
+    currentStepIndex: null,
+    stepTimer: null,
+    watchdogTimer: null,
+    // Card system
+    hands: new Map(),
+    // AFK tracking
+    hadDraftThisRound: new Map(),
+    afkStreakByPlayer: new Map(),
+    bothAfkStreak: 0,
+    // Invariant tracking
+    finalizedRoundIndex: null,
+    // Bot tracking
+    botLastOpponentCard: null
+  };
+  
+  // Store hands
+  match.hands.set(playerSessionId, playerHand);
+  match.hands.set(BOT_SESSION_ID, BOT_HAND);
+  
+  // Store match
+  matchesById.set(matchId, match);
+  matchIdBySocket.set(playerSocket.id, matchId);
+  
+  // Add player to Socket.IO room
+  io.sockets.sockets.get(playerSocket.id)?.join(matchId);
+  
+  // Register bot session/account mappings (for compatibility)
+  sessionIdBySocket.set('BOT_SOCKET', BOT_SESSION_ID);
+  socketBySessionId.set(BOT_SESSION_ID, 'BOT_SOCKET');
+  accountIdBySessionId.set(BOT_SESSION_ID, BOT_ACCOUNT_ID);
+  
+  console.log(`[PVE_MATCH_CREATED] matchId=${matchId} player=${playerSessionId}`);
+  
+  return match;
+}
+
+// Bot decision logic (MVP)
+function getBotCardChoice(match, botHp, opponentLastCard) {
+  // Priority 1: If bot HP <= 4, use HEAL
+  if (botHp <= 4) {
+    return 'heal';
+  }
+  
+  // Priority 2: If opponent last revealed ATTACK, use DEFENSE or COUNTER
+  // opponentLastCard can be CardId ('attack') or CardType ('ATTACK') or null
+  const opponentCardType = opponentLastCard ? (cardIdToType(opponentLastCard) || opponentLastCard) : null;
+  if (opponentCardType === 'ATTACK') {
+    // Randomly choose between defense and counter (50/50)
+    return Math.random() < 0.5 ? 'defense' : 'counter';
+  }
+  
+  // Priority 3: Default to ATTACK
+  return 'attack';
+}
+
+// Submit bot layout_draft
+function submitBotDraft(match) {
+  const botSessionId = BOT_SESSION_ID;
+  const botData = getPlayerData(botSessionId);
+  
+  if (!botData) {
+    console.error(`[BOT_ERROR] match=${match.id} botData not found`);
+    return;
+  }
+  
+  // Determine player session (bot can be either session[0] or session[1])
+  const isBotP1 = match.sessions[0] === BOT_SESSION_ID;
+  const playerSessionId = isBotP1 ? match.sessions[1] : match.sessions[0];
+  const playerData = getPlayerData(playerSessionId);
+  
+  // Get bot HP and opponent's last revealed card
+  const botHp = botData.hp;
+  const opponentLastCard = match.botLastOpponentCard;
+  
+  // Choose card using bot logic
+  const chosenCard = getBotCardChoice(match, botHp, opponentLastCard);
+  
+  // Bot layout: [chosenCard, null, null] -> will be filled with GRASS in finalizeLayout
+  const botLayout = [chosenCard, null, null];
+  
+  // Validate bot layout against bot's hand
+  const botHand = match.hands.get(botSessionId) || [];
+  if (!validateCardsFromHand(botLayout, botHand)) {
+    console.error(`[BOT_ERROR] match=${match.id} invalid layout=${JSON.stringify(botLayout)} hand=${JSON.stringify(botHand)}`);
+    // Fallback: use first card from hand
+    botLayout[0] = botHand[0] || 'attack';
+  }
+  
+  // Save bot draft
+  botData.draftLayout = [...botLayout];
+  match.hadDraftThisRound.set(botSessionId, true);
+  
+  console.log(`[BOT_LAYOUT_SUBMITTED] match=${match.id} round=${match.roundIndex} botHp=${botHp} opponentLastCard=${opponentLastCard || 'null'} chosenCard=${chosenCard} layout=${JSON.stringify(botLayout)}`);
+  
+  // Bot never confirms early - waits for deadline
 }
 
 function getSessionIdBySocket(socketId) {
@@ -259,7 +423,19 @@ function getSocketIdBySessionIdInMatch(match, sessionId) {
 }
 
 function getPlayerData(sessionId) {
-  return players.get(sessionId);
+  let data = players.get(sessionId);
+  if (!data) {
+    // Initialize player data if it doesn't exist (for bot or new players)
+    data = {
+      hp: START_HP,
+      confirmed: false,
+      layout: null,
+      draftLayout: null,
+      matchId: null
+    };
+    players.set(sessionId, data);
+  }
+  return data;
 }
 
 function getPlayerDataBySocket(socketId) {
@@ -282,8 +458,20 @@ function emitToPlayer(match, socketId, event, payload) {
 function emitToBoth(match, event, payloadForSidFn) {
   // payloadForSidFn(socketId) возвращает payload для конкретного игрока
   // Используем актуальные socketIds из match
+  // PvE: bot has no socket, only send to player
   const socket1 = match.socketIds[0] || match.player1;
   const socket2 = match.socketIds[1] || match.player2;
+  
+  // PvE mode: only send to player (bot has no socket)
+  if (match.mode === 'PVE') {
+    if (socket1) {
+      const payload = payloadForSidFn(socket1);
+      if (payload) {
+        io.to(socket1).emit(event, payload);
+      }
+    }
+    return;
+  }
   
   if (socket1) {
     const payload1 = payloadForSidFn(socket1);
@@ -463,8 +651,9 @@ function finalizeRound(match) {
   // (2) Определяем hadDraftThisRound и isAfkThisRound
   const hadDraft1 = match.hadDraftThisRound.get(sid1) === true;
   const hadDraft2 = match.hadDraftThisRound.get(sid2) === true;
-  const isAfk1 = !hadDraft1; // Источник правды: hadDraft === false
-  const isAfk2 = !hadDraft2;
+  // BOT is NEVER considered AFK
+  const isAfk1 = sid1 === BOT_SESSION_ID ? false : !hadDraft1; // Источник правды: hadDraft === false
+  const isAfk2 = sid2 === BOT_SESSION_ID ? false : !hadDraft2;
   
   // (3) Обновляем AFK streaks
   const currentStreak1 = match.afkStreakByPlayer.get(sid1) || 0;
@@ -485,8 +674,8 @@ function finalizeRound(match) {
   const newStreak1 = match.afkStreakByPlayer.get(sid1);
   const newStreak2 = match.afkStreakByPlayer.get(sid2);
   
-  // Обновляем bothAfkStreak
-  if (isAfk1 && isAfk2) {
+  // Обновляем bothAfkStreak (BOT never counts as AFK, so bothAfkStreak only grows if both are real players and both AFK)
+  if (isAfk1 && isAfk2 && sid1 !== BOT_SESSION_ID && sid2 !== BOT_SESSION_ID) {
     match.bothAfkStreak = (match.bothAfkStreak || 0) + 1;
   } else {
     match.bothAfkStreak = 0;
@@ -846,11 +1035,24 @@ function doOneStep(match, stepIndex) {
   p1Data.hp = result.p1Hp;
   p2Data.hp = result.p2Hp;
 
+  // PvE: Save opponent's last revealed card for bot decision (use first card of step 0, or last non-GRASS card)
+  if (match.mode === 'PVE') {
+    // Determine which is bot and which is player
+    const isBotP1 = match.sessions[0] === BOT_SESSION_ID;
+    const opponentCard = isBotP1 ? p1Card : p2Card;
+    // Save opponent's card (for bot's next round decision)
+    if (stepIndex === 0 || (opponentCard !== null && opponentCard !== GRASS)) {
+      match.botLastOpponentCard = opponentCard;
+      console.log(`[BOT_MOVE] match=${match.id} round=${match.roundIndex} step=${stepIndex} opponentCard=${opponentCard} saved for next round`);
+    }
+  }
+
   // Получаем nickname для обоих игроков
   const p1AccountId = getAccountIdBySessionId(match.sessions[0]);
   const p2AccountId = getAccountIdBySessionId(match.sessions[1]);
-  const p1Nickname = p1AccountId ? (db.getNickname(p1AccountId) || null) : null;
-  const p2Nickname = p2AccountId ? (db.getNickname(p2AccountId) || null) : null;
+  // PvE: bot has fixed nickname
+  const p1Nickname = p1AccountId === BOT_ACCOUNT_ID ? BOT_NICKNAME : (p1AccountId ? (db.getNickname(p1AccountId) || null) : null);
+  const p2Nickname = p2AccountId === BOT_ACCOUNT_ID ? BOT_NICKNAME : (p2AccountId ? (db.getNickname(p2AccountId) || null) : null);
 
   // Лог перед каждым step_reveal
   log(`[STEP] match=${match.id} round=${match.roundIndex} step=${stepIndex} p1Card=${p1Card} p2Card=${p2Card} hp=${p1Data.hp}-${p2Data.hp}`);
@@ -1136,6 +1338,12 @@ function startPrepPhase(match) {
   // Сбрасываем hadDraftThisRound для нового раунда
   match.hadDraftThisRound.set(match.sessions[0], false);
   match.hadDraftThisRound.set(match.sessions[1], false);
+  
+  // PvE: Submit bot draft immediately after prep starts
+  if (match.mode === 'PVE') {
+    // Bot always submits draft (never AFK)
+    submitBotDraft(match);
+  }
 
   const deadlineTs = Date.now() + PREP_TIME_MS;
   match.prepDeadline = deadlineTs;
@@ -1310,10 +1518,13 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
   
   log(`[FORFEIT] match=${match.id} loser=${loserSessionId} winner=${winnerSessionId} reason=${reason}`);
 
-  // WinnerAccountId получает +match.pot (по accountId, не sessionId)
-  const winnerAccountId = getAccountIdBySessionId(winnerSessionId);
-  if (winnerAccountId) {
-    db.addTokens(winnerAccountId, match.pot);
+  // PvE: No rewards (pot = 0, no tokens added)
+  // PvP: WinnerAccountId получает +match.pot (по accountId, не sessionId)
+  if (match.mode === 'PVP' && match.pot > 0) {
+    const winnerAccountId = getAccountIdBySessionId(winnerSessionId);
+    if (winnerAccountId && winnerAccountId !== BOT_ACCOUNT_ID) {
+      db.addTokens(winnerAccountId, match.pot);
+    }
   }
 
   // Лог в endMatch
@@ -1437,10 +1648,13 @@ function endMatch(match, reason = 'normal') {
     winnerSessionId = match.sessions[1];
   }
 
-  // WinnerAccountId получает +match.pot (по accountId, не sessionId)
-  const winnerAccountId = getAccountIdBySessionId(winnerSessionId);
-  if (winnerAccountId) {
-    db.addTokens(winnerAccountId, match.pot);
+  // PvE: No rewards (pot = 0, no tokens added)
+  // PvP: WinnerAccountId получает +match.pot (по accountId, не sessionId)
+  if (match.mode === 'PVP' && match.pot > 0) {
+    const winnerAccountId = getAccountIdBySessionId(winnerSessionId);
+    if (winnerAccountId && winnerAccountId !== BOT_ACCOUNT_ID) {
+      db.addTokens(winnerAccountId, match.pot);
+    }
   }
 
   // Структурированный лог
@@ -1807,6 +2021,64 @@ io.on('connection', (socket) => {
     }
     
     socket.emit('queue_left');
+  });
+
+  // PvE Training Match - Create match vs bot (FREE, no tokens)
+  socket.on('pve_start', () => {
+    const sessionId = getSessionIdBySocket(socket.id);
+    if (!sessionId) {
+      socket.emit('error_msg', { message: 'Please send hello first' });
+      return;
+    }
+    
+    if (matchIdBySocket.has(socket.id)) {
+      socket.emit('error_msg', { message: 'Already in a match' });
+      return;
+    }
+    
+    const accountId = getAccountIdBySessionId(sessionId);
+    if (!accountId) {
+      socket.emit('error_msg', { message: 'Missing accountId' });
+      return;
+    }
+    
+    try {
+      // Create PvE match (FREE - no token deduction)
+      const match = createPvEMatch(socket);
+      
+      const playerData = getPlayerData(sessionId);
+      const botData = getPlayerData(BOT_SESSION_ID);
+      
+      const playerAccountId = getAccountIdBySessionId(sessionId);
+      const playerTokens = playerAccountId ? (db.getTokens(playerAccountId) !== null ? db.getTokens(playerAccountId) : START_TOKENS) : START_TOKENS;
+      
+      // Get hands
+      const playerHand = match.hands.get(sessionId) || [];
+      const botHand = match.hands.get(BOT_SESSION_ID) || [];
+      
+      // Get nicknames
+      const playerNickname = playerAccountId ? (db.getNickname(playerAccountId) || null) : null;
+      
+      console.log(`[PVE_MATCH_CREATED] matchId=${match.id} player=${sessionId}`);
+      
+      // Send match_found to player (bot doesn't receive events)
+      socket.emit('match_found', {
+        matchId: match.id,
+        yourHp: playerData.hp,
+        oppHp: botData.hp,
+        yourTokens: playerTokens,
+        pot: match.pot, // 0 for PvE
+        yourNickname: playerNickname,
+        oppNickname: BOT_NICKNAME,
+        yourHand: playerHand
+      });
+      
+      // Start first round
+      startPrepPhase(match);
+    } catch (error) {
+      console.error(`[PVE_START_ERROR] sessionId=${sessionId} error=${error.message}`);
+      socket.emit('error_msg', { message: `Failed to start PvE match: ${error.message}` });
+    }
   });
 
   socket.on('layout_draft', (data) => {
