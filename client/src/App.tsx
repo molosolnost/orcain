@@ -314,6 +314,7 @@ function App() {
       if (payload.yourTokens !== undefined) {
         setTokens(payload.yourTokens);
       }
+      // Nicknames будут переданы в Battle через prep_start или match_found payload
     });
 
     socketManager.onPrepStart((payload: PrepStartPayload) => {

@@ -3,10 +3,17 @@ body {
   margin: 0;
   padding: 0;
   overscroll-behavior: none;
-  touch-action: none;
+  /* Убираем глобальный touch-action: none, чтобы разрешить скролл */
 }
 
-* {
+/* Защита от pinch-zoom только на html/body */
+html {
+  touch-action: pan-x pan-y;
+}
+
+/* Для draggable элементов отключаем touch-action */
+.battle-card,
+[data-slot-index] {
   touch-action: none;
 }
 
