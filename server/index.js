@@ -976,7 +976,8 @@ function endMatchBothAfk(match) {
       yourTokens: tokens,
       reason: 'timeout',
       yourNickname: sessionId === match.sessions[0] ? acc1Nickname : acc2Nickname,
-      oppNickname: sessionId === match.sessions[0] ? acc2Nickname : acc1Nickname
+      oppNickname: sessionId === match.sessions[0] ? acc2Nickname : acc1Nickname,
+      matchMode: match.mode || 'PVP' // PVP | PVE | TUTORIAL
     };
   });
   
@@ -1535,7 +1536,8 @@ function startPrepPhase(match) {
         yourTokens: playerTokens,
         yourHand: p1Hand, // CardId[4] - source of truth (replaces legacy 'cards')
         yourNickname: p1Nickname,
-        oppNickname: p2Nickname
+        oppNickname: p2Nickname,
+        matchMode: match.mode || 'PVP' // PVP | PVE | TUTORIAL
       };
     } else {
       return {
@@ -1549,7 +1551,8 @@ function startPrepPhase(match) {
         yourTokens: playerTokens,
         yourHand: p2Hand, // CardId[4] - source of truth (replaces legacy 'cards')
         yourNickname: p2Nickname,
-        oppNickname: p1Nickname
+        oppNickname: p1Nickname,
+        matchMode: match.mode || 'PVP' // PVP | PVE | TUTORIAL
       };
     }
   });
@@ -1719,7 +1722,8 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
       yourTokens: tokens,
       reason: finalReason,
       yourNickname: sessionId === match.sessions[0] ? acc1Nickname : acc2Nickname,
-      oppNickname: sessionId === match.sessions[0] ? acc2Nickname : acc1Nickname
+      oppNickname: sessionId === match.sessions[0] ? acc2Nickname : acc1Nickname,
+      matchMode: match.mode || 'PVP' // PVP | PVE | TUTORIAL
     };
   });
   
@@ -1850,6 +1854,7 @@ function endMatch(match, reason = 'normal') {
     
     // Единый payload для обоих игроков с winnerId/loserId
     return {
+      matchId: match.id,
       winner: isWinner ? 'YOU' : 'OPPONENT',
       winnerId: winnerSessionId,
       loserId: loserSessionId,
@@ -1858,7 +1863,8 @@ function endMatch(match, reason = 'normal') {
       yourTokens: tokens,
       reason: finalReason,
       yourNickname: sessionId === match.sessions[0] ? acc1Nickname : acc2Nickname,
-      oppNickname: sessionId === match.sessions[0] ? acc2Nickname : acc1Nickname
+      oppNickname: sessionId === match.sessions[0] ? acc2Nickname : acc1Nickname,
+      matchMode: match.mode || 'PVP' // PVP | PVE | TUTORIAL
     };
   });
   
@@ -2151,7 +2157,7 @@ io.on('connection', (socket) => {
         const p1Hand = match.hands.get(s1SessionId) || [];
         const p2Hand = match.hands.get(s2SessionId) || [];
         
-        // Отправляем match_found с токенами, pot, nickname и hand
+        // Отправляем match_found с токенами, pot, nickname, hand и matchMode
         player1Socket.emit('match_found', {
           matchId: match.id,
           yourHp: p1Data.hp,
@@ -2160,7 +2166,8 @@ io.on('connection', (socket) => {
           pot: match.pot,
           yourNickname: acc1Nickname,
           oppNickname: acc2Nickname,
-          yourHand: p1Hand // CardId[4] - source of truth
+          yourHand: p1Hand, // CardId[4] - source of truth
+          matchMode: match.mode || 'PVP' // PVP | PVE | TUTORIAL
         });
 
         player2Socket.emit('match_found', {
@@ -2171,7 +2178,8 @@ io.on('connection', (socket) => {
           pot: match.pot,
           yourNickname: acc2Nickname,
           oppNickname: acc1Nickname,
-          yourHand: p2Hand // CardId[4] - source of truth
+          yourHand: p2Hand, // CardId[4] - source of truth
+          matchMode: match.mode || 'PVP' // PVP | PVE | TUTORIAL
         });
 
         // Начинаем первый раунд
@@ -2246,7 +2254,8 @@ io.on('connection', (socket) => {
         pot: match.pot, // 0 for PvE
         yourNickname: playerNickname,
         oppNickname: BOT_NICKNAME,
-        yourHand: playerHand
+        yourHand: playerHand,
+        matchMode: match.mode || 'PVE' // PVP | PVE | TUTORIAL
       });
       
       // Start first round
@@ -2304,7 +2313,8 @@ io.on('connection', (socket) => {
         pot: match.pot, // 0 for Tutorial
         yourNickname: playerNickname,
         oppNickname: TUTORIAL_BOT_NICKNAME,
-        yourHand: playerHand
+        yourHand: playerHand,
+        matchMode: match.mode || 'TUTORIAL' // PVP | PVE | TUTORIAL
       });
 
       // Start first round

@@ -13,6 +13,7 @@ export type MatchFoundPayload = {
   yourNickname?: string | null;
   oppNickname?: string | null;
   yourHand: CardId[]; // CardId[4] - source of truth from server
+  matchMode?: 'PVP' | 'PVE' | 'TUTORIAL'; // Match mode: PVP | PVE | TUTORIAL
 };
 
 export type PrepStartPayload = {
@@ -27,6 +28,7 @@ export type PrepStartPayload = {
   yourHand: CardId[]; // CardId[4] - source of truth (replaces legacy 'cards')
   yourNickname?: string | null;
   oppNickname?: string | null;
+  matchMode?: 'PVP' | 'PVE' | 'TUTORIAL'; // Match mode: PVP | PVE | TUTORIAL
 };
 
 export type StepRevealPayload = {
@@ -62,6 +64,7 @@ export type MatchEndPayload = {
   reason: "normal" | "disconnect" | "timeout";
   yourNickname?: string | null;
   oppNickname?: string | null;
+  matchMode?: 'PVP' | 'PVE' | 'TUTORIAL'; // Match mode: PVP | PVE | TUTORIAL
 };
 
 export type HelloOkPayload = {

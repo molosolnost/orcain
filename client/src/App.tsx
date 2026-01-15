@@ -79,6 +79,7 @@ function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [lastPrepStart, setLastPrepStart] = useState<PrepStartPayload | null>(null);
+  const [matchMode, setMatchMode] = useState<'PVP' | 'PVE' | 'TUTORIAL' | undefined>(undefined);
   // Tutorial completion: source of truth is localStorage (Free hosting friendly)
   const [tutorialCompleted, setTutorialCompleted] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -329,13 +330,17 @@ function App() {
       if (payload.yourTokens !== undefined) {
         setTokens(payload.yourTokens);
       }
+      // Save matchMode from payload (source of truth for tutorial detection)
+      if (payload.matchMode) {
+        setMatchMode(payload.matchMode);
+      }
       // Nicknames будут переданы в Battle через prep_start или match_found payload
     });
 
     socketManager.onPrepStart((payload: PrepStartPayload) => {
       // DEBUG: логируем получение prep_start
       if (DEBUG_MODE) {
-        console.log(`[PREP_START_RECEIVED] round=${payload.roundIndex} deadlineTs=${payload.deadlineTs} yourNickname=${payload.yourNickname || '<null>'} oppNickname=${payload.oppNickname || '<null>'} currentScreen=${screen} currentMatchId=${currentMatchId}`);
+        console.log(`[PREP_START_RECEIVED] round=${payload.roundIndex} deadlineTs=${payload.deadlineTs} matchMode=${payload.matchMode || '<null>'} yourNickname=${payload.yourNickname || '<null>'} oppNickname=${payload.oppNickname || '<null>'} currentScreen=${screen} currentMatchId=${currentMatchId}`);
       }
       
       // Устанавливаем currentMatchId если его еще нет (окно пропустило match_found)
@@ -349,6 +354,11 @@ function App() {
           console.log(`[PREP_START_IGNORED] matchId mismatch: payload=${payload.matchId} current=${currentMatchId}`);
         }
         return;
+      }
+      
+      // Save matchMode from payload (source of truth for tutorial detection)
+      if (payload.matchMode) {
+        setMatchMode(payload.matchMode);
       }
       
       // КРИТИЧНО: ВСЕГДА сохраняем lastPrepStart, не только когда screen === 'battle'
@@ -564,12 +574,13 @@ function App() {
           />
         )}
         {screen === 'battle' && (
-          <Battle 
-            onBackToMenu={handleBackToMenu} 
+          <Battle
+            onBackToMenu={handleBackToMenu}
             tokens={tokens}
             matchEndPayload={matchEndPayload}
             lastPrepStart={lastPrepStart}
             currentMatchId={currentMatchId}
+            matchMode={matchMode}
           />
         )}
       </div>

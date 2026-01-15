@@ -11,9 +11,10 @@ interface BattleProps {
   matchEndPayload: MatchEndPayload | null;
   lastPrepStart: PrepStartPayload | null;
   currentMatchId: string | null;
+  matchMode?: 'PVP' | 'PVE' | 'TUTORIAL'; // Match mode from server
 }
 
-export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrepStart, currentMatchId }: BattleProps) {
+export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrepStart, currentMatchId, matchMode }: BattleProps) {
   const [state, setState] = useState<BattleState>('prep');
   const [yourHp, setYourHp] = useState(10);
   const [oppHp, setOppHp] = useState(10);
@@ -32,6 +33,8 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   const [phase, setPhase] = useState<'PREP' | 'REVEAL' | 'END'>('PREP');
   const [yourNickname, setYourNickname] = useState<string | null>(null);
   const [oppNickname, setOppNickname] = useState<string | null>(null);
+  // Match mode (from server payloads) - source of truth for tutorial detection
+  const [currentMatchMode, setCurrentMatchMode] = useState<'PVP' | 'PVE' | 'TUTORIAL' | undefined>(matchMode);
   // Tutorial: Interactive step state machine
   // 0 = intro, 1 = ATTACK, 2 = slots, 3 = DEFENSE, 4 = HEAL, 5 = COUNTER, 6 = multiple cards, 7 = final
   const [tutorialStep, setTutorialStep] = useState<number>(0);
@@ -117,7 +120,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setDeadlineTs(null);
       
       // Tutorial: Mark as completed in localStorage
-      if (matchEndPayload.oppNickname === 'Тренер') {
+      if (matchEndPayload.matchMode === 'TUTORIAL') {
         localStorage.setItem('orcain_tutorial_completed', '1');
       }
     } else {
@@ -174,6 +177,11 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     setYourNickname(lastPrepStart.yourNickname ?? null);
     setOppNickname(lastPrepStart.oppNickname ?? null);
     
+    // Match mode - source of truth for tutorial detection
+    if (lastPrepStart.matchMode) {
+      setCurrentMatchMode(lastPrepStart.matchMode);
+    }
+    
     // Сбросить confirmed/layout/slot/выкладки только если это новый раунд
     if (isNewRound) {
       setState('prep');
@@ -185,7 +193,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       lastAppliedRoundIndexRef.current = lastPrepStart.roundIndex;
       
       // Tutorial: Reset tutorial step on new round (only if not already past that step)
-      if (lastPrepStart.oppNickname === 'Тренер') {
+      if (lastPrepStart.matchMode === 'TUTORIAL') {
         if (lastPrepStart.roundIndex === 1 && tutorialStep < 1) {
           setTutorialStep(1); // Start with ATTACK step
         } else if (lastPrepStart.roundIndex === 2 && tutorialStep < 3) {
@@ -224,7 +232,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setNowTs(Date.now()); // Обновляем nowTs для таймера
       
       // Tutorial: Initialize tutorial step on match_found
-      if (payload.oppNickname === 'Тренер') {
+      if (payload.matchMode === 'TUTORIAL') {
         setTutorialStep(0); // Start with intro
         setTutorialCompletedActions(new Set());
       }
@@ -234,6 +242,10 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setOppNickname(payload.oppNickname ?? null);
       // Hand устанавливаем из match_found (source of truth)
       setYourHand(payload.yourHand || []);
+      // Match mode - source of truth for tutorial detection
+      if (payload.matchMode) {
+        setCurrentMatchMode(payload.matchMode);
+      }
       // deadlineTs придет в prep_start, но уже сейчас готовы к его получению
     });
 
@@ -288,7 +300,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
   // Tutorial: Check interactive step conditions
   useEffect(() => {
-    if (oppNickname !== 'Тренер') return;
+    if (currentMatchMode !== 'TUTORIAL') return;
     
     // Step 1: ATTACK - player placed attack card in any slot
     if (tutorialStep === 1) {
@@ -321,11 +333,11 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
         setTimeout(() => setTutorialStep(7), 800);
       }
     }
-  }, [slots, tutorialStep, tutorialLastSlots, tutorialCompletedActions, oppNickname]);
+  }, [slots, tutorialStep, tutorialLastSlots, tutorialCompletedActions, currentMatchMode]);
 
   // Tutorial: Track step_reveal for DEFENSE/HEAL/COUNTER steps
   useEffect(() => {
-    if (oppNickname !== 'Тренер') return;
+    if (currentMatchMode !== 'TUTORIAL') return;
     
     // Find the most recent revealed card
     const lastRevealed = revealedCards.length > 0 
@@ -349,7 +361,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setTutorialCompletedActions(prev => new Set([...prev, 5]));
       setTimeout(() => setTutorialStep(6), 2000);
     }
-  }, [revealedCards, tutorialStep, tutorialCompletedActions, oppNickname]);
+  }, [revealedCards, tutorialStep, tutorialCompletedActions, currentMatchMode]);
 
   // Таймер для обновления countdown - стартует сразу при получении deadlineTs
   useEffect(() => {
@@ -439,7 +451,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       scheduleDraft(next);
       
       // Tutorial: Track slot changes for interactive steps
-      if (oppNickname === 'Тренер') {
+      if (currentMatchMode === 'TUTORIAL') {
         setTutorialLastSlots(next);
       }
       
@@ -942,7 +954,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       )}
 
       {/* Tutorial Overlay - Interactive Steps */}
-      {oppNickname === 'Тренер' && tutorialStep < 8 && (
+      {currentMatchMode === 'TUTORIAL' && tutorialStep < 8 && (
         <div style={{
           position: 'absolute',
           top: 0,
@@ -958,6 +970,14 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           padding: '20px',
           color: '#fff'
         }}>
+          {(() => {
+            // Debug logging for tutorial UI
+            const DEBUG_MODE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
+            if (DEBUG_MODE) {
+              console.log(`[TUTORIAL_UI] matchMode=${currentMatchMode} oppNickname=${oppNickname || '<null>'} tutorialStep=${tutorialStep}`);
+            }
+            return null;
+          })()}
           <div style={{
             backgroundColor: '#1a1a1a',
             padding: '24px',
@@ -1129,7 +1149,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           {matchEndPayload.reason === 'timeout' && (
             <p style={{ fontSize: '12px', color: '#999', marginBottom: '16px' }}>Match timed out</p>
           )}
-          {matchEndPayload.oppNickname === 'Тренер' && (
+          {matchEndPayload.matchMode === 'TUTORIAL' && (
             <p style={{ fontSize: '14px', color: '#4caf50', marginBottom: '16px' }}>
               Обучение завершено! Вы можете вернуться в меню.
             </p>
