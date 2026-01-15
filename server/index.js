@@ -4,6 +4,15 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const crypto = require('crypto');
 const db = require('./db');
+const {
+  CARD_IDS,
+  CARD_METADATA,
+  CARD_ID_TO_TYPE,
+  DEFAULT_DECK,
+  getHandForAccount,
+  isValidCardId,
+  cardIdToType
+} = require('./cards');
 
 const app = express();
 app.use(cors());
@@ -18,6 +27,8 @@ const io = new Server(server, {
 });
 
 // Constants
+// CARDS is now deprecated - use CARD_IDS and cardIdToType for battle engine
+// Legacy CARDS array kept for backward compatibility in applyStepLogic
 const CARDS = ['ATTACK', 'DEFENSE', 'HEAL', 'COUNTER'];
 const GRASS = 'GRASS';
 const MAX_HP = 10;
@@ -126,6 +137,20 @@ function createMatch(player1Socket, player2Socket) {
   // Создать pot = MATCH_COST * 2
   const pot = MATCH_COST * 2;
   
+  // Get hands for both players (source of truth - server decides hand)
+  const p1Hand = getHandForAccount(acc1AccountId);
+  const p2Hand = getHandForAccount(acc2AccountId);
+  
+  // INVARIANT: hand must be exactly 4 cards
+  if (p1Hand.length !== 4) {
+    console.error(`[INVARIANT_FAIL] code=HAND_SIZE_P1 handSize=${p1Hand.length} expected=4`);
+    throw new Error(`Invalid hand size for player 1: ${p1Hand.length}, expected 4`);
+  }
+  if (p2Hand.length !== 4) {
+    console.error(`[INVARIANT_FAIL] code=HAND_SIZE_P2 handSize=${p2Hand.length} expected=4`);
+    throw new Error(`Invalid hand size for player 2: ${p2Hand.length}, expected 4`);
+  }
+  
   const match = {
     id: matchId,
     sessions: [s1SessionId, s2SessionId],
@@ -145,6 +170,8 @@ function createMatch(player1Socket, player2Socket) {
     currentStepIndex: null,
     stepTimer: null,
     watchdogTimer: null,
+    // Card system
+    hands: new Map(), // sessionId -> CardId[4] (stable for entire match)
     // AFK tracking
     hadDraftThisRound: new Map(), // sessionId -> boolean (сбрасывается каждый раунд)
     afkStreakByPlayer: new Map(), // sessionId -> number (streak count)
@@ -152,6 +179,10 @@ function createMatch(player1Socket, player2Socket) {
     // Invariant tracking
     finalizedRoundIndex: null // Последний финализированный roundIndex (для single-run guard)
   };
+  
+  // Store hands in match
+  match.hands.set(s1SessionId, p1Hand);
+  match.hands.set(s2SessionId, p2Hand);
 
   // Сохраняем матч по ID и по socketId
   matchesById.set(matchId, match);
@@ -314,17 +345,54 @@ function emitToBoth(match, event, payloadForSidFn) {
   }
 }
 
+// Validate confirmed layout (must be 3 unique cards, no nulls)
+// Note: CardId validation is done separately against player's hand
 function validateLayout(layout) {
   if (!Array.isArray(layout) || layout.length !== 3) return false;
   const unique = new Set(layout);
   if (unique.size !== 3) return false;
-  return layout.every(card => CARDS.includes(card));
+  // All must be non-null strings (will be validated against hand)
+  return layout.every(card => card !== null && typeof card === 'string');
 }
 
 // Валидация draft layout (может содержать null)
+// Note: CardId validation is done separately against player's hand
 function validateDraftLayout(layout) {
   if (!Array.isArray(layout) || layout.length !== 3) return false;
-  return layout.every(card => card === null || CARDS.includes(card));
+  // Allow null or any string (will be validated against hand)
+  return layout.every(card => card === null || typeof card === 'string');
+}
+
+// Validate that all cards in layout are from player's hand
+function validateCardsFromHand(layout, hand) {
+  if (!Array.isArray(layout) || !Array.isArray(hand)) return false;
+  
+  // Count card usage (each card in hand can be used once per round)
+  const handCount = new Map();
+  hand.forEach(cardId => {
+    handCount.set(cardId, (handCount.get(cardId) || 0) + 1);
+  });
+  
+  const usedCount = new Map();
+  for (const cardId of layout) {
+    if (cardId === null) continue; // null is allowed
+    
+    // Check if cardId is valid
+    if (!isValidCardId(cardId)) {
+      return false; // Invalid card ID
+    }
+    
+    // Check if card is in hand
+    const available = handCount.get(cardId) || 0;
+    const used = usedCount.get(cardId) || 0;
+    if (used >= available) {
+      return false; // Card used more times than available in hand
+    }
+    
+    usedCount.set(cardId, used + 1);
+  }
+  
+  return true;
 }
 
 // Финализация layout по правилам MVP:
@@ -339,7 +407,8 @@ function finalizeLayout(confirmedLayout, draftLayout) {
   
   // Если есть draft с реальными картами - заполняем null => GRASS
   if (draftLayout && Array.isArray(draftLayout) && draftLayout.length === 3) {
-    const hasRealCard = draftLayout.some(card => card !== null && CARDS.includes(card));
+    // Check if any card is a valid CardId (not null, not GRASS)
+    const hasRealCard = draftLayout.some(card => card !== null && isValidCardId(card));
     if (hasRealCard) {
       // Partial Play: заполняем null => GRASS
       return draftLayout.map(card => card === null ? GRASS : card);
@@ -593,21 +662,29 @@ function endMatchBothAfk(match) {
   matchIdBySocket.delete(match.player2);
 }
 
+// Battle engine: applies step logic
+// Input: CardId or GRASS (converts CardId to CardType internally)
+// Output: updated HP
 function applyStepLogic(player1Card, player2Card, player1Hp, player2Hp) {
   let newP1Hp = player1Hp;
   let newP2Hp = player2Hp;
 
+  // Convert CardId to CardType for battle engine (backward compatibility)
+  // If already CardType (legacy), keep as is
+  const p1Type = player1Card === GRASS ? GRASS : (cardIdToType(player1Card) || player1Card);
+  const p2Type = player2Card === GRASS ? GRASS : (cardIdToType(player2Card) || player2Card);
+
   // GRASS не делает ничего сам по себе - но не блокирует атаки
   // Если оба GRASS - ничего не происходит
-  if (player1Card === GRASS && player2Card === GRASS) {
+  if (p1Type === GRASS && p2Type === GRASS) {
     return { p1Hp: newP1Hp, p2Hp: newP2Hp };
   }
 
   // (1) HEAL всегда +1 HP (только если не GRASS)
-  if (player1Card === 'HEAL') {
+  if (p1Type === 'HEAL') {
     newP1Hp = Math.min(newP1Hp + 1, MAX_HP);
   }
-  if (player2Card === 'HEAL') {
+  if (p2Type === 'HEAL') {
     newP2Hp = Math.min(newP2Hp + 1, MAX_HP);
   }
 
@@ -621,14 +698,14 @@ function applyStepLogic(player1Card, player2Card, player1Hp, player2Hp) {
   // COUNTER сам по себе ничего не делает
 
   // Обработка player1Card === 'ATTACK'
-  if (player1Card === 'ATTACK') {
-    if (player2Card === 'DEFENSE') {
+  if (p1Type === 'ATTACK') {
+    if (p2Type === 'DEFENSE') {
       // DEFENSE блокирует атаку - 0 урона
-    } else if (player2Card === 'ATTACK') {
+    } else if (p2Type === 'ATTACK') {
       // ATTACK vs ATTACK -> оба получают урон
       newP1Hp = Math.max(0, newP1Hp - 2);
       newP2Hp = Math.max(0, newP2Hp - 2);
-    } else if (player2Card === 'COUNTER') {
+    } else if (p2Type === 'COUNTER') {
       // COUNTER отражает атаку - только атакующий получает урон
       newP1Hp = Math.max(0, newP1Hp - 2);
     } else {
@@ -639,10 +716,10 @@ function applyStepLogic(player1Card, player2Card, player1Hp, player2Hp) {
   }
 
   // Обработка player2Card === 'ATTACK' (только если player1Card !== 'ATTACK', чтобы не дублировать)
-  if (player2Card === 'ATTACK' && player1Card !== 'ATTACK') {
-    if (player1Card === 'DEFENSE') {
+  if (p2Type === 'ATTACK' && p1Type !== 'ATTACK') {
+    if (p1Type === 'DEFENSE') {
       // DEFENSE блокирует атаку - 0 урона
-    } else if (player1Card === 'COUNTER') {
+    } else if (p1Type === 'COUNTER') {
       // COUNTER отражает атаку - только атакующий получает урон
       newP2Hp = Math.max(0, newP2Hp - 2);
     } else {
@@ -1071,12 +1148,16 @@ function startPrepPhase(match) {
   const p1Nickname = p1AccountId ? (db.getNickname(p1AccountId) || null) : null;
   const p2Nickname = p2AccountId ? (db.getNickname(p2AccountId) || null) : null;
 
+  // Get hands from match
+  const p1Hand = match.hands.get(match.sessions[0]) || [];
+  const p2Hand = match.hands.get(match.sessions[1]) || [];
+  
   // Отправляем prep_start
   emitToBoth(match, 'prep_start', (socketId) => {
     const sessionId = getSessionIdBySocket(socketId);
     const accountId = getAccountIdBySessionId(sessionId);
     const playerTokens = accountId ? (db.getTokens(accountId) !== null ? db.getTokens(accountId) : START_TOKENS) : START_TOKENS;
-    
+
     if (sessionId === match.sessions[0]) {
       return {
         matchId: match.id,
@@ -1087,7 +1168,7 @@ function startPrepPhase(match) {
         oppHp: p2Data.hp,
         pot: match.pot,
         yourTokens: playerTokens,
-        cards: [...CARDS],
+        yourHand: p1Hand, // CardId[4] - source of truth (replaces legacy 'cards')
         yourNickname: p1Nickname,
         oppNickname: p2Nickname
       };
@@ -1101,7 +1182,7 @@ function startPrepPhase(match) {
         oppHp: p1Data.hp,
         pot: match.pot,
         yourTokens: playerTokens,
-        cards: [...CARDS],
+        yourHand: p2Hand, // CardId[4] - source of truth (replaces legacy 'cards')
         yourNickname: p2Nickname,
         oppNickname: p1Nickname
       };
@@ -1676,7 +1757,11 @@ io.on('connection', (socket) => {
         const acc1Nickname = acc1AccountId ? (db.getNickname(acc1AccountId) || null) : null;
         const acc2Nickname = acc2AccountId ? (db.getNickname(acc2AccountId) || null) : null;
 
-        // Отправляем match_found с токенами, pot и nickname
+        // Get hands from match
+        const p1Hand = match.hands.get(s1SessionId) || [];
+        const p2Hand = match.hands.get(s2SessionId) || [];
+        
+        // Отправляем match_found с токенами, pot, nickname и hand
         player1Socket.emit('match_found', {
           matchId: match.id,
           yourHp: p1Data.hp,
@@ -1684,7 +1769,8 @@ io.on('connection', (socket) => {
           yourTokens: acc1Tokens,
           pot: match.pot,
           yourNickname: acc1Nickname,
-          oppNickname: acc2Nickname
+          oppNickname: acc2Nickname,
+          yourHand: p1Hand // CardId[4] - source of truth
         });
 
         player2Socket.emit('match_found', {
@@ -1694,7 +1780,8 @@ io.on('connection', (socket) => {
           yourTokens: acc2Tokens,
           pot: match.pot,
           yourNickname: acc2Nickname,
-          oppNickname: acc1Nickname
+          oppNickname: acc1Nickname,
+          yourHand: p2Hand // CardId[4] - source of truth
         });
 
         // Начинаем первый раунд
@@ -1753,15 +1840,23 @@ io.on('connection', (socket) => {
 
     // Валидация draft layout (может содержать null)
     if (!validateDraftLayout(data.layout)) {
-      log(`[IGNORED_DRAFT] sid=${socket.id} sessionId=${sessionId} reason=invalid_layout`);
+      log(`[IGNORED_DRAFT] sid=${match.id} sessionId=${sessionId} reason=invalid_layout`);
       return;
     }
 
-    // Валидация: все карты должны быть из hand игрока (CARDS)
-    const invalidCard = data.layout.find(card => card !== null && !CARDS.includes(card));
-    if (invalidCard) {
-      log(`[IGNORED_DRAFT] sid=${socket.id} sessionId=${sessionId} reason=invalid_card card=${invalidCard}`);
-      return;
+    // Валидация: все карты должны быть из hand игрока
+    const playerHand = match.hands.get(sessionId) || [];
+    if (!validateCardsFromHand(data.layout, playerHand)) {
+      console.error(`[INVALID_CARD_FROM_CLIENT] match=${match.id} sessionId=${sessionId} layout=${JSON.stringify(data.layout)} hand=${JSON.stringify(playerHand)}`);
+      // Ignore invalid cards (replace with null) - don't crash, but log error
+      data.layout = data.layout.map(cardId => {
+        if (cardId === null) return null;
+        if (!isValidCardId(cardId) || !playerHand.includes(cardId)) {
+          return null; // Replace invalid card with null
+        }
+        return cardId;
+      });
+      log(`[DRAFT_FIXED] match=${match.id} sessionId=${sessionId} fixed_layout=${JSON.stringify(data.layout)}`);
     }
 
     // Сохраняем draft layout (не финализируем до prepTimer или confirm)
@@ -1807,14 +1902,17 @@ io.on('connection', (socket) => {
 
     // Валидация расклада
     if (!validateLayout(data.layout)) {
-      log(`[IGNORED_CONFIRM] sid=${socket.id} sessionId=${sessionId} reason=invalid_layout`);
+      log(`[IGNORED_CONFIRM] match=${match.id} sessionId=${sessionId} reason=invalid_layout`);
       return; // Игнорируем молча
     }
 
-    // Валидация: все карты должны быть из hand игрока (CARDS)
-    const invalidCard = data.layout.find(card => !CARDS.includes(card));
-    if (invalidCard) {
-      log(`[IGNORED_CONFIRM] sid=${socket.id} sessionId=${sessionId} reason=invalid_card card=${invalidCard}`);
+    // Валидация: все карты должны быть из hand игрока
+    const playerHand = match.hands.get(sessionId) || [];
+    if (!validateCardsFromHand(data.layout, playerHand)) {
+      console.error(`[INVALID_CARD_FROM_CLIENT] match=${match.id} sessionId=${sessionId} layout=${JSON.stringify(data.layout)} hand=${JSON.stringify(playerHand)}`);
+      // Reject confirm if cards are invalid (don't accept invalid layout)
+      socket.emit('error_msg', { message: 'Invalid cards: cards must be from your hand' });
+      log(`[IGNORED_CONFIRM] match=${match.id} sessionId=${sessionId} reason=invalid_cards_from_hand`);
       return;
     }
 

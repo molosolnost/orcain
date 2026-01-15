@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { socketManager } from '../net/socket';
-import type { Card, PrepStartPayload, StepRevealPayload, MatchEndPayload } from '../net/types';
+import type { CardId, PrepStartPayload, StepRevealPayload, MatchEndPayload } from '../net/types';
+import { cardIdToType } from '../cards';
 
 type BattleState = 'prep' | 'playing' | 'ended';
 
@@ -17,21 +18,23 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   const [yourHp, setYourHp] = useState(10);
   const [oppHp, setOppHp] = useState(10);
   const [pot, setPot] = useState(0);
-  const [slots, setSlots] = useState<(Card | null)[]>([null, null, null]);
-  const [availableCards, setAvailableCards] = useState<Card[]>(['ATTACK', 'DEFENSE', 'HEAL', 'COUNTER']);
+  // Slots store CardId (for sending to server)
+  const [slots, setSlots] = useState<(CardId | null)[]>([null, null, null]);
+  // Hand stores CardId[4] from server (source of truth)
+  const [yourHand, setYourHand] = useState<CardId[]>([]);
   const [confirmed, setConfirmed] = useState(false);
   const [deadlineTs, setDeadlineTs] = useState<number | null>(null);
   const [nowTs, setNowTs] = useState(Date.now());
   const [roundIndex, setRoundIndex] = useState(1);
   const [suddenDeath, setSuddenDeath] = useState(false);
-  const [revealedCards, setRevealedCards] = useState<{ step: number; yourCard: Card; oppCard: Card }[]>([]);
+  const [revealedCards, setRevealedCards] = useState<{ step: number; yourCard: CardId; oppCard: CardId }[]>([]);
   const [currentStepIndex, setCurrentStepIndex] = useState<number | null>(null);
   const [phase, setPhase] = useState<'PREP' | 'REVEAL' | 'END'>('PREP');
   const [yourNickname, setYourNickname] = useState<string | null>(null);
   const [oppNickname, setOppNickname] = useState<string | null>(null);
 
   const [dragState, setDragState] = useState<{
-    card: Card;
+    card: CardId;
     x: number;
     y: number;
     offsetX: number;
@@ -152,7 +155,8 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     setOppHp(lastPrepStart.oppHp);
     setPot(lastPrepStart.pot);
     setSuddenDeath(lastPrepStart.suddenDeath);
-    setAvailableCards([...lastPrepStart.cards]);
+    // Use yourHand from server (source of truth)
+    setYourHand(lastPrepStart.yourHand || []);
     
     // Никнеймы обновляем из prep_start (может быть более актуальная версия)
     // КРИТИЧНО: устанавливаем даже если undefined (null) - это явное значение
@@ -199,6 +203,8 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       // КРИТИЧНО: устанавливаем даже если undefined (null) - это явное значение
       setYourNickname(payload.yourNickname ?? null);
       setOppNickname(payload.oppNickname ?? null);
+      // Hand устанавливаем из match_found (source of truth)
+      setYourHand(payload.yourHand || []);
       // deadlineTs придет в prep_start, но уже сейчас готовы к его получению
     });
 
@@ -309,9 +315,9 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     }
   }, [canInteract, dragState]);
 
-  const toCardCode = (v: Card | null): string | null => (v ? v : null);
+  const toCardCode = (v: CardId | null): string | null => (v ? v : null);
 
-  const scheduleDraft = (nextSlots: (Card | null)[]) => {
+  const scheduleDraft = (nextSlots: (CardId | null)[]) => {
     if (!currentMatchId) return;
     if (draftDebounceRef.current) {
       window.clearTimeout(draftDebounceRef.current);
@@ -332,7 +338,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     return Number.isFinite(slotIndex) ? slotIndex : null;
   };
 
-  const applySlotsUpdate = (updater: (prev: (Card | null)[]) => (Card | null)[]) => {
+  const applySlotsUpdate = (updater: (prev: (CardId | null)[]) => (CardId | null)[]) => {
     setSlots(prev => {
       const next = updater(prev);
       scheduleDraft(next);
@@ -340,9 +346,9 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     });
   };
 
-  const applyDropToSlot = (card: Card, slotIndex: number, sourceSlotIndex: number | null) => {
+  const applyDropToSlot = (card: CardId, slotIndex: number, sourceSlotIndex: number | null) => {
     if (!canInteract) return;
-    applySlotsUpdate(prev => {
+    setSlots(prev => {
       const next = [...prev];
       const oldSlotIndex = prev.indexOf(card);
 
@@ -370,7 +376,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
   const handlePointerDown = (
     e: React.PointerEvent<HTMLDivElement>,
-    card: Card,
+    card: CardId,
     sourceSlotIndex: number | null
   ) => {
     if (!canInteract) return;
@@ -469,16 +475,22 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
   const handleConfirm = () => {
     if (confirmed) return;
-    const layout = slots.filter((card): card is Card => card !== null);
+    const layout = slots.filter((card): card is CardId => card !== null);
     if (layout.length !== 3) return;
     
+    // Convert CardId[] to string[] for server (server expects CardId strings)
     socketManager.layoutConfirm(layout);
   };
 
 
-  // Функция для получения цвета карты
-  const getCardColor = (card: Card) => {
-    switch (card) {
+  // Функция для получения цвета карты (принимает CardId, конвертирует в CardType для UI)
+  const getCardColor = (cardId: CardId | null) => {
+    if (!cardId) {
+      return { bg: '#f5f5f5', border: '#333', text: '#000', icon: '' };
+    }
+    // Convert CardId to CardType for display
+    const cardType = cardIdToType(cardId);
+    switch (cardType) {
       case 'ATTACK':
         return { bg: '#ffebee', border: '#f44336', text: '#c62828', icon: '⚔' };
       case 'DEFENSE':
@@ -492,8 +504,8 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     }
   };
 
-  // Общий компонент/функция renderCard
-  const renderCard = (card: Card | null, mode: 'HAND' | 'SLOT' | 'BACK' | 'REVEAL', slotIndex?: number) => {
+  // Общий компонент/функция renderCard (принимает CardId, конвертирует для отображения)
+  const renderCard = (cardId: CardId | null, mode: 'HAND' | 'SLOT' | 'BACK' | 'REVEAL', slotIndex?: number) => {
     // Calculate card size based on mode - hand cards need to be smaller to fit 4 in a row
     // Hand: 4 cards, padding 24px (12px*2), gaps 12px (4px*3) = (100vw - 24px - 12px) / 4
     // Slots: 3 cards, padding 24px, gaps 12px (6px*2) = (100vw - 24px - 12px) / 3
@@ -526,7 +538,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       );
     }
 
-    if (!card) {
+    if (!cardId) {
       if (mode === 'SLOT') {
         return (
           <div
@@ -553,8 +565,10 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       return null;
     }
 
-    const colors = getCardColor(card);
-    const cardName = card === 'COUNTER' ? 'COUNTER' : card;
+    const colors = getCardColor(cardId);
+    // Convert CardId to CardType for display
+    const cardType = cardId ? cardIdToType(cardId) : null;
+    const cardName = cardType || '';
 
     return (
       <div
@@ -755,16 +769,16 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
             width: '100%',
             boxSizing: 'border-box'
           }}>
-            {availableCards.map((card) => {
-              const inSlot = slots.includes(card);
-              const isDraggingCard = dragState?.card === card;
-              const cardElement = renderCard(card, 'HAND');
+            {yourHand.map((cardId) => {
+              const inSlot = slots.includes(cardId);
+              const isDraggingCard = dragState?.card === cardId;
+              const cardElement = renderCard(cardId, 'HAND');
 
               return (
                 <div
-                  key={card}
+                  key={cardId}
                   className="battle-card"
-                  onPointerDown={(e) => handlePointerDown(e, card, null)}
+                  onPointerDown={(e) => handlePointerDown(e, cardId, null)}
                   onPointerMove={handlePointerMove}
                   onPointerUp={handlePointerEnd}
                   onPointerCancel={handlePointerCancel}

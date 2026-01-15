@@ -1,4 +1,8 @@
+// Legacy Card type (for backward compatibility in UI)
 export type Card = "ATTACK" | "DEFENSE" | "HEAL" | "COUNTER";
+
+// CardId type (new stable card system)
+export type CardId = "attack" | "defense" | "heal" | "counter";
 
 export type MatchFoundPayload = {
   matchId?: string;
@@ -8,6 +12,7 @@ export type MatchFoundPayload = {
   pot: number;
   yourNickname?: string | null;
   oppNickname?: string | null;
+  yourHand: CardId[]; // CardId[4] - source of truth from server
 };
 
 export type PrepStartPayload = {
@@ -19,7 +24,7 @@ export type PrepStartPayload = {
   oppHp: number;
   pot: number;
   yourTokens: number;
-  cards: Card[];
+  yourHand: CardId[]; // CardId[4] - source of truth (replaces legacy 'cards')
   yourNickname?: string | null;
   oppNickname?: string | null;
 };
@@ -28,8 +33,8 @@ export type StepRevealPayload = {
   matchId: string;
   roundIndex: number;
   stepIndex: number;
-  yourCard: Card;
-  oppCard: Card;
+  yourCard: CardId; // CardId from server
+  oppCard: CardId; // CardId from server
   yourHp: number;
   oppHp: number;
   yourNickname?: string | null;
