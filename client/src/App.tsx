@@ -255,7 +255,6 @@ function App() {
       if (payload.tutorialCompleted !== undefined) {
         setTutorialCompleted(payload.tutorialCompleted);
       }
-      }
       
       // Если nickname пустой и мы не в onboarding - показываем onboarding
       const currentNick = payload.nickname !== undefined ? payload.nickname : nickname;
