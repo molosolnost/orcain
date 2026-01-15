@@ -30,14 +30,45 @@ const MATCH_COST = 1;
 const DISCONNECT_GRACE_MS = 5000; // 5 seconds grace period for reconnect
 const PLAY_STEP_TIMEOUT_MS = 15000; // 15 seconds global timeout for PLAY phase
 
-// Debug flag
-const DEBUG = false;
+// Debug flag (can be set via env DEBUG_MATCH=1)
+const DEBUG = process.env.DEBUG_MATCH === '1' || process.env.DEBUG_MATCH === 'true';
 
 // Helper for debug logging
 function log(...args) {
   if (DEBUG) {
     console.log(...args);
   }
+}
+
+// Runtime invariant assertion
+// If condition is false, logs error and returns false (does not crash in prod)
+function assertInvariant(match, condition, code, details) {
+  if (!condition) {
+    const matchId = match?.id || 'unknown';
+    const roundIndex = match?.roundIndex || 'unknown';
+    const state = match?.state || 'unknown';
+    console.error(`[INVARIANT_FAIL] code=${code} matchId=${matchId} roundIndex=${roundIndex} state=${state} details=${JSON.stringify(details)}`);
+    return false;
+  }
+  return true;
+}
+
+// Structured logging helpers
+function logFinalizeRound(match, data) {
+  const { p1_hadDraft, p1_afk, p1_streak, p2_hadDraft, p2_afk, p2_streak, bothAfkStreak, decision } = data;
+  console.log(`[FINALIZE_ROUND] matchId=${match.id} roundIndex=${match.roundIndex} p1_hadDraft=${p1_hadDraft} p1_afk=${p1_afk} p1_streak=${p1_streak} p2_hadDraft=${p2_hadDraft} p2_afk=${p2_afk} p2_streak=${p2_streak} bothAfkStreak=${bothAfkStreak} decision=${decision}`);
+}
+
+function logFinalizeRoundDecision(match, decision, reason) {
+  console.log(`[FINALIZE_ROUND_DECISION] matchId=${match.id} roundIndex=${match.roundIndex} decision=${decision} reason=${reason || 'N/A'}`);
+}
+
+function logMatchEnd(match, reason, winner, loser) {
+  console.log(`[MATCH_END] matchId=${match.id} roundIndex=${match.roundIndex} reason=${reason} winner=${winner || 'N/A'} loser=${loser || 'N/A'}`);
+}
+
+function logStateTransition(match, fromState, toState, reason) {
+  console.log(`[STATE_TRANSITION] matchId=${match.id} roundIndex=${match.roundIndex} from=${fromState} to=${toState} reason=${reason || 'N/A'}`);
 }
 
 // Matchmaking queue (по sessionId)
@@ -117,7 +148,9 @@ function createMatch(player1Socket, player2Socket) {
     // AFK tracking
     hadDraftThisRound: new Map(), // sessionId -> boolean (сбрасывается каждый раунд)
     afkStreakByPlayer: new Map(), // sessionId -> number (streak count)
-    bothAfkStreak: 0 // счетчик подряд идущих раундов где оба AFK
+    bothAfkStreak: 0, // счетчик подряд идущих раундов где оба AFK
+    // Invariant tracking
+    finalizedRoundIndex: null // Последний финализированный roundIndex (для single-run guard)
   };
 
   // Сохраняем матч по ID и по socketId
@@ -320,6 +353,17 @@ function finalizeLayout(confirmedLayout, draftLayout) {
 // ЕДИНАЯ ФУНКЦИЯ ФИНАЛИЗАЦИИ РАУНДА - вызывается РОВНО 1 раз на раунд по дедлайну PREP
 // Делает весь порядок: финализация layout, определение AFK, обновление streaks, проверка end conditions
 function finalizeRound(match) {
+  // INVARIANT: finalizeRound single-run - не может выполниться 2 раза для одного roundIndex
+  if (match.finalizedRoundIndex === match.roundIndex) {
+    assertInvariant(match, false, 'FINALIZE_ROUND_DOUBLE', { finalizedRoundIndex: match.finalizedRoundIndex, currentRoundIndex: match.roundIndex });
+    return false; // Уже финализирован этот раунд
+  }
+  
+  // INVARIANT: match state must be 'prep'
+  if (!assertInvariant(match, match.state === 'prep', 'FINALIZE_ROUND_WRONG_STATE', { state: match.state })) {
+    return false;
+  }
+  
   const sid1 = match.sessions[0];
   const sid2 = match.sessions[1];
   const p1Data = getPlayerData(sid1);
@@ -328,6 +372,11 @@ function finalizeRound(match) {
   if (!p1Data || !p2Data) {
     console.error(`[FINALIZE_ROUND_ERROR] match=${match.id} missing player data`);
     return false; // Данные не готовы
+  }
+  
+  // INVARIANT: pot sanity
+  if (!assertInvariant(match, match.pot >= 0, 'POT_NEGATIVE', { pot: match.pot })) {
+    return false;
   }
   
   // (1) Финализируем layouts для обоих игроков
@@ -374,68 +423,77 @@ function finalizeRound(match) {
     match.bothAfkStreak = 0;
   }
   
-  // (4) Логирование для диагностики (структурный лог)
+  // (4) Структурное логирование
   const decision = (() => {
-    if (match.bothAfkStreak >= 2) return `endMatch(reason=timeout, potBurn=true, bothLose=true)`;
-    if (newStreak1 >= 2) return `endMatch(reason=afk, winner=${sid2})`;
-    if (newStreak2 >= 2) return `endMatch(reason=afk, winner=${sid1})`;
+    if (match.bothAfkStreak >= 2) return 'endMatch_timeout_both';
+    if (newStreak1 >= 2) return 'endMatch_afk_p1';
+    if (newStreak2 >= 2) return 'endMatch_afk_p2';
     return 'continue';
   })();
   
-  console.log(`[FINALIZE_ROUND] match=${match.id} round=${match.roundIndex} p1_hadDraft=${hadDraft1} p1_afk=${isAfk1} p1_streak=${newStreak1} p2_hadDraft=${hadDraft2} p2_afk=${isAfk2} p2_streak=${newStreak2} bothAfkStreak=${match.bothAfkStreak} decision=${decision}`);
+  logFinalizeRound(match, {
+    p1_hadDraft: hadDraft1,
+    p1_afk: isAfk1,
+    p1_streak: newStreak1,
+    p2_hadDraft: hadDraft2,
+    p2_afk: isAfk2,
+    p2_streak: newStreak2,
+    bothAfkStreak: match.bothAfkStreak,
+    decision: decision
+  });
   
   // (5) Проверка условий завершения матча СТРОГО в этом порядке
   // GUARD: проверяем инварианты перед завершением
   if (match.bothAfkStreak >= 2) {
-    // GUARD: проверяем что действительно оба AFK 2 раунда
-    if (!isAfk1 || !isAfk2) {
-      console.error(`[FINALIZE_ROUND_GUARD_FAIL] match=${match.id} bothAfkStreak=${match.bothAfkStreak} but isAfk1=${isAfk1} isAfk2=${isAfk2} - NOT ending match`);
-      return false; // Не завершаем если guard не прошёл
+    // INVARIANT: AFK canon - reason="timeout" only if bothAfkStreak >= 2 and isAfkA && isAfkB
+    if (!assertInvariant(match, isAfk1 && isAfk2, 'AFK_CANON_BOTH', { bothAfkStreak: match.bothAfkStreak, isAfk1, isAfk2 })) {
+      return false;
     }
     // Оба AFK 2 раунда подряд -> pot burn, оба поражение
-    console.log(`[FINALIZE_ROUND_END] match=${match.id} reason=both_afk_2_rounds potBurn=true`);
+    logFinalizeRoundDecision(match, 'endMatch', 'timeout_both');
     endMatchBothAfk(match);
+    match.finalizedRoundIndex = match.roundIndex; // Отмечаем что раунд финализирован
     return true; // Матч завершён
   } else if (newStreak1 >= 2) {
-    // GUARD: проверяем что действительно игрок 1 AFK 2 раунда
-    if (!isAfk1) {
-      console.error(`[FINALIZE_ROUND_GUARD_FAIL] match=${match.id} streak1=${newStreak1} but isAfk1=${isAfk1} - NOT ending match`);
-      return false; // Не завершаем если guard не прошёл
+    // INVARIANT: AFK canon - reason="afk" only if loser.afkStreak >= 2
+    if (!assertInvariant(match, isAfk1, 'AFK_CANON_P1', { streak1: newStreak1, isAfk1 })) {
+      return false;
     }
     // Игрок 1 AFK 2 раунда -> игрок 2 выиграл
-    console.log(`[FINALIZE_ROUND_END] match=${match.id} reason=afk_2_rounds loser=${sid1} winner=${sid2}`);
+    logFinalizeRoundDecision(match, 'endMatch', 'afk_p1');
     endMatchForfeit(match, sid1, sid2, 'timeout'); // Используем 'timeout' для совместимости с клиентом
+    match.finalizedRoundIndex = match.roundIndex; // Отмечаем что раунд финализирован
     return true; // Матч завершён
   } else if (newStreak2 >= 2) {
-    // GUARD: проверяем что действительно игрок 2 AFK 2 раунда
-    if (!isAfk2) {
-      console.error(`[FINALIZE_ROUND_GUARD_FAIL] match=${match.id} streak2=${newStreak2} but isAfk2=${isAfk2} - NOT ending match`);
-      return false; // Не завершаем если guard не прошёл
+    // INVARIANT: AFK canon - reason="afk" only if loser.afkStreak >= 2
+    if (!assertInvariant(match, isAfk2, 'AFK_CANON_P2', { streak2: newStreak2, isAfk2 })) {
+      return false;
     }
     // Игрок 2 AFK 2 раунда -> игрок 1 выиграл
-    console.log(`[FINALIZE_ROUND_END] match=${match.id} reason=afk_2_rounds loser=${sid2} winner=${sid1}`);
+    logFinalizeRoundDecision(match, 'endMatch', 'afk_p2');
     endMatchForfeit(match, sid2, sid1, 'timeout'); // Используем 'timeout' для совместимости с клиентом
+    match.finalizedRoundIndex = match.roundIndex; // Отмечаем что раунд финализирован
     return true; // Матч завершён
   }
   
   // Матч продолжается
+  match.finalizedRoundIndex = match.roundIndex; // Отмечаем что раунд финализирован
   return false;
 }
 
 // Завершение матча когда оба игрока AFK 2 раунда подряд
 function endMatchBothAfk(match) {
-  // GUARD: проверяем что матч ещё не завершён
-  if (match.state === 'ended') {
-    console.error(`[ENDMATCH_GUARD_FAIL] match=${match.id} already ended, ignoring endMatchBothAfk`);
+  // INVARIANT: endMatch idempotent
+  if (!assertInvariant(match, match.state !== 'ended', 'ENDMATCH_IDEMPOTENT', { currentState: match.state, reason: 'both_afk' })) {
     return; // Матч уже завершён, игнорируем
   }
   
-  // GUARD: проверяем что bothAfkStreak действительно >= 2
-  if (match.bothAfkStreak < 2) {
-    console.error(`[ENDMATCH_GUARD_FAIL] match=${match.id} bothAfkStreak=${match.bothAfkStreak} < 2 - NOT ending match`);
+  // INVARIANT: AFK canon - bothAfkStreak >= 2
+  if (!assertInvariant(match, match.bothAfkStreak >= 2, 'AFK_CANON_BOTH_STREAK', { bothAfkStreak: match.bothAfkStreak })) {
     return; // Не завершаем если guard не прошёл
   }
   
+  logStateTransition(match, match.state, 'ended', 'both_afk');
   match.state = 'ended';
   match.roundInProgress = false;
   match.paused = false;
@@ -514,7 +572,7 @@ function endMatchBothAfk(match) {
     };
   });
   
-  log(`[FORCE_END] match=${match.id} reason=both_afk_2_rounds`);
+  logMatchEnd(match, 'timeout', null, null); // Both lose, no winner
   
   // Очистка player data
   p1Data.matchId = null;
@@ -699,6 +757,15 @@ function doOneStep(match, stepIndex) {
   const p2Card = p2Data.layout[stepIndex];
 
   const result = applyStepLogic(p1Card, p2Card, p1Data.hp, p2Data.hp);
+  
+  // INVARIANT: HP sanity - HP в разумных границах (0..MAX_HP)
+  if (!assertInvariant(match, result.p1Hp >= 0 && result.p1Hp <= MAX_HP, 'HP_SANITY_P1', { hp: result.p1Hp, maxHp: MAX_HP })) {
+    result.p1Hp = Math.max(0, Math.min(MAX_HP, result.p1Hp)); // Clamp to valid range
+  }
+  if (!assertInvariant(match, result.p2Hp >= 0 && result.p2Hp <= MAX_HP, 'HP_SANITY_P2', { hp: result.p2Hp, maxHp: MAX_HP })) {
+    result.p2Hp = Math.max(0, Math.min(MAX_HP, result.p2Hp)); // Clamp to valid range
+  }
+  
   p1Data.hp = result.p1Hp;
   p2Data.hp = result.p2Hp;
 
@@ -923,6 +990,12 @@ function startPrepPhase(match) {
   match.state = 'prep';
   match.roundInProgress = false;
   
+  // Сбрасываем finalizedRoundIndex для нового раунда
+  match.finalizedRoundIndex = null;
+  
+  // Логируем переход состояния
+  logStateTransition(match, 'playing', 'prep', 'round_start');
+  
   // Очищаем предыдущий watchdog если есть
   if (match.watchdogTimer) {
     clearTimeout(match.watchdogTimer);
@@ -1070,9 +1143,8 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
   // ВАЖНО: loserSessionId и winnerSessionId должны быть переданы как аргументы
   // НЕ вычисляем их через players map, так как данные могут быть уже удалены
   
-  // GUARD: проверяем что матч ещё не завершён
-  if (match.state === 'ended') {
-    console.error(`[ENDMATCH_GUARD_FAIL] match=${match.id} already ended, ignoring endMatchForfeit`);
+  // INVARIANT: endMatch idempotent
+  if (!assertInvariant(match, match.state !== 'ended', 'ENDMATCH_IDEMPOTENT', { currentState: match.state, reason })) {
     return; // Матч уже завершён, игнорируем
   }
   
@@ -1164,7 +1236,7 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
   }
 
   // Лог в endMatch
-  log(`[END] match=${match.id} winner=${winnerSessionId} finalHp=${p1Hp}-${p2Hp}`);
+  logMatchEnd(match, reason, winnerSessionId, loserSessionId);
   
   // Получаем токены по accountId для отправки
   const acc1AccountId = getAccountIdBySessionId(match.sessions[0]);
@@ -1202,7 +1274,7 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
     };
   });
   
-  log(`[FORCE_END] match=${match.id} reason=${finalReason}`);
+  // Already logged by logMatchEnd above
 
   // Очистка: не удаляем players, только сбрасываем matchId/layout/confirmed, hp оставляем
   p1Data.matchId = null;
@@ -1228,12 +1300,12 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
 }
 
 function endMatch(match, reason = 'normal') {
-  // GUARD: проверяем что матч ещё не завершён
-  if (match.state === 'ended') {
-    console.error(`[ENDMATCH_GUARD_FAIL] match=${match.id} already ended, ignoring endMatch`);
+  // INVARIANT: endMatch idempotent
+  if (!assertInvariant(match, match.state !== 'ended', 'ENDMATCH_IDEMPOTENT', { currentState: match.state, reason })) {
     return; // Матч уже завершён, игнорируем
   }
   
+  logStateTransition(match, match.state, 'ended', reason);
   match.state = 'ended';
   match.roundInProgress = false;
   match.paused = false;
@@ -1290,8 +1362,8 @@ function endMatch(match, reason = 'normal') {
     db.addTokens(winnerAccountId, match.pot);
   }
 
-  // Лог в endMatch
-  log(`[END] match=${match.id} winner=${winnerSessionId} finalHp=${p1Data.hp}-${p2Data.hp}`);
+  // Структурированный лог
+  logMatchEnd(match, reason, winnerSessionId, loserSessionId);
   
   // Получаем токены по accountId для отправки
   const acc1AccountId = getAccountIdBySessionId(match.sessions[0]);
@@ -1330,7 +1402,7 @@ function endMatch(match, reason = 'normal') {
     };
   });
   
-  log(`[FORCE_END] match=${match.id} reason=${finalReason}`);
+  // Already logged by logMatchEnd above
 
   // Очистка: не удаляем players, только сбрасываем matchId/layout/confirmed, hp оставляем
   p1Data.matchId = null;
@@ -1657,8 +1729,11 @@ io.on('connection', (socket) => {
     }
     
     const match = getMatch(socket.id);
-    // Жёсткая валидация состояния: только если match.state === 'prep'
-    if (!match || match.state !== 'prep') {
+    // INVARIANT: phase correctness - layout_draft only in PREP
+    if (!match) {
+      return;
+    }
+    if (!assertInvariant(match, match.state === 'prep', 'PHASE_DRAFT', { state: match.state, event: 'layout_draft' })) {
       log(`[IGNORED_DRAFT] sid=${socket.id} sessionId=${sessionId} reason=wrong_state`);
       return;
     }
@@ -1703,11 +1778,14 @@ io.on('connection', (socket) => {
     if (!sessionId) {
       return;
     }
-    
+
     const match = getMatch(socket.id);
-    // Жёсткая валидация состояния: только если match.state === 'prep'
-    if (!match || match.state !== 'prep') {
-      log(`[IGNORED_CONFIRM] sid=${socket.id} sessionId=${sessionId} reason=state_or_already_confirmed`);
+    // INVARIANT: phase correctness - layout_confirm only in PREP
+    if (!match) {
+      return;
+    }
+    if (!assertInvariant(match, match.state === 'prep', 'PHASE_CONFIRM', { state: match.state, event: 'layout_confirm' })) {
+      log(`[IGNORED_CONFIRM] sid=${socket.id} sessionId=${sessionId} reason=wrong_state`);
       return;
     }
 
