@@ -314,8 +314,154 @@ function createPvEMatch(playerSocket) {
   accountIdBySessionId.set(BOT_SESSION_ID, BOT_ACCOUNT_ID);
   
   console.log(`[PVE_MATCH_CREATED] matchId=${matchId} player=${playerSessionId}`);
-  
+
   return match;
+}
+
+// Tutorial bot constants
+const TUTORIAL_BOT_NICKNAME = 'Тренер';
+
+// Tutorial script: bot actions per round
+// Round 1: Bot plays ATTACK (to show player how to defend)
+// Round 2: Bot plays DEFENSE (to show player how to attack)
+// Round 3: Bot plays HEAL (to show player how to counter)
+const TUTORIAL_SCRIPT = {
+  1: ['attack', null, null], // Round 1: Bot attacks
+  2: ['defense', null, null], // Round 2: Bot defends
+  3: ['heal', null, null] // Round 3: Bot heals
+};
+
+// Create Tutorial match (player vs scripted bot)
+function createTutorialMatch(playerSocket) {
+  const matchId = `tutorial_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  const playerSessionId = getSessionIdBySocket(playerSocket.id);
+  if (!playerSessionId) {
+    throw new Error('Cannot create Tutorial match: missing sessionId');
+  }
+
+  const playerAccountId = getAccountIdBySessionId(playerSessionId);
+  if (!playerAccountId) {
+    throw new Error('Cannot create Tutorial match: missing accountId');
+  }
+
+  // Tutorial is FREE - no token deduction
+  const pot = 0; // No pot in Tutorial
+
+  // Get player hand
+  const playerHand = getHandForAccount(playerAccountId);
+  if (playerHand.length !== 4) {
+    console.error(`[INVARIANT_FAIL] code=HAND_SIZE_PLAYER handSize=${playerHand.length} expected=4`);
+    throw new Error(`Invalid hand size for player: ${playerHand.length}, expected 4`);
+  }
+
+  // Create bot player data
+  const botData = getPlayerData(BOT_SESSION_ID);
+  botData.hp = START_HP;
+  botData.confirmed = false;
+  botData.layout = null;
+  botData.draftLayout = null;
+  botData.matchId = matchId;
+
+  // Create player data
+  const playerData = getPlayerData(playerSessionId);
+  playerData.hp = START_HP;
+  playerData.confirmed = false;
+  playerData.layout = null;
+  playerData.draftLayout = null;
+  playerData.matchId = matchId;
+
+  // Create match structure
+  const match = {
+    id: matchId,
+    mode: 'TUTORIAL', // Tutorial mode
+    sessions: [playerSessionId, BOT_SESSION_ID],
+    socketIds: [playerSocket.id, null], // Bot has no socket
+    player1: playerSocket.id,
+    player2: null, // Bot has no socket
+    roundIndex: 1,
+    suddenDeath: false,
+    state: 'prep',
+    prepDeadline: null,
+    prepTimer: null,
+    roundInProgress: false,
+    playAbortToken: 0,
+    pot: pot,
+    paused: false,
+    pauseReason: null,
+    currentStepIndex: null,
+    stepTimer: null,
+    watchdogTimer: null,
+    // Card system
+    hands: new Map(),
+    // AFK tracking (disabled for tutorial)
+    hadDraftThisRound: new Map(),
+    afkStreakByPlayer: new Map(),
+    bothAfkStreak: 0,
+    // Invariant tracking
+    finalizedRoundIndex: null,
+    // Tutorial tracking
+    tutorialScript: TUTORIAL_SCRIPT // Script for bot actions
+  };
+
+  // Store hands
+  match.hands.set(playerSessionId, playerHand);
+  match.hands.set(BOT_SESSION_ID, BOT_HAND);
+
+  // Store match
+  matchesById.set(matchId, match);
+  matchIdBySocket.set(playerSocket.id, matchId);
+
+  // Add player to Socket.IO room
+  io.sockets.sockets.get(playerSocket.id)?.join(matchId);
+
+  // Register bot session/account mappings (for compatibility)
+  sessionIdBySocket.set('BOT_SOCKET', BOT_SESSION_ID);
+  socketBySessionId.set(BOT_SESSION_ID, 'BOT_SOCKET');
+  accountIdBySessionId.set(BOT_SESSION_ID, BOT_ACCOUNT_ID);
+
+  console.log(`[TUTORIAL_MATCH_CREATED] matchId=${matchId} player=${playerSessionId}`);
+
+  return match;
+}
+
+// Submit tutorial bot layout_draft (scripted, no randomness)
+function submitTutorialBotDraft(match) {
+  const botSessionId = BOT_SESSION_ID;
+  const botData = getPlayerData(botSessionId);
+
+  if (!botData) {
+    console.error(`[TUTORIAL_BOT_ERROR] match=${match.id} botData not found`);
+    return;
+  }
+
+  // Get scripted action for current round
+  const scriptedLayout = match.tutorialScript[match.roundIndex];
+  if (!scriptedLayout) {
+    // Fallback: use first card from hand
+    const botHand = match.hands.get(botSessionId) || [];
+    scriptedLayout = [botHand[0] || 'attack', null, null];
+    console.log(`[TUTORIAL_BOT_FALLBACK] match=${match.id} round=${match.roundIndex} using fallback layout`);
+  }
+
+  // Bot layout: [chosenCard, null, null] -> will be filled with GRASS in finalizeLayout
+  const botLayout = [...scriptedLayout];
+
+  // Validate bot layout against bot's hand
+  const botHand = match.hands.get(botSessionId) || [];
+  if (!validateCardsFromHand(botLayout, botHand)) {
+    console.error(`[TUTORIAL_BOT_ERROR] match=${match.id} invalid layout=${JSON.stringify(botLayout)} hand=${JSON.stringify(botHand)}`);
+    // Fallback: use first card from hand
+    botLayout[0] = botHand[0] || 'attack';
+  }
+
+  // Save bot draft
+  botData.draftLayout = [...botLayout];
+  match.hadDraftThisRound.set(botSessionId, true);
+
+  console.log(`[TUTORIAL_BOT_LAYOUT_SUBMITTED] match=${match.id} round=${match.roundIndex} scriptedLayout=${JSON.stringify(botLayout)}`);
+
+  // Bot never confirms early - waits for deadline
 }
 
 // Bot decision logic (MVP)
@@ -465,8 +611,8 @@ function emitToBoth(match, event, payloadForSidFn) {
   const socket1 = match.socketIds[0] || match.player1;
   const socket2 = match.socketIds[1] || match.player2;
   
-  // PvE mode: only send to player (bot has no socket)
-  if (match.mode === 'PVE') {
+  // PvE/Tutorial mode: only send to player (bot has no socket)
+  if (match.mode === 'PVE' || match.mode === 'TUTORIAL') {
     if (socket1) {
       const payload = payloadForSidFn(socket1);
       if (payload) {
@@ -655,8 +801,9 @@ function finalizeRound(match) {
   const hadDraft1 = match.hadDraftThisRound.get(sid1) === true;
   const hadDraft2 = match.hadDraftThisRound.get(sid2) === true;
   // BOT is NEVER considered AFK
-  const isAfk1 = sid1 === BOT_SESSION_ID ? false : !hadDraft1; // Источник правды: hadDraft === false
-  const isAfk2 = sid2 === BOT_SESSION_ID ? false : !hadDraft2;
+  // TUTORIAL mode: AFK logic disabled (player can take as long as needed)
+  const isAfk1 = (match.mode === 'TUTORIAL' || sid1 === BOT_SESSION_ID) ? false : !hadDraft1; // Источник правды: hadDraft === false
+  const isAfk2 = (match.mode === 'TUTORIAL' || sid2 === BOT_SESSION_ID) ? false : !hadDraft2;
   
   // (3) Обновляем AFK streaks
   const currentStreak1 = match.afkStreakByPlayer.get(sid1) || 0;
@@ -1053,9 +1200,13 @@ function doOneStep(match, stepIndex) {
   // Получаем nickname для обоих игроков
   const p1AccountId = getAccountIdBySessionId(match.sessions[0]);
   const p2AccountId = getAccountIdBySessionId(match.sessions[1]);
-  // PvE: bot has fixed nickname
-  const p1Nickname = p1AccountId === BOT_ACCOUNT_ID ? BOT_NICKNAME : (p1AccountId ? (db.getNickname(p1AccountId) || null) : null);
-  const p2Nickname = p2AccountId === BOT_ACCOUNT_ID ? BOT_NICKNAME : (p2AccountId ? (db.getNickname(p2AccountId) || null) : null);
+  // PvE/Tutorial: bot has fixed nickname
+  const p1Nickname = p1AccountId === BOT_ACCOUNT_ID 
+    ? (match.mode === 'TUTORIAL' ? TUTORIAL_BOT_NICKNAME : BOT_NICKNAME)
+    : (p1AccountId ? (db.getNickname(p1AccountId) || null) : null);
+  const p2Nickname = p2AccountId === BOT_ACCOUNT_ID 
+    ? (match.mode === 'TUTORIAL' ? TUTORIAL_BOT_NICKNAME : BOT_NICKNAME)
+    : (p2AccountId ? (db.getNickname(p2AccountId) || null) : null);
 
   // Лог перед каждым step_reveal
   log(`[STEP] match=${match.id} round=${match.roundIndex} step=${stepIndex} p1Card=${p1Card} p2Card=${p2Card} hp=${p1Data.hp}-${p2Data.hp}`);
@@ -1342,10 +1493,13 @@ function startPrepPhase(match) {
   match.hadDraftThisRound.set(match.sessions[0], false);
   match.hadDraftThisRound.set(match.sessions[1], false);
   
-  // PvE: Submit bot draft immediately after prep starts
+  // PvE/Tutorial: Submit bot draft immediately after prep starts
   if (match.mode === 'PVE') {
     // Bot always submits draft (never AFK)
     submitBotDraft(match);
+  } else if (match.mode === 'TUTORIAL') {
+    // Tutorial bot submits scripted draft (never AFK)
+    submitTutorialBotDraft(match);
   }
 
   const deadlineTs = Date.now() + PREP_TIME_MS;
@@ -1870,10 +2024,14 @@ io.on('connection', (socket) => {
     // Получаем nickname
     const nickname = db.getNickname(accountId);
     
-    // Отправляем hello_ok с токенами и nickname
+    // Получаем tutorialCompleted
+    const tutorialCompleted = db.getTutorialCompleted(accountId);
+
+    // Отправляем hello_ok с токенами, nickname и tutorialCompleted
     socket.emit('hello_ok', {
       tokens: tokens !== null ? tokens : START_TOKENS,
-      nickname: nickname || null
+      nickname: nickname || null,
+      tutorialCompleted: tutorialCompleted
     });
     
     // Если sessionId участвует в активном матче
@@ -2089,6 +2247,64 @@ io.on('connection', (socket) => {
     } catch (error) {
       console.error(`[PVE_START_ERROR] sessionId=${sessionId} error=${error.message}`);
       socket.emit('error_msg', { message: `Failed to start PvE match: ${error.message}` });
+    }
+  });
+
+  // Tutorial Match - Create scripted tutorial match (FREE, no tokens)
+  socket.on('tutorial_start', () => {
+    const sessionId = getSessionIdBySocket(socket.id);
+    if (!sessionId) {
+      socket.emit('error_msg', { message: 'Please send hello first' });
+      return;
+    }
+
+    if (matchIdBySocket.has(socket.id)) {
+      socket.emit('error_msg', { message: 'Already in a match' });
+      return;
+    }
+
+    const accountId = getAccountIdBySessionId(sessionId);
+    if (!accountId) {
+      socket.emit('error_msg', { message: 'Missing accountId' });
+      return;
+    }
+
+    try {
+      // Create Tutorial match (FREE - no token deduction)
+      const match = createTutorialMatch(socket);
+
+      const playerData = getPlayerData(sessionId);
+      const botData = getPlayerData(BOT_SESSION_ID);
+
+      const playerAccountId = getAccountIdBySessionId(sessionId);
+      const playerTokens = playerAccountId ? (db.getTokens(playerAccountId) !== null ? db.getTokens(playerAccountId) : START_TOKENS) : START_TOKENS;
+
+      // Get hands
+      const playerHand = match.hands.get(sessionId) || [];
+      const botHand = match.hands.get(BOT_SESSION_ID) || [];
+
+      // Get nicknames
+      const playerNickname = playerAccountId ? (db.getNickname(playerAccountId) || null) : null;
+
+      console.log(`[TUTORIAL_MATCH_CREATED] matchId=${match.id} player=${sessionId}`);
+
+      // Send match_found to player (bot doesn't receive events)
+      socket.emit('match_found', {
+        matchId: match.id,
+        yourHp: playerData.hp,
+        oppHp: botData.hp,
+        yourTokens: playerTokens,
+        pot: match.pot, // 0 for Tutorial
+        yourNickname: playerNickname,
+        oppNickname: TUTORIAL_BOT_NICKNAME,
+        yourHand: playerHand
+      });
+
+      // Start first round
+      startPrepPhase(match);
+    } catch (error) {
+      console.error(`[TUTORIAL_START_ERROR] sessionId=${sessionId} error=${error.message}`);
+      socket.emit('error_msg', { message: `Failed to start Tutorial: ${error.message}` });
     }
   });
 

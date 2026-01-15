@@ -54,6 +54,10 @@ class SocketManager {
     this.socket?.emit('pve_start');
   }
 
+  tutorialStart() {
+    this.socket?.emit('tutorial_start');
+  }
+
   layoutDraft(matchId: string, layout: (string | null)[]) {
     this.socket?.emit('layout_draft', { matchId, layout });
   }

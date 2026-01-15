@@ -32,6 +32,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   const [phase, setPhase] = useState<'PREP' | 'REVEAL' | 'END'>('PREP');
   const [yourNickname, setYourNickname] = useState<string | null>(null);
   const [oppNickname, setOppNickname] = useState<string | null>(null);
+  const [tutorialStep, setTutorialStep] = useState<number>(0); // 0 = intro, 1 = cards, 2 = slots, 3 = play
 
   const [dragState, setDragState] = useState<{
     card: CardId;
@@ -840,6 +841,131 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
         </div>
       )}
 
+      {/* Tutorial Overlay */}
+      {oppNickname === 'Тренер' && tutorialStep < 4 && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          zIndex: 1000,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px',
+          color: '#fff'
+        }}>
+          <div style={{
+            backgroundColor: '#1a1a1a',
+            padding: '24px',
+            borderRadius: '12px',
+            maxWidth: '400px',
+            textAlign: 'center'
+          }}>
+            {tutorialStep === 0 && (
+              <>
+                <h2 style={{ fontSize: '24px', marginBottom: '16px' }}>Добро пожаловать в Orcain!</h2>
+                <p style={{ fontSize: '16px', marginBottom: '16px', lineHeight: '1.5' }}>
+                  Это обучающий бой против тренера. Вы научитесь основам игры.
+                </p>
+                <p style={{ fontSize: '14px', marginBottom: '20px', color: '#aaa' }}>
+                  В руке у вас 4 карты. Вы можете выложить до 3 карт в слоты.
+                </p>
+                <button
+                  onClick={() => setTutorialStep(1)}
+                  style={{
+                    padding: '12px 24px',
+                    fontSize: '16px',
+                    backgroundColor: '#4caf50',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Продолжить
+                </button>
+              </>
+            )}
+            {tutorialStep === 1 && (
+              <>
+                <h2 style={{ fontSize: '24px', marginBottom: '16px' }}>Карты</h2>
+                <div style={{ textAlign: 'left', marginBottom: '20px' }}>
+                  <p style={{ fontSize: '14px', marginBottom: '8px' }}><strong>⚔ ATTACK</strong> — наносит 2 урона</p>
+                  <p style={{ fontSize: '14px', marginBottom: '8px' }}><strong>🛡 DEFENSE</strong> — блокирует атаку</p>
+                  <p style={{ fontSize: '14px', marginBottom: '8px' }}><strong>💚 HEAL</strong> — восстанавливает +1 HP</p>
+                  <p style={{ fontSize: '14px', marginBottom: '8px' }}><strong>🟣 COUNTER</strong> — отражает атаку</p>
+                </div>
+                <button
+                  onClick={() => setTutorialStep(2)}
+                  style={{
+                    padding: '12px 24px',
+                    fontSize: '16px',
+                    backgroundColor: '#4caf50',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Продолжить
+                </button>
+              </>
+            )}
+            {tutorialStep === 2 && (
+              <>
+                <h2 style={{ fontSize: '24px', marginBottom: '16px' }}>Слоты</h2>
+                <p style={{ fontSize: '16px', marginBottom: '16px', lineHeight: '1.5' }}>
+                  У вас есть 3 слота. Перетащите карты из руки в слоты.
+                </p>
+                <p style={{ fontSize: '14px', marginBottom: '20px', color: '#aaa' }}>
+                  Слоты играются по порядку: 1 → 2 → 3. Вы можете класть карты в любой слот.
+                </p>
+                <button
+                  onClick={() => setTutorialStep(3)}
+                  style={{
+                    padding: '12px 24px',
+                    fontSize: '16px',
+                    backgroundColor: '#4caf50',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Понятно
+                </button>
+              </>
+            )}
+            {tutorialStep === 3 && (
+              <>
+                <h2 style={{ fontSize: '24px', marginBottom: '16px' }}>Готовы?</h2>
+                <p style={{ fontSize: '16px', marginBottom: '20px', lineHeight: '1.5' }}>
+                  Выложите карты в слоты и нажмите "Confirm" когда будете готовы.
+                </p>
+                <button
+                  onClick={() => setTutorialStep(4)}
+                  style={{
+                    padding: '12px 24px',
+                    fontSize: '16px',
+                    backgroundColor: '#4caf50',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Начать бой
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Match End */}
       {matchEndPayload && (
         <div style={{ 
@@ -865,6 +991,11 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           )}
           {matchEndPayload.reason === 'timeout' && (
             <p style={{ fontSize: '12px', color: '#999', marginBottom: '16px' }}>Match timed out</p>
+          )}
+          {matchEndPayload.oppNickname === 'Тренер' && (
+            <p style={{ fontSize: '14px', color: '#4caf50', marginBottom: '16px' }}>
+              Обучение завершено! Вы можете вернуться в меню.
+            </p>
           )}
           <button
             onClick={onBackToMenu}

@@ -67,4 +67,5 @@ export type MatchEndPayload = {
 export type HelloOkPayload = {
   tokens: number;
   nickname?: string | null;
+  tutorialCompleted?: boolean;
 };

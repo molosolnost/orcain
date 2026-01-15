@@ -195,6 +195,18 @@ function getNickname(accountId) {
   return account ? account.nickname : null;
 }
 
+// Функции для работы с tutorialCompleted
+function getTutorialCompleted(accountId) {
+  const stmt = db.prepare('SELECT tutorialCompleted FROM accounts WHERE accountId = ?');
+  const row = stmt.get(accountId);
+  return row ? (row.tutorialCompleted === 1) : false;
+}
+
+function setTutorialCompleted(accountId, completed) {
+  const stmt = db.prepare('UPDATE accounts SET tutorialCompleted = ? WHERE accountId = ?');
+  stmt.run(completed ? 1 : 0, accountId);
+}
+
 module.exports = {
   createGuestAccount,
   getOrCreateTelegramAccount,
@@ -206,5 +218,7 @@ module.exports = {
   addTokens,
   setNickname,
   getNicknameByLower,
-  getNickname
+  getNickname,
+  getTutorialCompleted,
+  setTutorialCompleted
 };

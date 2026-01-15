@@ -3,13 +3,15 @@ const BUILD = import.meta.env.VITE_BUILD_ID ?? "dev";
 interface MenuProps {
   onStartBattle: () => void;
   onStartPvE: () => void;
+  onStartTutorial: () => void;
   onCancelSearch: () => void;
   isSearching: boolean;
   tokens: number | null;
   nickname: string | null;
+  tutorialCompleted: boolean;
 }
 
-export default function Menu({ onStartBattle, onStartPvE, onCancelSearch, isSearching, tokens, nickname }: MenuProps) {
+export default function Menu({ onStartBattle, onStartPvE, onStartTutorial, onCancelSearch, isSearching, tokens, nickname, tutorialCompleted }: MenuProps) {
   // Кнопка Start Battle disabled если tokens !== null && tokens < 1
   const hasEnoughTokens = tokens !== null && tokens >= 1;
 
@@ -72,6 +74,20 @@ export default function Menu({ onStartBattle, onStartPvE, onCancelSearch, isSear
             }}
           >
             Start PvE Training
+          </button>
+          <button 
+            onClick={onStartTutorial}
+            style={{
+              padding: '12px 24px',
+              fontSize: '18px',
+              cursor: 'pointer',
+              backgroundColor: '#ff9800',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '4px'
+            }}
+          >
+            {tutorialCompleted ? 'Пройти обучение' : 'Начать обучение'}
           </button>
         </>
       )}

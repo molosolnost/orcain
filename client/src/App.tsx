@@ -79,6 +79,7 @@ function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [lastPrepStart, setLastPrepStart] = useState<PrepStartPayload | null>(null);
+  const [tutorialCompleted, setTutorialCompleted] = useState<boolean>(false);
   
   // Boot state machine
   const [bootState, setBootState] = useState<BootState>('checking');
@@ -249,6 +250,12 @@ function App() {
       if (payload.tokens !== undefined) {
         setTokens(prev => (prev === null ? payload.tokens : prev));
       }
+
+      // Обновляем tutorialCompleted
+      if (payload.tutorialCompleted !== undefined) {
+        setTutorialCompleted(payload.tutorialCompleted);
+      }
+      }
       
       // Если nickname пустой и мы не в onboarding - показываем onboarding
       const currentNick = payload.nickname !== undefined ? payload.nickname : nickname;
@@ -366,9 +373,10 @@ function App() {
     // Сокет должен жить всю сессию вкладки, не отключаем при cleanup
   }, [authToken, currentMatchId, nickname, screen]);
 
-  const handleLoginSuccess = ({ authToken: token, tokens: initialTokens }: { authToken: string; tokens: number }) => {
+  const handleLoginSuccess = ({ authToken: token, tokens: initialTokens, tutorialCompleted: completed }: { authToken: string; tokens: number; tutorialCompleted?: boolean }) => {
     setAuthToken(token);
     setTokens(initialTokens);
+    setTutorialCompleted(completed || false);
     const accId = getAccountId();
     setAccountId(accId);
   };
@@ -386,6 +394,12 @@ function App() {
   const handleStartPvE = () => {
     // PvE is immediate - no queue, no tokens
     socketManager.pveStart();
+    // match_found will be sent, which will switch to battle screen
+  };
+
+  const handleStartTutorial = () => {
+    // Tutorial is immediate - no queue, no tokens
+    socketManager.tutorialStart();
     // match_found will be sent, which will switch to battle screen
   };
 
@@ -530,13 +544,15 @@ function App() {
     <>
       <div>
         {screen === 'menu' && (
-          <Menu 
+          <Menu
             onStartBattle={handleStartBattle}
             onStartPvE={handleStartPvE}
+            onStartTutorial={handleStartTutorial}
             onCancelSearch={handleCancelSearch}
             isSearching={isSearching}
             tokens={tokens}
             nickname={nickname}
+            tutorialCompleted={tutorialCompleted}
           />
         )}
         {screen === 'battle' && (
