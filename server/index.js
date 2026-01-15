@@ -317,7 +317,8 @@ function applyStepLogic(player1Card, player2Card, player1Hp, player2Hp) {
   let newP1Hp = player1Hp;
   let newP2Hp = player2Hp;
 
-  // GRASS не делает ничего - пропускаем обработку
+  // GRASS не делает ничего сам по себе - но не блокирует атаки
+  // Если оба GRASS - ничего не происходит
   if (player1Card === GRASS && player2Card === GRASS) {
     return { p1Hp: newP1Hp, p2Hp: newP2Hp };
   }
@@ -331,42 +332,44 @@ function applyStepLogic(player1Card, player2Card, player1Hp, player2Hp) {
   }
 
   // (2) Attack/Defense/Counter логика
-  // ATTACK vs DEFENSE -> 0 урона
+  // ATTACK vs DEFENSE -> 0 урона (defense блокирует)
   // ATTACK vs ATTACK -> оба -2
   // ATTACK vs COUNTER -> атакующий -2 (защищающийся НЕ получает урон от ATTACK)
+  // ATTACK vs HEAL -> защищающийся -2 (heal не блокирует)
+  // ATTACK vs GRASS -> защищающийся -2 (GRASS не блокирует, это пустой слот)
   // DEFENSE сам по себе ничего не делает
   // COUNTER сам по себе ничего не делает
 
-  // Обработка player1Card === 'ATTACK' (только если не GRASS)
+  // Обработка player1Card === 'ATTACK'
   if (player1Card === 'ATTACK') {
     if (player2Card === 'DEFENSE') {
-      // 0 урона
+      // DEFENSE блокирует атаку - 0 урона
     } else if (player2Card === 'ATTACK') {
-      // Оба получают урон
+      // ATTACK vs ATTACK -> оба получают урон
       newP1Hp = Math.max(0, newP1Hp - 2);
       newP2Hp = Math.max(0, newP2Hp - 2);
     } else if (player2Card === 'COUNTER') {
-      // Только атакующий получает урон
+      // COUNTER отражает атаку - только атакующий получает урон
       newP1Hp = Math.max(0, newP1Hp - 2);
-    } else if (player2Card !== GRASS) {
-      // ATTACK vs HEAL или другой случай (но не GRASS)
+    } else {
+      // ATTACK vs HEAL или GRASS -> защищающийся получает урон
+      // GRASS не блокирует, это эквивалент "нет защиты"
       newP2Hp = Math.max(0, newP2Hp - 2);
     }
-    // ATTACK vs GRASS - ничего не происходит
   }
 
-  // Обработка player2Card === 'ATTACK' (только если player1Card !== 'ATTACK', чтобы не дублировать, и не GRASS)
+  // Обработка player2Card === 'ATTACK' (только если player1Card !== 'ATTACK', чтобы не дублировать)
   if (player2Card === 'ATTACK' && player1Card !== 'ATTACK') {
     if (player1Card === 'DEFENSE') {
-      // 0 урона
+      // DEFENSE блокирует атаку - 0 урона
     } else if (player1Card === 'COUNTER') {
-      // Только атакующий получает урон
+      // COUNTER отражает атаку - только атакующий получает урон
       newP2Hp = Math.max(0, newP2Hp - 2);
-    } else if (player1Card !== GRASS) {
-      // ATTACK vs HEAL или другой случай (но не GRASS)
+    } else {
+      // ATTACK vs HEAL или GRASS -> защищающийся получает урон
+      // GRASS не блокирует, это эквивалент "нет защиты"
       newP1Hp = Math.max(0, newP1Hp - 2);
     }
-    // ATTACK vs GRASS - ничего не происходит
   }
 
   return { p1Hp: newP1Hp, p2Hp: newP2Hp };
@@ -1140,11 +1143,13 @@ function endMatch(match, reason = 'normal') {
   p1Data.matchId = null;
   p1Data.confirmed = false;
   p1Data.layout = null;
+  p1Data.draftLayout = null;
   p1Data.hp = START_HP; // Сбрасываем HP на 10 после матча
 
   p2Data.matchId = null;
   p2Data.confirmed = false;
   p2Data.layout = null;
+  p2Data.draftLayout = null;
   p2Data.hp = START_HP; // Сбрасываем HP на 10 после матча
 
   // Удаляем матч из хранилищ
