@@ -45,6 +45,59 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   const draftDebounceRef = useRef<number | null>(null);
   const lastAppliedRoundIndexRef = useRef<number | null>(null);
 
+  // Блокировка scroll на body/html при монтировании Battle
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    
+    // Добавляем класс для блокировки scroll
+    html.classList.add('battle-mode');
+    body.classList.add('battle-mode');
+    
+    // Применяем стили напрямую для надежности
+    const originalHtmlOverflow = html.style.overflow;
+    const originalHtmlPosition = html.style.position;
+    const originalHtmlWidth = html.style.width;
+    const originalHtmlHeight = html.style.height;
+    const originalHtmlTouchAction = html.style.touchAction;
+    
+    const originalBodyOverflow = body.style.overflow;
+    const originalBodyPosition = body.style.position;
+    const originalBodyWidth = body.style.width;
+    const originalBodyHeight = body.style.height;
+    const originalBodyTouchAction = body.style.touchAction;
+    
+    html.style.overflow = 'hidden';
+    html.style.position = 'fixed';
+    html.style.width = '100%';
+    html.style.height = '100%';
+    html.style.touchAction = 'none';
+    
+    body.style.overflow = 'hidden';
+    body.style.position = 'fixed';
+    body.style.width = '100%';
+    body.style.height = '100%';
+    body.style.touchAction = 'none';
+    
+    return () => {
+      // Восстанавливаем оригинальные стили
+      html.classList.remove('battle-mode');
+      body.classList.remove('battle-mode');
+      
+      html.style.overflow = originalHtmlOverflow;
+      html.style.position = originalHtmlPosition;
+      html.style.width = originalHtmlWidth;
+      html.style.height = originalHtmlHeight;
+      html.style.touchAction = originalHtmlTouchAction;
+      
+      body.style.overflow = originalBodyOverflow;
+      body.style.position = originalBodyPosition;
+      body.style.width = originalBodyWidth;
+      body.style.height = originalBodyHeight;
+      body.style.touchAction = originalBodyTouchAction;
+    };
+  }, []);
+
   useEffect(() => {
     if (matchEndPayload) {
       setState('ended');
@@ -481,55 +534,101 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   };
 
   return (
-    <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '20px', textAlign: 'center' }}>
-        <h2>Round {roundIndex} {suddenDeath && '(Sudden Death)'}</h2>
-        <div style={{ fontSize: '16px', marginTop: '8px', fontWeight: 'bold' }}>
-          Phase: {phase}
-        </div>
-        {phase === 'PREP' && deadlineTs !== null && computedSeconds !== null && (
-          <div>
-            <p>Time left: {computedSeconds}s</p>
-          </div>
-        )}
-      </div>
-
-      {/* Tokens and Pot Display */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        marginBottom: '20px',
-        fontSize: '18px'
+    <div style={{ 
+      height: '100dvh',
+      height: '100vh', // fallback
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+      paddingTop: 'env(safe-area-inset-top, 0)',
+      paddingBottom: 'env(safe-area-inset-bottom, 0)',
+      paddingLeft: 'clamp(8px, 2vw, 16px)',
+      paddingRight: 'clamp(8px, 2vw, 16px)',
+      maxWidth: '800px',
+      margin: '0 auto',
+      boxSizing: 'border-box',
+      position: 'relative'
+    }}>
+      {/* TopBar: Round/Phase/Tokens/HP + nicknames - 15-20% высоты */}
+      <div style={{
+        flex: '0 0 auto',
+        minHeight: '15vh',
+        maxHeight: '20vh',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        paddingTop: 'clamp(4px, 1vh, 8px)',
+        paddingBottom: 'clamp(4px, 1vh, 8px)',
+        borderBottom: '1px solid #444'
       }}>
-        <div>Tokens: {tokens === null ? '—' : tokens}</div>
-        <div>Pot: {pot}</div>
+        <div style={{ 
+          fontSize: 'clamp(14px, 3.5vw, 20px)', 
+          fontWeight: 'bold',
+          textAlign: 'center',
+          marginBottom: 'clamp(2px, 0.5vh, 4px)'
+        }}>
+          Round {roundIndex} {suddenDeath && '(SD)'}
+        </div>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          fontSize: 'clamp(11px, 2.5vw, 14px)',
+          gap: 'clamp(8px, 2vw, 12px)',
+          marginBottom: 'clamp(4px, 1vh, 8px)'
+        }}>
+          <div>Tokens: {tokens === null ? '—' : tokens}</div>
+          <div>Pot: {pot}</div>
+          {phase === 'PREP' && deadlineTs !== null && computedSeconds !== null && (
+            <div>Time: {computedSeconds}s</div>
+          )}
+        </div>
+        {/* HP Display with Nicknames */}
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          fontSize: 'clamp(14px, 3.5vw, 20px)',
+          gap: 'clamp(8px, 2vw, 12px)'
+        }}>
+          <div style={{ flex: 1, textAlign: 'center' }}>
+            <div style={{ fontSize: 'clamp(10px, 2.5vw, 12px)', color: '#888', marginBottom: '2px' }}>
+              {yourNickname || 'You'}
+            </div>
+            <div>HP: {yourHp}</div>
+          </div>
+          <div style={{ flex: 1, textAlign: 'center' }}>
+            <div style={{ fontSize: 'clamp(10px, 2.5vw, 12px)', color: '#888', marginBottom: '2px' }}>
+              {oppNickname || 'Opponent'}
+            </div>
+            <div>HP: {oppHp}</div>
+          </div>
+        </div>
       </div>
 
-      {/* HP Display */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        marginBottom: '40px',
-        fontSize: '24px'
+      {/* OpponentRow: 3 карты - 20-22% высоты */}
+      <div style={{
+        flex: '0 0 auto',
+        minHeight: '20vh',
+        maxHeight: '22vh',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        paddingTop: 'clamp(4px, 1vh, 8px)',
+        paddingBottom: 'clamp(4px, 1vh, 8px)'
       }}>
-        <div>
-          <div style={{ fontSize: '16px', color: '#666', marginBottom: '4px' }}>
-            {yourNickname || 'You'}
-          </div>
-          <div>HP: {yourHp}</div>
+        <div style={{ 
+          fontSize: 'clamp(12px, 3vw, 16px)', 
+          marginBottom: 'clamp(4px, 1vh, 8px)',
+          textAlign: 'center'
+        }}>
+          {oppNickname || 'Opponent'}
         </div>
-        <div>
-          <div style={{ fontSize: '16px', color: '#666', marginBottom: '4px' }}>
-            {oppNickname || 'Opponent'}
-          </div>
-          <div>HP: {oppHp}</div>
-        </div>
-      </div>
-
-      {/* Opponent Slots */}
-      <div style={{ marginBottom: '40px' }}>
-        <h3>{oppNickname || 'Opponent'}</h3>
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+        <div style={{ 
+          display: 'flex', 
+          gap: 'clamp(4px, 1.5vw, 8px)', 
+          justifyContent: 'center',
+          alignItems: 'center',
+          flex: 1
+        }}>
           {[0, 1, 2].map((index) => {
             const revealed = revealedCards[index];
             const isCurrentStep = currentStepIndex === index;
@@ -556,10 +655,31 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
         </div>
       </div>
 
-      {/* Your Slots */}
-      <div style={{ marginBottom: '40px' }}>
-        <h3>{(yourNickname || 'You') + (state === 'prep' && !confirmed ? ' (drop cards here)' : '')}</h3>
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+      {/* YourSlotsRow: 3 слота - 20-22% высоты */}
+      <div style={{
+        flex: '0 0 auto',
+        minHeight: '20vh',
+        maxHeight: '22vh',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        paddingTop: 'clamp(4px, 1vh, 8px)',
+        paddingBottom: 'clamp(4px, 1vh, 8px)'
+      }}>
+        <div style={{ 
+          fontSize: 'clamp(12px, 3vw, 16px)', 
+          marginBottom: 'clamp(4px, 1vh, 8px)',
+          textAlign: 'center'
+        }}>
+          {(yourNickname || 'Your')} Slots {state === 'prep' && !confirmed && <span style={{ fontSize: 'clamp(10px, 2.5vw, 12px)', color: '#888' }}>(drop here)</span>}
+        </div>
+        <div style={{ 
+          display: 'flex', 
+          gap: 'clamp(4px, 1.5vw, 8px)', 
+          justifyContent: 'center',
+          alignItems: 'center',
+          flex: 1
+        }}>
           {slots.map((card, index) => {
             const revealed = revealedCards[index];
             const displayCard = revealed ? revealed.yourCard : card;
@@ -600,20 +720,36 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
         </div>
       </div>
       
-      {/* Step Result Text */}
-      {currentStepIndex !== null && revealedCards[currentStepIndex] && (
-        <div style={{ textAlign: 'center', marginBottom: '20px', fontSize: '16px' }}>
-          <p>
-            Step {currentStepIndex + 1} resolved. HP: You {yourHp} / Opp {oppHp}
-          </p>
-        </div>
-      )}
-
-      {/* Available Cards */}
+      {/* HandRow: карты в руке - 22-25% высоты */}
       {state === 'prep' && !confirmed && (
-        <div style={{ marginBottom: '20px' }}>
-          <h3>Your Cards (drag to slots)</h3>
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+        <div style={{
+          flex: '0 0 auto',
+          minHeight: '22vh',
+          maxHeight: '25vh',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          paddingTop: 'clamp(4px, 1vh, 8px)',
+          paddingBottom: 'clamp(4px, 1vh, 8px)'
+        }}>
+          <div style={{ 
+            fontSize: 'clamp(12px, 3vw, 16px)', 
+            marginBottom: 'clamp(4px, 1vh, 8px)',
+            textAlign: 'center'
+          }}>
+            Your Cards
+          </div>
+          <div style={{ 
+            display: 'flex', 
+            gap: 'clamp(4px, 1.5vw, 8px)', 
+            justifyContent: 'center',
+            alignItems: 'center',
+            flex: 1,
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            WebkitOverflowScrolling: 'touch',
+            paddingBottom: '4px'
+          }}>
             {availableCards.map((card) => {
               const inSlot = slots.includes(card);
               const isDraggingCard = dragState?.card === card;
@@ -641,46 +777,90 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
         </div>
       )}
 
-      {/* Confirm Button */}
-      {state === 'prep' && !confirmed && (
-        <div style={{ textAlign: 'center', marginTop: '20px' }}>
+      {/* ConfirmRow: кнопка - 8-10% высоты */}
+      <div style={{
+        flex: '0 0 auto',
+        minHeight: '8vh',
+        maxHeight: '10vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingTop: 'clamp(4px, 1vh, 8px)',
+        paddingBottom: 'clamp(4px, 1vh, 8px)',
+        borderTop: '1px solid #444'
+      }}>
+        {state === 'prep' && !confirmed ? (
           <button
             onClick={handleConfirm}
             disabled={slots.filter(c => c !== null).length !== 3}
             style={{
-              padding: '12px 24px',
-              fontSize: '18px',
-              cursor: slots.filter(c => c !== null).length === 3 ? 'pointer' : 'not-allowed'
+              padding: 'clamp(8px, 2vh, 12px) clamp(16px, 4vw, 24px)',
+              fontSize: 'clamp(14px, 3.5vw, 18px)',
+              cursor: slots.filter(c => c !== null).length === 3 ? 'pointer' : 'not-allowed',
+              width: '100%',
+              maxWidth: '400px'
             }}
           >
             Confirm
           </button>
+        ) : confirmed && state === 'prep' ? (
+          <p style={{ margin: 0, fontSize: 'clamp(12px, 3vw, 16px)' }}>Waiting for opponent...</p>
+        ) : null}
+      </div>
+      
+      {/* Step Result Text - показываем только если есть */}
+      {currentStepIndex !== null && revealedCards[currentStepIndex] && phase === 'REVEAL' && (
+        <div style={{ 
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          padding: 'clamp(8px, 2vw, 12px)',
+          borderRadius: '8px',
+          fontSize: 'clamp(12px, 3vw, 16px)',
+          zIndex: 1000,
+          textAlign: 'center'
+        }}>
+          Step {currentStepIndex + 1} resolved. HP: You {yourHp} / Opp {oppHp}
         </div>
       )}
 
-      {confirmed && state === 'prep' && (
-        <div style={{ textAlign: 'center', marginTop: '20px' }}>
-          <p>Waiting for opponent...</p>
-        </div>
-      )}
-
-      {/* Match End */}
+      {/* Match End - overlay */}
       {matchEndPayload && (
-        <div style={{ textAlign: 'center', marginTop: '40px' }}>
-          <h2>{matchEndPayload.winner === 'YOU' ? 'YOU WIN' : 'YOU LOSE'}</h2>
+        <div style={{ 
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.9)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 2000,
+          padding: 'clamp(16px, 4vw, 24px)'
+        }}>
+          <h2 style={{ fontSize: 'clamp(24px, 6vw, 32px)', marginBottom: 'clamp(8px, 2vh, 16px)' }}>
+            {matchEndPayload.winner === 'YOU' ? 'YOU WIN' : 'YOU LOSE'}
+          </h2>
           {matchEndPayload.reason === 'disconnect' && (
-            <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>Opponent disconnected</p>
+            <p style={{ fontSize: 'clamp(12px, 3vw, 14px)', color: '#666', marginBottom: 'clamp(16px, 4vh, 24px)' }}>
+              Opponent disconnected
+            </p>
           )}
           {matchEndPayload.reason === 'timeout' && (
-            <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>Match timed out</p>
+            <p style={{ fontSize: 'clamp(12px, 3vw, 14px)', color: '#666', marginBottom: 'clamp(16px, 4vh, 24px)' }}>
+              Match timed out
+            </p>
           )}
           <button
             onClick={onBackToMenu}
             style={{
-              padding: '12px 24px',
-              fontSize: '18px',
-              cursor: 'pointer',
-              marginTop: '20px'
+              padding: 'clamp(10px, 2.5vh, 14px) clamp(20px, 5vw, 28px)',
+              fontSize: 'clamp(14px, 3.5vw, 18px)',
+              cursor: 'pointer'
             }}
           >
             Back to Menu

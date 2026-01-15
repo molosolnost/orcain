@@ -11,6 +11,16 @@ html {
   touch-action: pan-x pan-y;
 }
 
+/* Блокировка scroll для Battle */
+html.battle-mode,
+body.battle-mode {
+  overflow: hidden !important;
+  position: fixed !important;
+  width: 100% !important;
+  height: 100% !important;
+  touch-action: none !important;
+}
+
 /* Для draggable элементов отключаем touch-action */
 .battle-card,
 [data-slot-index] {
