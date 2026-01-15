@@ -75,7 +75,10 @@ function logFinalizeRoundDecision(match, decision, reason) {
 }
 
 function logMatchEnd(match, reason, winner, loser) {
-  console.log(`[MATCH_END] matchId=${match.id} roundIndex=${match.roundIndex} reason=${reason} winner=${winner || 'N/A'} loser=${loser || 'N/A'}`);
+  // Safe logging: handle null/undefined gracefully
+  const winnerStr = winner || 'N/A';
+  const loserStr = loser || 'N/A';
+  console.log(`[MATCH_END] matchId=${match.id} roundIndex=${match.roundIndex} reason=${reason || 'N/A'} winner=${winnerStr} loser=${loserStr}`);
 }
 
 function logStateTransition(match, fromState, toState, reason) {
@@ -1640,12 +1643,23 @@ function endMatch(match, reason = 'normal') {
   const p1Data = getPlayerData(match.sessions[0]);
   const p2Data = getPlayerData(match.sessions[1]);
 
-  // Вычисляем winnerSessionId (у кого hp больше, либо у кого hp >0 если второй умер)
-  let winnerSessionId;
+  // Вычисляем winnerSessionId и loserSessionId ДО использования
+  // (у кого hp больше, либо у кого hp >0 если второй умер)
+  let winnerSessionId = null;
+  let loserSessionId = null;
+  
   if (p1Data.hp > p2Data.hp || (p1Data.hp > 0 && p2Data.hp === 0)) {
     winnerSessionId = match.sessions[0];
-  } else {
+    loserSessionId = match.sessions[1];
+  } else if (p2Data.hp > p1Data.hp || (p2Data.hp > 0 && p1Data.hp === 0)) {
     winnerSessionId = match.sessions[1];
+    loserSessionId = match.sessions[0];
+  } else {
+    // Tie (shouldn't happen in normal flow, but handle gracefully)
+    // In case of tie, use first session as winner (arbitrary)
+    winnerSessionId = match.sessions[0];
+    loserSessionId = match.sessions[1];
+    log(`[ENDMATCH_TIE] match=${match.id} p1Hp=${p1Data.hp} p2Hp=${p2Data.hp} using sessions[0] as winner`);
   }
 
   // PvE: No rewards (pot = 0, no tokens added)
@@ -1657,7 +1671,7 @@ function endMatch(match, reason = 'normal') {
     }
   }
 
-  // Структурированный лог
+  // Структурированный лог (теперь winnerSessionId и loserSessionId уже определены)
   logMatchEnd(match, reason, winnerSessionId, loserSessionId);
   
   // Получаем токены по accountId для отправки
@@ -1670,9 +1684,6 @@ function endMatch(match, reason = 'normal') {
   // Получаем nickname для обоих игроков
   const acc1Nickname = acc1AccountId ? (db.getNickname(acc1AccountId) || null) : null;
   const acc2Nickname = acc2AccountId ? (db.getNickname(acc2AccountId) || null) : null;
-
-  // Определяем loserSessionId для единого payload
-  const loserSessionId = winnerSessionId === match.sessions[0] ? match.sessions[1] : match.sessions[0];
 
   // Отправляем одинаковый payload для обоих игроков с winnerId/loserId
   // Гарантируем, что reason всегда присутствует
