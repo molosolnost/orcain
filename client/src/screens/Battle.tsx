@@ -32,7 +32,11 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   const [phase, setPhase] = useState<'PREP' | 'REVEAL' | 'END'>('PREP');
   const [yourNickname, setYourNickname] = useState<string | null>(null);
   const [oppNickname, setOppNickname] = useState<string | null>(null);
-  const [tutorialStep, setTutorialStep] = useState<number>(0); // 0 = intro, 1 = cards, 2 = slots, 3 = play
+  // Tutorial: Interactive step state machine
+  // 0 = intro, 1 = ATTACK, 2 = slots, 3 = DEFENSE, 4 = HEAL, 5 = COUNTER, 6 = multiple cards, 7 = final
+  const [tutorialStep, setTutorialStep] = useState<number>(0);
+  const [tutorialCompletedActions, setTutorialCompletedActions] = useState<Set<number>>(new Set());
+  const [tutorialLastSlots, setTutorialLastSlots] = useState<(CardId | null)[]>([null, null, null]);
 
   const [dragState, setDragState] = useState<{
     card: CardId;
@@ -111,6 +115,11 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setCurrentStepIndex(null);
       // Останавливаем таймер при завершении матча
       setDeadlineTs(null);
+      
+      // Tutorial: Mark as completed in localStorage
+      if (matchEndPayload.oppNickname === 'Тренер') {
+        localStorage.setItem('orcain_tutorial_completed', '1');
+      }
     } else {
       // Очищаем END состояние если matchEndPayload стал null
       if (phase === 'END') {
@@ -169,10 +178,22 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     if (isNewRound) {
       setState('prep');
       setSlots([null, null, null]);
+      setTutorialLastSlots([null, null, null]);
       setConfirmed(false);
       setRevealedCards([]);
       setCurrentStepIndex(null);
       lastAppliedRoundIndexRef.current = lastPrepStart.roundIndex;
+      
+      // Tutorial: Reset tutorial step on new round (only if not already past that step)
+      if (lastPrepStart.oppNickname === 'Тренер') {
+        if (lastPrepStart.roundIndex === 1 && tutorialStep < 1) {
+          setTutorialStep(1); // Start with ATTACK step
+        } else if (lastPrepStart.roundIndex === 2 && tutorialStep < 3) {
+          setTutorialStep(3); // DEFENSE step
+        } else if (lastPrepStart.roundIndex === 3 && tutorialStep < 4) {
+          setTutorialStep(4); // HEAL step
+        }
+      }
     }
     
     // DEBUG: логируем после установки состояния
@@ -195,11 +216,18 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setOppHp(payload.oppHp);
       setPot(payload.pot);
       setSlots([null, null, null]);
+      setTutorialLastSlots([null, null, null]);
       setConfirmed(false);
       setRevealedCards([]);
       setCurrentStepIndex(null);
       setRoundIndex(1);
       setNowTs(Date.now()); // Обновляем nowTs для таймера
+      
+      // Tutorial: Initialize tutorial step on match_found
+      if (payload.oppNickname === 'Тренер') {
+        setTutorialStep(0); // Start with intro
+        setTutorialCompletedActions(new Set());
+      }
       // Никнеймы устанавливаем сразу из match_found (источник правды для R1)
       // КРИТИЧНО: устанавливаем даже если undefined (null) - это явное значение
       setYourNickname(payload.yourNickname ?? null);
@@ -229,6 +257,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           yourCard: payload.yourCard,
           oppCard: payload.oppCard
         };
+        
         return newRevealed;
       });
     });
@@ -256,6 +285,71 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     }
     return null;
   })();
+
+  // Tutorial: Check interactive step conditions
+  useEffect(() => {
+    if (oppNickname !== 'Тренер') return;
+    
+    // Step 1: ATTACK - player placed attack card in any slot
+    if (tutorialStep === 1) {
+      const hasAttack = slots.some(card => card === 'attack');
+      if (hasAttack && !tutorialCompletedActions.has(1)) {
+        setTutorialCompletedActions(prev => new Set([...prev, 1]));
+        setTimeout(() => setTutorialStep(2), 800);
+      }
+    }
+    
+    // Step 2: Slots - player moved card to different slot (check if card position changed)
+    if (tutorialStep === 2) {
+      const hasMoved = slots.some((card, idx) => {
+        if (card === null) return false;
+        // Check if card is in different position than before
+        const prevIdx = tutorialLastSlots.indexOf(card);
+        return prevIdx !== -1 && prevIdx !== idx;
+      });
+      if (hasMoved && !tutorialCompletedActions.has(2)) {
+        setTutorialCompletedActions(prev => new Set([...prev, 2]));
+        setTimeout(() => setTutorialStep(3), 800);
+      }
+    }
+    
+    // Step 6: Multiple cards - player filled 2+ slots
+    if (tutorialStep === 6) {
+      const filledCount = slots.filter(card => card !== null).length;
+      if (filledCount >= 2 && !tutorialCompletedActions.has(6)) {
+        setTutorialCompletedActions(prev => new Set([...prev, 6]));
+        setTimeout(() => setTutorialStep(7), 800);
+      }
+    }
+  }, [slots, tutorialStep, tutorialLastSlots, tutorialCompletedActions, oppNickname]);
+
+  // Tutorial: Track step_reveal for DEFENSE/HEAL/COUNTER steps
+  useEffect(() => {
+    if (oppNickname !== 'Тренер') return;
+    
+    // Find the most recent revealed card
+    const lastRevealed = revealedCards.length > 0 
+      ? revealedCards[revealedCards.length - 1] 
+      : revealedCards.find(r => r !== undefined);
+    
+    if (!lastRevealed) return;
+    
+    // Step 3: DEFENSE - player revealed defense (wait for reveal after placing card)
+    if (tutorialStep === 3 && lastRevealed.yourCard === 'defense' && !tutorialCompletedActions.has(3)) {
+      setTutorialCompletedActions(prev => new Set([...prev, 3]));
+      setTimeout(() => setTutorialStep(4), 2000);
+    }
+    // Step 4: HEAL - player revealed heal
+    else if (tutorialStep === 4 && lastRevealed.yourCard === 'heal' && !tutorialCompletedActions.has(4)) {
+      setTutorialCompletedActions(prev => new Set([...prev, 4]));
+      setTimeout(() => setTutorialStep(5), 2000);
+    }
+    // Step 5: COUNTER - player revealed counter
+    else if (tutorialStep === 5 && lastRevealed.yourCard === 'counter' && !tutorialCompletedActions.has(5)) {
+      setTutorialCompletedActions(prev => new Set([...prev, 5]));
+      setTimeout(() => setTutorialStep(6), 2000);
+    }
+  }, [revealedCards, tutorialStep, tutorialCompletedActions, oppNickname]);
 
   // Таймер для обновления countdown - стартует сразу при получении deadlineTs
   useEffect(() => {
@@ -343,6 +437,12 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     setSlots(prev => {
       const next = updater(prev);
       scheduleDraft(next);
+      
+      // Tutorial: Track slot changes for interactive steps
+      if (oppNickname === 'Тренер') {
+        setTutorialLastSlots(next);
+      }
+      
       return next;
     });
   };
@@ -841,15 +941,15 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
         </div>
       )}
 
-      {/* Tutorial Overlay */}
-      {oppNickname === 'Тренер' && tutorialStep < 4 && (
+      {/* Tutorial Overlay - Interactive Steps */}
+      {oppNickname === 'Тренер' && tutorialStep < 8 && (
         <div style={{
           position: 'absolute',
           top: 0,
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
           zIndex: 1000,
           display: 'flex',
           flexDirection: 'column',
@@ -862,17 +962,18 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
             backgroundColor: '#1a1a1a',
             padding: '24px',
             borderRadius: '12px',
-            maxWidth: '400px',
-            textAlign: 'center'
+            maxWidth: '420px',
+            textAlign: 'center',
+            border: '2px solid #4caf50'
           }}>
             {tutorialStep === 0 && (
               <>
-                <h2 style={{ fontSize: '24px', marginBottom: '16px' }}>Добро пожаловать в Orcain!</h2>
+                <h2 style={{ fontSize: '24px', marginBottom: '16px', color: '#4caf50' }}>Тренировочная арена</h2>
                 <p style={{ fontSize: '16px', marginBottom: '16px', lineHeight: '1.5' }}>
-                  Это обучающий бой против тренера. Вы научитесь основам игры.
+                  Ты на тренировочной арене. Тренер покажет базу боя.
                 </p>
                 <p style={{ fontSize: '14px', marginBottom: '20px', color: '#aaa' }}>
-                  В руке у вас 4 карты. Вы можете выложить до 3 карт в слоты.
+                  В руке 4 карты. Выложи до 3 карт в слоты.
                 </p>
                 <button
                   onClick={() => setTutorialStep(1)}
@@ -883,71 +984,106 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                     color: '#fff',
                     border: 'none',
                     borderRadius: '6px',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    fontWeight: 'bold'
                   }}
                 >
-                  Продолжить
+                  Начать
                 </button>
               </>
             )}
             {tutorialStep === 1 && (
               <>
-                <h2 style={{ fontSize: '24px', marginBottom: '16px' }}>Карты</h2>
-                <div style={{ textAlign: 'left', marginBottom: '20px' }}>
-                  <p style={{ fontSize: '14px', marginBottom: '8px' }}><strong>⚔ ATTACK</strong> — наносит 2 урона</p>
-                  <p style={{ fontSize: '14px', marginBottom: '8px' }}><strong>🛡 DEFENSE</strong> — блокирует атаку</p>
-                  <p style={{ fontSize: '14px', marginBottom: '8px' }}><strong>💚 HEAL</strong> — восстанавливает +1 HP</p>
-                  <p style={{ fontSize: '14px', marginBottom: '8px' }}><strong>🟣 COUNTER</strong> — отражает атаку</p>
+                <h2 style={{ fontSize: '22px', marginBottom: '12px' }}>⚔ ATTACK</h2>
+                <p style={{ fontSize: '16px', marginBottom: '16px', lineHeight: '1.5' }}>
+                  ATTACK наносит 2 урона противнику.
+                </p>
+                <p style={{ fontSize: '14px', marginBottom: '20px', color: '#ff6b6b', fontWeight: 'bold' }}>
+                  Положи карту ATTACK в любой слот
+                </p>
+                <div style={{ fontSize: '12px', color: '#aaa', fontStyle: 'italic' }}>
+                  {slots.some(c => c === 'attack') ? '✓ Готово!' : 'Перетащи ATTACK из руки в слот'}
                 </div>
-                <button
-                  onClick={() => setTutorialStep(2)}
-                  style={{
-                    padding: '12px 24px',
-                    fontSize: '16px',
-                    backgroundColor: '#4caf50',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Продолжить
-                </button>
               </>
             )}
             {tutorialStep === 2 && (
               <>
-                <h2 style={{ fontSize: '24px', marginBottom: '16px' }}>Слоты</h2>
+                <h2 style={{ fontSize: '22px', marginBottom: '12px' }}>Слоты 1→2→3</h2>
                 <p style={{ fontSize: '16px', marginBottom: '16px', lineHeight: '1.5' }}>
-                  У вас есть 3 слота. Перетащите карты из руки в слоты.
+                  Слоты разыгрываются по порядку: сначала 1, потом 2, потом 3.
                 </p>
-                <p style={{ fontSize: '14px', marginBottom: '20px', color: '#aaa' }}>
-                  Слоты играются по порядку: 1 → 2 → 3. Вы можете класть карты в любой слот.
+                <p style={{ fontSize: '14px', marginBottom: '20px', color: '#ff6b6b', fontWeight: 'bold' }}>
+                  Перемести карту в другой слот
                 </p>
-                <button
-                  onClick={() => setTutorialStep(3)}
-                  style={{
-                    padding: '12px 24px',
-                    fontSize: '16px',
-                    backgroundColor: '#4caf50',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Понятно
-                </button>
+                <div style={{ fontSize: '12px', color: '#aaa', fontStyle: 'italic' }}>
+                  Можно класть карты в любой слот
+                </div>
               </>
             )}
             {tutorialStep === 3 && (
               <>
-                <h2 style={{ fontSize: '24px', marginBottom: '16px' }}>Готовы?</h2>
+                <h2 style={{ fontSize: '22px', marginBottom: '12px' }}>🛡 DEFENSE</h2>
+                <p style={{ fontSize: '16px', marginBottom: '16px', lineHeight: '1.5' }}>
+                  DEFENSE блокирует атаку. Тренер атакует — защитись!
+                </p>
+                <p style={{ fontSize: '14px', marginBottom: '20px', color: '#ff6b6b', fontWeight: 'bold' }}>
+                  Положи DEFENSE в слот и дождись результата
+                </p>
+                <div style={{ fontSize: '12px', color: '#aaa', fontStyle: 'italic' }}>
+                  {slots.some(c => c === 'defense') ? '✓ Карта выложена, ждём reveal...' : 'Выложи DEFENSE'}
+                </div>
+              </>
+            )}
+            {tutorialStep === 4 && (
+              <>
+                <h2 style={{ fontSize: '22px', marginBottom: '12px' }}>💚 HEAL</h2>
+                <p style={{ fontSize: '16px', marginBottom: '16px', lineHeight: '1.5' }}>
+                  HEAL восстанавливает +1 HP. Используй для лечения.
+                </p>
+                <p style={{ fontSize: '14px', marginBottom: '20px', color: '#ff6b6b', fontWeight: 'bold' }}>
+                  Сыграй HEAL и дождись результата
+                </p>
+                <div style={{ fontSize: '12px', color: '#aaa', fontStyle: 'italic' }}>
+                  {slots.some(c => c === 'heal') ? '✓ Карта выложена, ждём reveal...' : 'Выложи HEAL'}
+                </div>
+              </>
+            )}
+            {tutorialStep === 5 && (
+              <>
+                <h2 style={{ fontSize: '22px', marginBottom: '12px' }}>🟣 COUNTER</h2>
+                <p style={{ fontSize: '16px', marginBottom: '16px', lineHeight: '1.5' }}>
+                  COUNTER отражает атаку — атакующий получает урон вместо тебя.
+                </p>
+                <p style={{ fontSize: '14px', marginBottom: '20px', color: '#ff6b6b', fontWeight: 'bold' }}>
+                  Сыграй COUNTER и дождись результата
+                </p>
+                <div style={{ fontSize: '12px', color: '#aaa', fontStyle: 'italic' }}>
+                  {slots.some(c => c === 'counter') ? '✓ Карта выложена, ждём reveal...' : 'Выложи COUNTER'}
+                </div>
+              </>
+            )}
+            {tutorialStep === 6 && (
+              <>
+                <h2 style={{ fontSize: '22px', marginBottom: '12px' }}>Множественные карты</h2>
+                <p style={{ fontSize: '16px', marginBottom: '16px', lineHeight: '1.5' }}>
+                  Можно выложить до 3 карт за раунд. Больше карт — больше эффектов!
+                </p>
+                <p style={{ fontSize: '14px', marginBottom: '20px', color: '#ff6b6b', fontWeight: 'bold' }}>
+                  Заполни минимум 2 слота картами
+                </p>
+                <div style={{ fontSize: '12px', color: '#aaa', fontStyle: 'italic' }}>
+                  {slots.filter(c => c !== null).length >= 2 ? '✓ Готово!' : `Заполнено: ${slots.filter(c => c !== null).length}/2`}
+                </div>
+              </>
+            )}
+            {tutorialStep === 7 && (
+              <>
+                <h2 style={{ fontSize: '24px', marginBottom: '16px', color: '#4caf50' }}>Обучение завершено!</h2>
                 <p style={{ fontSize: '16px', marginBottom: '20px', lineHeight: '1.5' }}>
-                  Выложите карты в слоты и нажмите "Confirm" когда будете готовы.
+                  Ты освоил основы боя. Теперь можно сражаться с реальными противниками!
                 </p>
                 <button
-                  onClick={() => setTutorialStep(4)}
+                  onClick={onBackToMenu}
                   style={{
                     padding: '12px 24px',
                     fontSize: '16px',
@@ -955,10 +1091,11 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                     color: '#fff',
                     border: 'none',
                     borderRadius: '6px',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    fontWeight: 'bold'
                   }}
                 >
-                  Начать бой
+                  В меню
                 </button>
               </>
             )}

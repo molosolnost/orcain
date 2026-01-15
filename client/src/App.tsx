@@ -79,7 +79,13 @@ function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [lastPrepStart, setLastPrepStart] = useState<PrepStartPayload | null>(null);
-  const [tutorialCompleted, setTutorialCompleted] = useState<boolean>(false);
+  // Tutorial completion: source of truth is localStorage (Free hosting friendly)
+  const [tutorialCompleted, setTutorialCompleted] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('orcain_tutorial_completed') === '1';
+    }
+    return false;
+  });
   
   // Boot state machine
   const [bootState, setBootState] = useState<BootState>('checking');
@@ -251,9 +257,12 @@ function App() {
         setTokens(prev => (prev === null ? payload.tokens : prev));
       }
 
-      // Обновляем tutorialCompleted
-      if (payload.tutorialCompleted !== undefined) {
-        setTutorialCompleted(payload.tutorialCompleted);
+      // Обновляем tutorialCompleted (best-effort from server, but localStorage is source of truth)
+      if (payload.tutorialCompleted !== undefined && payload.tutorialCompleted) {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('orcain_tutorial_completed', '1');
+        }
+        setTutorialCompleted(true);
       }
       
       // Если nickname пустой и мы не в onboarding - показываем onboarding
