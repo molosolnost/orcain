@@ -105,6 +105,8 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setYourHp(matchEndPayload.yourHp);
       setOppHp(matchEndPayload.oppHp);
       setCurrentStepIndex(null);
+      // Останавливаем таймер при завершении матча
+      setDeadlineTs(null);
     } else {
       // Очищаем END состояние если matchEndPayload стал null
       if (phase === 'END') {
@@ -114,7 +116,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     }
   }, [matchEndPayload, phase]);
 
-  // Применение lastPrepStart из props
+  // Применение lastPrepStart из props - источник правды для таймера и никнеймов
   useEffect(() => {
     if (!lastPrepStart) return;
     
@@ -126,15 +128,19 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     const isNewRound = lastAppliedRoundIndexRef.current === null || 
                        lastAppliedRoundIndexRef.current !== lastPrepStart.roundIndex;
     
+    // КРИТИЧНО: устанавливаем все данные немедленно, включая R1
     setRoundIndex(lastPrepStart.roundIndex);
     setPhase('PREP');
-    setNowTs(Date.now());
-    setDeadlineTs(lastPrepStart.deadlineTs);
+    setNowTs(Date.now()); // Обновляем nowTs для корректного расчета таймера
+    setDeadlineTs(lastPrepStart.deadlineTs); // deadlineTs - источник правды для таймера
     setYourHp(lastPrepStart.yourHp);
     setOppHp(lastPrepStart.oppHp);
     setPot(lastPrepStart.pot);
     setSuddenDeath(lastPrepStart.suddenDeath);
     setAvailableCards([...lastPrepStart.cards]);
+    
+    // Никнеймы обновляем из prep_start (может быть более актуальная версия)
+    // Если prep_start содержит никнеймы - используем их, иначе оставляем текущие
     if (lastPrepStart.yourNickname !== undefined) {
       setYourNickname(lastPrepStart.yourNickname);
     }
@@ -158,7 +164,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     if (!socket) return;
 
     socketManager.onMatchFound((payload) => {
-      // При старте нового матча очищаем все локальные стейты
+      // При старте нового матча очищаем все локальные стейты и устанавливаем начальные значения
       setState('prep');
       setPhase('PREP');
       setYourHp(payload.yourHp);
@@ -169,12 +175,15 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setRevealedCards([]);
       setCurrentStepIndex(null);
       setRoundIndex(1);
+      setNowTs(Date.now()); // Обновляем nowTs для таймера
+      // Никнеймы устанавливаем сразу из match_found (источник правды для R1)
       if (payload.yourNickname !== undefined) {
         setYourNickname(payload.yourNickname);
       }
       if (payload.oppNickname !== undefined) {
         setOppNickname(payload.oppNickname);
       }
+      // deadlineTs придет в prep_start, но уже сейчас готовы к его получению
     });
 
     // Убрана прямая подписка на prep_start - теперь получаем через props (lastPrepStart)
@@ -214,25 +223,28 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     };
   }, []);
 
-  // Вычисляемый countdownSeconds
-  const countdownSeconds = deadlineTs === null 
-    ? null 
-    : Math.max(0, Math.ceil((deadlineTs - nowTs) / 1000));
-  
-  // Fallback для computedSeconds
+  // Вычисляемый countdownSeconds - источник правды для таймера
+  // Всегда вычисляем от deadlineTs и текущего времени
   const computedSeconds = (() => {
     if (phase === 'PREP' && deadlineTs !== null) {
       const baseNow = nowTs || Date.now();
       const secs = Math.max(0, Math.ceil((deadlineTs - baseNow) / 1000));
       return isNaN(secs) ? 0 : secs;
     }
-    return countdownSeconds !== null && !isNaN(countdownSeconds) ? countdownSeconds : null;
+    return null;
   })();
 
-  // Таймер для обновления countdown
+  // Таймер для обновления countdown - стартует сразу при получении deadlineTs
   useEffect(() => {
-    if (phase !== 'PREP' || deadlineTs === null) return;
+    if (phase !== 'PREP' || deadlineTs === null) {
+      // Если не PREP или нет deadlineTs - останавливаем таймер
+      return;
+    }
 
+    // Сразу обновляем nowTs для мгновенного отображения таймера
+    setNowTs(Date.now());
+
+    // Запускаем интервал для обновления таймера
     const interval = setInterval(() => {
       setNowTs(Date.now());
     }, 250);
