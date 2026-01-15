@@ -66,6 +66,28 @@ try {
   // Индекс уже существует или ошибка, игнорируем
 }
 
+// Миграция: проверяем и добавляем колонку tutorialCompleted если её нет (идемпотентно)
+function migrateTutorialCompleted() {
+  try {
+    // Проверяем наличие колонки через PRAGMA table_info
+    const tableInfo = db.prepare('PRAGMA table_info(accounts)').all();
+    const hasTutorialCompleted = tableInfo.some(col => col.name === 'tutorialCompleted');
+    
+    if (!hasTutorialCompleted) {
+      db.exec('ALTER TABLE accounts ADD COLUMN tutorialCompleted INTEGER DEFAULT 0');
+      console.log('[DB_MIGRATE] tutorialCompleted: added');
+    } else {
+      console.log('[DB_MIGRATE] tutorialCompleted: exists');
+    }
+  } catch (e) {
+    console.error('[DB_MIGRATE] tutorialCompleted: error', e.message);
+    // Не падаем, просто логируем ошибку
+  }
+}
+
+// Выполняем миграцию при старте БД
+migrateTutorialCompleted();
+
 // Функции для работы с аккаунтами
 function createGuestAccount() {
   const accountId = require('crypto').randomUUID();
@@ -195,16 +217,37 @@ function getNickname(accountId) {
   return account ? account.nickname : null;
 }
 
-// Функции для работы с tutorialCompleted
+// Функции для работы с tutorialCompleted (безопасные, не падают если колонка отсутствует)
 function getTutorialCompleted(accountId) {
-  const stmt = db.prepare('SELECT tutorialCompleted FROM accounts WHERE accountId = ?');
-  const row = stmt.get(accountId);
-  return row ? (row.tutorialCompleted === 1) : false;
+  try {
+    const stmt = db.prepare('SELECT tutorialCompleted FROM accounts WHERE accountId = ?');
+    const row = stmt.get(accountId);
+    return row ? (row.tutorialCompleted === 1) : false;
+  } catch (e) {
+    // Если колонка отсутствует или другая ошибка - возвращаем false (default)
+    if (e.message && e.message.includes('no such column: tutorialCompleted')) {
+      console.log(`[DB_FALLBACK] tutorialCompleted missing for accountId=${accountId} -> default false`);
+      return false;
+    }
+    // Другие ошибки тоже не должны падать
+    console.error(`[DB_ERROR] getTutorialCompleted accountId=${accountId} error=${e.message}`);
+    return false;
+  }
 }
 
 function setTutorialCompleted(accountId, completed) {
-  const stmt = db.prepare('UPDATE accounts SET tutorialCompleted = ? WHERE accountId = ?');
-  stmt.run(completed ? 1 : 0, accountId);
+  try {
+    const stmt = db.prepare('UPDATE accounts SET tutorialCompleted = ? WHERE accountId = ?');
+    stmt.run(completed ? 1 : 0, accountId);
+  } catch (e) {
+    // Если колонка отсутствует - просто no-op (не падаем)
+    if (e.message && e.message.includes('no such column: tutorialCompleted')) {
+      console.log(`[DB_FALLBACK] tutorialCompleted missing for accountId=${accountId} -> no-op (column not available)`);
+      return; // No-op
+    }
+    // Другие ошибки логируем, но не падаем
+    console.error(`[DB_ERROR] setTutorialCompleted accountId=${accountId} completed=${completed} error=${e.message}`);
+  }
 }
 
 module.exports = {

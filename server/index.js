@@ -2024,8 +2024,15 @@ io.on('connection', (socket) => {
     // Получаем nickname
     const nickname = db.getNickname(accountId);
     
-    // Получаем tutorialCompleted
-    const tutorialCompleted = db.getTutorialCompleted(accountId);
+    // Получаем tutorialCompleted (безопасно, с fallback)
+    let tutorialCompleted = false;
+    try {
+      tutorialCompleted = db.getTutorialCompleted(accountId);
+    } catch (e) {
+      // Fallback: если ошибка - используем false (не блокируем логин)
+      console.error(`[HELLO_ERROR] getTutorialCompleted accountId=${accountId} error=${e.message}`);
+      tutorialCompleted = false;
+    }
 
     // Отправляем hello_ok с токенами, nickname и tutorialCompleted
     socket.emit('hello_ok', {
