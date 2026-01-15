@@ -318,6 +318,11 @@ function App() {
     });
 
     socketManager.onPrepStart((payload: PrepStartPayload) => {
+      // DEBUG: логируем получение prep_start
+      if (DEBUG_MODE) {
+        console.log(`[PREP_START_RECEIVED] round=${payload.roundIndex} deadlineTs=${payload.deadlineTs} yourNickname=${payload.yourNickname || '<null>'} oppNickname=${payload.oppNickname || '<null>'} currentScreen=${screen} currentMatchId=${currentMatchId}`);
+      }
+      
       // Устанавливаем currentMatchId если его еще нет (окно пропустило match_found)
       if (currentMatchId === null && payload.matchId) {
         setCurrentMatchId(payload.matchId);
@@ -325,12 +330,21 @@ function App() {
       
       // Игнорируем prep_start от старых матчей
       if (payload.matchId && currentMatchId !== null && payload.matchId !== currentMatchId) {
+        if (DEBUG_MODE) {
+          console.log(`[PREP_START_IGNORED] matchId mismatch: payload=${payload.matchId} current=${currentMatchId}`);
+        }
         return;
       }
       
-      // Пробрасываем payload в Battle если мы в battle
-      if (screen === 'battle') {
-        setLastPrepStart(payload);
+      // КРИТИЧНО: ВСЕГДА сохраняем lastPrepStart, не только когда screen === 'battle'
+      // Это гарантирует, что данные будут доступны в Battle сразу после монтирования
+      // Race condition: prep_start может прийти до того, как screen установлен в 'battle'
+      setLastPrepStart(payload);
+      
+      // Если мы еще не в battle, но получили prep_start - переключаемся на battle
+      // (это может быть если match_found был пропущен)
+      if (screen !== 'battle' && payload.matchId) {
+        setScreen('battle');
       }
     });
 

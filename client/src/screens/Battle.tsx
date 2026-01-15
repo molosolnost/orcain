@@ -118,15 +118,30 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
   // Применение lastPrepStart из props - источник правды для таймера и никнеймов
   useEffect(() => {
-    if (!lastPrepStart) return;
+    if (!lastPrepStart) {
+      // DEBUG: логируем отсутствие lastPrepStart
+      if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1') {
+        console.log(`[BATTLE_PREP_START] lastPrepStart is null, waiting...`);
+      }
+      return;
+    }
     
     // Игнорируем если matchId не совпадает
     if (lastPrepStart.matchId && currentMatchId !== null && lastPrepStart.matchId !== currentMatchId) {
+      if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1') {
+        console.log(`[BATTLE_PREP_START] matchId mismatch: prep=${lastPrepStart.matchId} current=${currentMatchId}`);
+      }
       return;
     }
     
     const isNewRound = lastAppliedRoundIndexRef.current === null || 
                        lastAppliedRoundIndexRef.current !== lastPrepStart.roundIndex;
+    
+    // DEBUG: логируем применение prep_start
+    const DEBUG_MODE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
+    if (DEBUG_MODE) {
+      console.log(`[BATTLE_PREP_START] applying round=${lastPrepStart.roundIndex} deadlineTs=${lastPrepStart.deadlineTs} yourNickname=${lastPrepStart.yourNickname || '<null>'} oppNickname=${lastPrepStart.oppNickname || '<null>'} isNewRound=${isNewRound}`);
+    }
     
     // КРИТИЧНО: устанавливаем все данные немедленно, включая R1
     setRoundIndex(lastPrepStart.roundIndex);
@@ -153,6 +168,13 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setRevealedCards([]);
       setCurrentStepIndex(null);
       lastAppliedRoundIndexRef.current = lastPrepStart.roundIndex;
+    }
+    
+    // DEBUG: логируем после установки состояния
+    if (DEBUG_MODE) {
+      setTimeout(() => {
+        console.log(`[BATTLE_PREP_START_AFTER] roundIndex=${lastPrepStart.roundIndex} deadlineTs=${lastPrepStart.deadlineTs} yourNickname=${lastPrepStart.yourNickname || '<null>'} oppNickname=${lastPrepStart.oppNickname || '<null>'}`);
+      }, 0);
     }
   }, [lastPrepStart, currentMatchId]);
 
@@ -235,6 +257,13 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       return;
     }
 
+    // DEBUG: логируем запуск таймера
+    const DEBUG_MODE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
+    if (DEBUG_MODE) {
+      const remaining = Math.max(0, Math.ceil((deadlineTs - Date.now()) / 1000));
+      console.log(`[BATTLE_TIMER_START] phase=${phase} deadlineTs=${deadlineTs} remaining=${remaining}s roundIndex=${roundIndex}`);
+    }
+
     // Сразу обновляем nowTs для мгновенного отображения таймера
     setNowTs(Date.now());
 
@@ -243,8 +272,13 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setNowTs(Date.now());
     }, 250);
 
-    return () => clearInterval(interval);
-  }, [phase, deadlineTs]);
+    return () => {
+      clearInterval(interval);
+      if (DEBUG_MODE) {
+        console.log(`[BATTLE_TIMER_STOP] phase=${phase} deadlineTs=${deadlineTs}`);
+      }
+    };
+  }, [phase, deadlineTs, roundIndex]);
 
   const canInteract = state === 'prep' && !confirmed;
 
