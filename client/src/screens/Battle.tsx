@@ -140,13 +140,10 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     setAvailableCards([...lastPrepStart.cards]);
     
     // Никнеймы обновляем из prep_start (может быть более актуальная версия)
-    // Если prep_start содержит никнеймы - используем их, иначе оставляем текущие
-    if (lastPrepStart.yourNickname !== undefined) {
-      setYourNickname(lastPrepStart.yourNickname);
-    }
-    if (lastPrepStart.oppNickname !== undefined) {
-      setOppNickname(lastPrepStart.oppNickname);
-    }
+    // КРИТИЧНО: устанавливаем даже если undefined (null) - это явное значение
+    // Это гарантирует что никнеймы будут показаны в R1 сразу после prep_start
+    setYourNickname(lastPrepStart.yourNickname ?? null);
+    setOppNickname(lastPrepStart.oppNickname ?? null);
     
     // Сбросить confirmed/layout/slot/выкладки только если это новый раунд
     if (isNewRound) {
@@ -177,12 +174,9 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setRoundIndex(1);
       setNowTs(Date.now()); // Обновляем nowTs для таймера
       // Никнеймы устанавливаем сразу из match_found (источник правды для R1)
-      if (payload.yourNickname !== undefined) {
-        setYourNickname(payload.yourNickname);
-      }
-      if (payload.oppNickname !== undefined) {
-        setOppNickname(payload.oppNickname);
-      }
+      // КРИТИЧНО: устанавливаем даже если undefined (null) - это явное значение
+      setYourNickname(payload.yourNickname ?? null);
+      setOppNickname(payload.oppNickname ?? null);
       // deadlineTs придет в prep_start, но уже сейчас готовы к его получению
     });
 
