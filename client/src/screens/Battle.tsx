@@ -631,7 +631,14 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   const handleConfirm = () => {
     if (confirmed) return;
     const layout = slots.filter((card): card is CardId => card !== null);
-    if (layout.length !== 3) return;
+    
+    // Tutorial: Allow confirm with 1+ card (for step-by-step learning)
+    // PvP/PvE: Require 3 cards (full layout)
+    const canConfirm = currentMatchMode === 'TUTORIAL' 
+      ? layout.length >= 1  // Tutorial: at least 1 card
+      : layout.length === 3; // PvP/PvE: exactly 3 cards
+    
+    if (!canConfirm) return;
     
     // Tutorial: Track confirm for explicit confirm-gate
     if (currentMatchMode === 'TUTORIAL') {
@@ -639,6 +646,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     }
     
     // Convert CardId[] to string[] for server (server expects CardId strings)
+    // For Tutorial with < 3 cards, server will fill remaining slots with GRASS
     socketManager.layoutConfirm(layout);
   };
 
@@ -984,7 +992,13 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           )}
           <button
             onClick={handleConfirm}
-            disabled={slots.filter(c => c !== null).length !== 3}
+            disabled={(() => {
+              const cardCount = slots.filter(c => c !== null).length;
+              // Tutorial: Enable with 1+ card, PvP/PvE: Require 3 cards
+              return currentMatchMode === 'TUTORIAL' 
+                ? cardCount < 1  // Tutorial: at least 1 card
+                : cardCount !== 3; // PvP/PvE: exactly 3 cards
+            })()}
             style={{
               width: '100%',
               padding: '14px',
@@ -992,7 +1006,13 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
               fontWeight: 'bold',
               borderRadius: '8px',
               border: 'none',
-              backgroundColor: slots.filter(c => c !== null).length === 3 ? '#4caf50' : '#666',
+              backgroundColor: (() => {
+                const cardCount = slots.filter(c => c !== null).length;
+                const isEnabled = currentMatchMode === 'TUTORIAL' 
+                  ? cardCount >= 1 
+                  : cardCount === 3;
+                return isEnabled ? '#4caf50' : '#666';
+              })(),
               color: '#fff',
               transition: 'background-color 0.2s',
               // Tutorial: Highlight button
@@ -1202,9 +1222,14 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                       </p>
                     )}
                     {slots.some(c => c === 'heal') && tutorialDidConfirmThisPrep && (
-                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontStyle: 'italic' }}>
-                        Смотри результат...
-                      </p>
+                      <>
+                        <p style={{ fontSize: '13px', marginBottom: '8px', color: '#4caf50', fontStyle: 'italic' }}>
+                          Смотри результат...
+                        </p>
+                        <p style={{ fontSize: '12px', marginBottom: '12px', color: '#aaa', fontStyle: 'italic' }}>
+                          HP станет на 1 больше после Reveal
+                        </p>
+                      </>
                     )}
                   </>
                 )}

@@ -1173,8 +1173,12 @@ function doOneStep(match, stepIndex) {
   const p1Card = p1Data.layout[stepIndex];
   const p2Card = p2Data.layout[stepIndex];
 
-  const result = applyStepLogic(p1Card, p2Card, p1Data.hp, p2Data.hp);
+  // Log HP before step (especially for tutorial HEAL debugging)
+  const hpBeforeP1 = p1Data.hp;
+  const hpBeforeP2 = p2Data.hp;
   
+  const result = applyStepLogic(p1Card, p2Card, p1Data.hp, p2Data.hp);
+
   // INVARIANT: HP sanity - HP в разумных границах (0..MAX_HP)
   if (!assertInvariant(match, result.p1Hp >= 0 && result.p1Hp <= MAX_HP, 'HP_SANITY_P1', { hp: result.p1Hp, maxHp: MAX_HP })) {
     result.p1Hp = Math.max(0, Math.min(MAX_HP, result.p1Hp)); // Clamp to valid range
@@ -1182,9 +1186,12 @@ function doOneStep(match, stepIndex) {
   if (!assertInvariant(match, result.p2Hp >= 0 && result.p2Hp <= MAX_HP, 'HP_SANITY_P2', { hp: result.p2Hp, maxHp: MAX_HP })) {
     result.p2Hp = Math.max(0, Math.min(MAX_HP, result.p2Hp)); // Clamp to valid range
   }
-  
+
   p1Data.hp = result.p1Hp;
   p2Data.hp = result.p2Hp;
+  
+  // Structured logging for step application (especially for tutorial HEAL)
+  console.log(`[STEP_APPLY] matchId=${match.id} round=${match.roundIndex} step=${stepIndex} p1Card=${p1Card} p2Card=${p2Card} p1Hp=${hpBeforeP1}->${result.p1Hp} p2Hp=${hpBeforeP2}->${result.p2Hp}`);
 
   // PvE: Save opponent's last revealed card for bot decision (use first card of step 0, or last non-GRASS card)
   if (match.mode === 'PVE') {
