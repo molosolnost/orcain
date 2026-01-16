@@ -2449,24 +2449,53 @@ io.on('connection', (socket) => {
       }
     }
 
-    // Валидация расклада
-    if (!validateLayout(data.layout)) {
-      log(`[IGNORED_CONFIRM] match=${match.id} sessionId=${sessionId} reason=invalid_layout`);
-      return; // Игнорируем молча
+    // Tutorial: Allow layout with 1-3 cards (server will fill remaining with GRASS)
+    // PvP/PvE: Require exactly 3 cards
+    const isTutorial = match.mode === 'TUTORIAL';
+    const layout = data.layout;
+    
+    // Basic validation: must be array, 1-3 cards
+    if (!Array.isArray(layout) || layout.length === 0 || layout.length > 3) {
+      log(`[IGNORED_CONFIRM] match=${match.id} sessionId=${sessionId} layout=${JSON.stringify(layout)} reason=invalid_length`);
+      return;
+    }
+    
+    // PvP/PvE: Require exactly 3 cards
+    if (!isTutorial && layout.length !== 3) {
+      log(`[IGNORED_CONFIRM] match=${match.id} sessionId=${sessionId} layout=${JSON.stringify(layout)} reason=not_3_cards_in_pvp`);
+      return;
+    }
+    
+    // For Tutorial: Fill remaining slots with GRASS if < 3 cards
+    const finalLayout = isTutorial && layout.length < 3
+      ? [...layout, ...Array(3 - layout.length).fill(GRASS)]
+      : layout;
+    
+    // Validate final layout (must be 3 cards, unique, no nulls)
+    if (!validateLayout(finalLayout)) {
+      log(`[IGNORED_CONFIRM] match=${match.id} sessionId=${sessionId} layout=${JSON.stringify(layout)} finalLayout=${JSON.stringify(finalLayout)} reason=validation_failed`);
+      return;
     }
 
-    // Валидация: все карты должны быть из hand игрока
+    // Валидация: все реальные карты (не GRASS) должны быть из hand игрока
     const playerHand = match.hands.get(sessionId) || [];
-    if (!validateCardsFromHand(data.layout, playerHand)) {
-      console.error(`[INVALID_CARD_FROM_CLIENT] match=${match.id} sessionId=${sessionId} layout=${JSON.stringify(data.layout)} hand=${JSON.stringify(playerHand)}`);
+    const realCards = finalLayout.filter(card => card !== GRASS && card !== null);
+    if (realCards.length > 0 && !validateCardsFromHand(realCards, playerHand)) {
+      console.error(`[INVALID_CARD_FROM_CLIENT] match=${match.id} sessionId=${sessionId} layout=${JSON.stringify(layout)} finalLayout=${JSON.stringify(finalLayout)} hand=${JSON.stringify(playerHand)}`);
       // Reject confirm if cards are invalid (don't accept invalid layout)
       socket.emit('error_msg', { message: 'Invalid cards: cards must be from your hand' });
       log(`[IGNORED_CONFIRM] match=${match.id} sessionId=${sessionId} reason=invalid_cards_from_hand`);
       return;
     }
 
+    // Save confirmed layout (use finalLayout with GRASS fill for Tutorial)
     playerData.confirmed = true;
-    playerData.layout = data.layout;
+    playerData.layout = finalLayout;
+    
+    // Log tutorial confirm with partial layout
+    if (isTutorial && layout.length < 3) {
+      console.log(`[TUTORIAL_CONFIRM] matchId=${match.id} sessionId=${sessionId} partialLayout=${JSON.stringify(layout)} finalLayout=${JSON.stringify(finalLayout)}`);
+    }
     
     // Если игрок подтвердил layout, значит он точно отправлял draft (hadDraft = true)
     // Это защита от edge case когда confirm пришёл без предварительного draft
