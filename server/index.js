@@ -372,10 +372,12 @@ function createTutorialMatch(playerSocket) {
   playerData.matchId = matchId;
 
   // Create match structure
+  // IMPORTANT: match.sessions[0] = playerSessionId, match.sessions[1] = BOT_SESSION_ID
+  // This ensures getPlayerData(match.sessions[0]) returns playerData, getPlayerData(match.sessions[1]) returns botData
   const match = {
     id: matchId,
     mode: 'TUTORIAL', // Tutorial mode
-    sessions: [playerSessionId, BOT_SESSION_ID],
+    sessions: [playerSessionId, BOT_SESSION_ID], // [playerSessionId, BOT_SESSION_ID] - order matters!
     socketIds: [playerSocket.id, null], // Bot has no socket
     player1: playerSocket.id,
     player2: null, // Bot has no socket
@@ -795,6 +797,18 @@ function finalizeRound(match) {
     if (match.mode === 'TUTORIAL' && p1Data.confirmed) {
       // Layout already set in layout_confirm - use as-is
       // This ensures confirmed cards are not replaced by GRASS
+      // But if somehow layout is null despite confirmed=true, we need to finalize
+      if (!p1Data.layout) {
+        console.error(`[TUTORIAL_FINALIZE_ERROR] matchId=${match.id} p1Session=${sid1} confirmed=true but layout=null, finalizing from draft`);
+        const finalized = finalizeLayout(p1Data.layout, p1Data.draftLayout);
+        p1Data.layout = finalized;
+      } else {
+        // Tutorial: Layout is set, verify it's not GRASS
+        const hasRealCard = p1Data.layout.some(card => card !== GRASS && card !== null);
+        if (!hasRealCard && p1Data.confirmed) {
+          console.error(`[TUTORIAL_FINALIZE_WARNING] matchId=${match.id} p1Session=${sid1} confirmed=true but layout=${JSON.stringify(p1Data.layout)} contains no real cards`);
+        }
+      }
     } else {
       const finalized = finalizeLayout(p1Data.layout, p1Data.draftLayout);
       p1Data.layout = finalized;
@@ -805,6 +819,11 @@ function finalizeRound(match) {
     const finalized = finalizeLayout(p2Data.layout, p2Data.draftLayout);
     p2Data.layout = finalized;
     p2Data.confirmed = true;
+  }
+  
+  // Tutorial: Debug log after finalize
+  if (match.mode === 'TUTORIAL') {
+    console.log(`[TUTORIAL_FINALIZE_ROUND] matchId=${match.id} p1Session=${sid1} p2Session=${sid2} p1Layout=${JSON.stringify(p1Data.layout)} p2Layout=${JSON.stringify(p2Data.layout)} p1Confirmed=${p1Data.confirmed} p2Confirmed=${p2Data.confirmed}`);
   }
   
   // (2) Определяем hadDraftThisRound и isAfkThisRound
@@ -1158,6 +1177,11 @@ function startPlay(match) {
   const p1Data = getPlayerData(match.sessions[0]);
   const p2Data = getPlayerData(match.sessions[1]);
   
+  // Tutorial: Debug log before finalizeRound
+  if (match.mode === 'TUTORIAL') {
+    console.log(`[TUTORIAL_STARTPLAY] matchId=${match.id} p1Session=${match.sessions[0]} p2Session=${match.sessions[1]} p1Layout=${JSON.stringify(p1Data.layout)} p2Layout=${JSON.stringify(p2Data.layout)} p1Confirmed=${p1Data.confirmed} p2Confirmed=${p2Data.confirmed}`);
+  }
+  
   // Финализируем раунд (если layouts ещё не финализированы)
   // Это может быть если startPlay вызван до prepTimer (оба confirmed раньше дедлайна)
   if (!p1Data.layout || !p2Data.layout) {
@@ -1165,6 +1189,15 @@ function startPlay(match) {
     if (matchEnded) {
       log(`[START_PLAY] match=${match.id} ended due to AFK rules in finalizeRound`);
       return; // Матч завершён, не запускаем playRound
+    }
+    
+    // After finalizeRound, re-read layouts (they may have changed)
+    const p1DataAfter = getPlayerData(match.sessions[0]);
+    const p2DataAfter = getPlayerData(match.sessions[1]);
+    
+    // Tutorial: Debug log after finalizeRound
+    if (match.mode === 'TUTORIAL') {
+      console.log(`[TUTORIAL_STARTPLAY_AFTER_FINALIZE] matchId=${match.id} p1Layout=${JSON.stringify(p1DataAfter.layout)} p2Layout=${JSON.stringify(p2DataAfter.layout)}`);
     }
   }
 
@@ -1179,6 +1212,11 @@ function startPlay(match) {
 function doOneStep(match, stepIndex) {
   const p1Data = getPlayerData(match.sessions[0]);
   const p2Data = getPlayerData(match.sessions[1]);
+  
+  // Tutorial: Debug log to verify layouts are correct
+  if (match.mode === 'TUTORIAL' && stepIndex === 0) {
+    console.log(`[TUTORIAL_DOONESTEP] matchId=${match.id} step=${stepIndex} p1Session=${match.sessions[0]} p2Session=${match.sessions[1]} p1Layout=${JSON.stringify(p1Data.layout)} p2Layout=${JSON.stringify(p2Data.layout)}`);
+  }
   
   const p1Card = p1Data.layout[stepIndex];
   const p2Card = p2Data.layout[stepIndex];
@@ -2541,9 +2579,14 @@ io.on('connection', (socket) => {
     playerData.confirmed = true;
     playerData.layout = finalLayout;
     
-    // Log tutorial confirm with partial layout
+    // Log tutorial confirm with partial layout + debug mapping
     if (isTutorial) {
-      console.log(`[TUTORIAL_CONFIRM_APPLIED] matchId=${match.id} sessionId=${sessionId} round=${match.roundIndex} partialLayout=${JSON.stringify(layout)} finalLayout=${JSON.stringify(finalLayout)}`);
+      console.log(`[TUTORIAL_CONFIRM] matchId=${match.id} socketId=${socket.id} sessionId=${sessionId} match.sessions=${JSON.stringify(match.sessions)} round=${match.roundIndex} partialLayout=${JSON.stringify(layout)} finalLayout=${JSON.stringify(finalLayout)}`);
+      console.log(`[TUTORIAL_CONFIRM_APPLIED] matchId=${match.id} sessionId=${sessionId} storedLayout=${JSON.stringify(playerData.layout)} playerData.confirmed=${playerData.confirmed}`);
+      
+      // Debug: Check what keys exist in players map
+      const allSessionIds = Array.from(players.keys());
+      console.log(`[TUTORIAL_CONFIRM_DEBUG] matchId=${match.id} allSessionIds=${JSON.stringify(allSessionIds)} match.sessions=${JSON.stringify(match.sessions)}`);
     }
     
     // Если игрок подтвердил layout, значит он точно отправлял draft (hadDraft = true)
@@ -2558,7 +2601,7 @@ io.on('connection', (socket) => {
     
     // Tutorial: Immediately start reveal after confirm (no waiting for deadline)
     if (isTutorial) {
-      // Check if both players confirmed (bot already has draft, will be finalized)
+      // Bot is auto-confirmed (layout already set in submitTutorialBotDraft)
       const botSessionId = match.sessions.find(sid => sid === BOT_SESSION_ID);
       const botData = getPlayerData(botSessionId);
       
@@ -2569,9 +2612,27 @@ io.on('connection', (socket) => {
         botData.confirmed = true;
       }
       
-      // Both confirmed - start reveal immediately
-      if (playerData.confirmed && botData.confirmed) {
-        console.log(`[TUTORIAL_IMMEDIATE_REVEAL] matchId=${match.id} both confirmed, starting reveal`);
+      // In tutorial, bot is always "ready" (scripted), so if player confirmed, start immediately
+      // IMPORTANT: playerData is already updated with confirmed layout above
+      if (playerData.confirmed) {
+        console.log(`[TUTORIAL_IMMEDIATE_REVEAL] matchId=${match.id} playerConfirmed=${playerData.confirmed} botConfirmed=${botData.confirmed} starting reveal`);
+        
+        // Debug: Log what layouts will be used (read from match.sessions to verify mapping)
+        const p1SessionId = match.sessions[0];
+        const p2SessionId = match.sessions[1];
+        const p1DataDebug = getPlayerData(p1SessionId);
+        const p2DataDebug = getPlayerData(p2SessionId);
+        console.log(`[TUTORIAL_STARTPLAY_BEFORE] matchId=${match.id} p1Session=${p1SessionId} p2Session=${p2SessionId} p1Layout=${JSON.stringify(p1DataDebug.layout)} p2Layout=${JSON.stringify(p2DataDebug.layout)} p1Confirmed=${p1DataDebug.confirmed} p2Confirmed=${p2DataDebug.confirmed}`);
+        
+        // Verify: playerData (from sessionId) should match p1DataDebug (from match.sessions[0])
+        if (sessionId === p1SessionId) {
+          if (JSON.stringify(playerData.layout) !== JSON.stringify(p1DataDebug.layout)) {
+            console.error(`[TUTORIAL_MAPPING_ERROR] matchId=${match.id} sessionId=${sessionId} playerData.layout=${JSON.stringify(playerData.layout)} != p1DataDebug.layout=${JSON.stringify(p1DataDebug.layout)}`);
+          } else {
+            console.log(`[TUTORIAL_MAPPING_OK] matchId=${match.id} sessionId=${sessionId} layouts match correctly`);
+          }
+        }
+        
         // Start play round immediately (bypass prepTimer)
         startPlay(match);
       }
