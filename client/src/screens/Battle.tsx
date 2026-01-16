@@ -454,7 +454,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   };
   
   const requiredCard = currentMatchMode === 'TUTORIAL' ? getRequiredCardForStep(tutorialStep) : null;
-  const isCardAllowed = (cardId: CardId) => {
+  const isCardAllowed = (cardId: CardId): boolean => {
     if (currentMatchMode !== 'TUTORIAL') return true; // PvP/PvE: all cards allowed
     if (!requiredCard) return true; // Step doesn't require specific card
     return cardId === requiredCard; // Only required card allowed
