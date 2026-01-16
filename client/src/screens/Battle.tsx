@@ -559,6 +559,12 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   ) => {
     if (!canInteract) return;
     if (sourceSlotIndex === null && slots.includes(card)) return;
+    
+    // Tutorial: Block dragging non-required cards
+    if (!isCardAllowed(card)) {
+      // Card not allowed for current tutorial step - prevent drag
+      return;
+    }
 
     e.preventDefault();
     const target = e.currentTarget as HTMLElement;
@@ -966,6 +972,10 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
             {yourHand.map((cardId) => {
               const inSlot = slots.includes(cardId);
               const isDraggingCard = dragState?.card === cardId;
+              // Tutorial: Disable non-required cards
+              const isAllowed = isCardAllowed(cardId);
+              const isDisabled = currentMatchMode === 'TUTORIAL' && !isAllowed;
+              
               const cardElement = renderCard(cardId, 'HAND');
 
               return (
@@ -977,10 +987,12 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                   onPointerUp={handlePointerEnd}
                   onPointerCancel={handlePointerCancel}
                   style={{
-                    opacity: inSlot ? 0.5 : isDraggingCard ? 0.25 : 1,
-                    cursor: canInteract && !inSlot ? 'grab' : 'default',
+                    opacity: inSlot ? 0.5 : isDraggingCard ? 0.25 : (isDisabled ? 0.3 : 1),
+                    cursor: canInteract && !inSlot && !isDisabled ? 'grab' : 'not-allowed',
                     userSelect: 'none',
-                    touchAction: 'none'
+                    touchAction: 'none',
+                    filter: isDisabled ? 'grayscale(0.8)' : 'none',
+                    pointerEvents: isDisabled ? 'none' : 'auto'
                   }}
                 >
                   {cardElement}
