@@ -385,11 +385,25 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setTimeout(() => setTutorialStep(5), 2000);
     }
     // Step 5: COUNTER - player revealed counter
-    else if (tutorialStep === 5 && lastRevealed.yourCard === 'counter' && !tutorialCompletedActions.has(5)) {
+    else if (tutorialStep === 5 && lastRevealed.yourCard === 'counter' && !tutorialCompletedActions.has(5) && tutorialDidConfirmThisPrep) {
       setTutorialCompletedActions(prev => new Set([...prev, 5]));
       setTimeout(() => setTutorialStep(6), 2000);
     }
-  }, [revealedCards, tutorialStep, tutorialCompletedActions, currentMatchMode]);
+    // Step 6: Multiple cards - advance after reveal (player confirmed 2+ cards)
+    else if (tutorialStep === 6 && tutorialCompletedActions.has(6) && tutorialDidConfirmThisPrep) {
+      // Already marked as filled and confirmed, now advance after reveal
+      setTimeout(() => setTutorialStep(7), 2000);
+    }
+    // Step 7: Tutorial complete - trigger match end after reveal
+    else if (tutorialStep === 7 && tutorialCompletedActions.has(6) && tutorialDidConfirmThisPrep) {
+      // Trigger tutorial completion on server after last reveal
+      const socket = socketManager.getSocket();
+      if (socket) {
+        socket.emit('tutorial_finish');
+        console.log('[TUTORIAL_STEP] step=7 tutorial_complete triggered');
+      }
+    }
+  }, [revealedCards, tutorialStep, tutorialCompletedActions, tutorialDidConfirmThisPrep, currentMatchMode]);
 
   // Таймер для обновления countdown - стартует сразу при получении deadlineTs
   useEffect(() => {
@@ -991,30 +1005,6 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           </button>
         </div>
       )}
-          textAlign: 'center',
-          borderTop: '1px solid rgba(255, 255, 255, 0.1)'
-        }}>
-          <button
-            onClick={handleConfirm}
-            disabled={slots.filter(c => c !== null).length !== 3}
-            style={{
-              padding: '14px 32px',
-              fontSize: '16px',
-              fontWeight: 'bold',
-              cursor: slots.filter(c => c !== null).length === 3 ? 'pointer' : 'not-allowed',
-              minWidth: '140px',
-              minHeight: '52px',
-              borderRadius: '8px',
-              border: 'none',
-              backgroundColor: slots.filter(c => c !== null).length === 3 ? '#4caf50' : '#666',
-              color: '#fff',
-              transition: 'background-color 0.2s'
-            }}
-          >
-            Confirm
-          </button>
-        </div>
-      )}
 
       {confirmed && state === 'prep' && (
         <div style={{ 
@@ -1334,14 +1324,9 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
             <p style={{ fontSize: '12px', color: '#999', marginBottom: '16px' }}>Match timed out</p>
           )}
           {matchEndPayload.matchMode === 'TUTORIAL' && (
-            <>
-              <h2 style={{ fontSize: '24px', color: '#4caf50', marginBottom: '16px' }}>
-                Обучение завершено!
-              </h2>
-              <p style={{ fontSize: '16px', color: '#fff', marginBottom: '16px' }}>
-                Ты освоил основы боя. Теперь можно сражаться с реальными противниками!
-              </p>
-            </>
+            <p style={{ fontSize: '16px', color: '#fff', marginBottom: '16px' }}>
+              Ты освоил основы боя. Теперь можно сражаться с реальными противниками!
+            </p>
           )}
           <button
             onClick={onBackToMenu}
