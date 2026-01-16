@@ -790,10 +790,11 @@ function finalizeRound(match) {
   // Tutorial: If player confirmed, use confirmed layout (don't replace with GRASS)
   // PvP/PvE: Use finalizeLayout logic
   if (!p1Data.layout) {
-    // Tutorial: If confirmed, use confirmed layout directly
-    if (match.mode === 'TUTORIAL' && p1Data.confirmed && p1Data.layout) {
-      // Already confirmed, use as-is (should not happen, but safety check)
-      // p1Data.layout is already set in layout_confirm
+    // Tutorial: If confirmed, confirmed layout is already set in layout_confirm handler
+    // For Tutorial, if confirmed, layout should already be set (don't override)
+    if (match.mode === 'TUTORIAL' && p1Data.confirmed) {
+      // Layout already set in layout_confirm - use as-is
+      // This ensures confirmed cards are not replaced by GRASS
     } else {
       const finalized = finalizeLayout(p1Data.layout, p1Data.draftLayout);
       p1Data.layout = finalized;
