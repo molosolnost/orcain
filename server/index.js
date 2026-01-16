@@ -380,6 +380,7 @@ function createTutorialMatch(playerSocket) {
     player1: playerSocket.id,
     player2: null, // Bot has no socket
     roundIndex: 1,
+    tutorialStep: 1, // Track tutorial step on server (1=ATTACK, 3=DEFENSE, 4=HEAL, 5=COUNTER, 6=multiple)
     suddenDeath: false,
     state: 'prep',
     prepDeadline: null,
@@ -786,10 +787,18 @@ function finalizeRound(match) {
   }
   
   // (1) Финализируем layouts для обоих игроков
+  // Tutorial: If player confirmed, use confirmed layout (don't replace with GRASS)
+  // PvP/PvE: Use finalizeLayout logic
   if (!p1Data.layout) {
-    const finalized = finalizeLayout(p1Data.layout, p1Data.draftLayout);
-    p1Data.layout = finalized;
-    p1Data.confirmed = true;
+    // Tutorial: If confirmed, use confirmed layout directly
+    if (match.mode === 'TUTORIAL' && p1Data.confirmed && p1Data.layout) {
+      // Already confirmed, use as-is (should not happen, but safety check)
+      // p1Data.layout is already set in layout_confirm
+    } else {
+      const finalized = finalizeLayout(p1Data.layout, p1Data.draftLayout);
+      p1Data.layout = finalized;
+      p1Data.confirmed = true;
+    }
   }
   if (!p2Data.layout) {
     const finalized = finalizeLayout(p2Data.layout, p2Data.draftLayout);
@@ -1357,6 +1366,16 @@ function resumePlay(match) {
 function finishRound(match) {
   const p1Data = getPlayerData(match.sessions[0]);
   const p2Data = getPlayerData(match.sessions[1]);
+  
+  // Tutorial: Increment tutorial step after round completion
+  if (match.mode === 'TUTORIAL') {
+    // Increment step: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
+    // Step 2 (slots) and Step 6 (multiple) are handled by client, server just tracks main card steps
+    if (match.tutorialStep < 7) {
+      match.tutorialStep = Math.min(match.tutorialStep + 1, 7);
+      console.log(`[TUTORIAL_STEP_INCREMENT] matchId=${match.id} round=${match.roundIndex} newStep=${match.tutorialStep}`);
+    }
+  }
   
   // Получаем nickname для обоих игроков
   const p1AccountId = getAccountIdBySessionId(match.sessions[0]);
@@ -2488,13 +2507,42 @@ io.on('connection', (socket) => {
       return;
     }
 
+    // Tutorial: Validate required card for current step
+    if (isTutorial) {
+      const tutorialStep = match.tutorialStep || 1;
+      // Map tutorial step to required card
+      // Step 1: ATTACK, Step 3: DEFENSE, Step 4: HEAL, Step 5: COUNTER, Step 6: any (multiple cards)
+      const requiredCardMap = {
+        1: 'attack',   // ATTACK step
+        3: 'defense',  // DEFENSE step
+        4: 'heal',     // HEAL step
+        5: 'counter',  // COUNTER step
+        // Step 2 (slots) and Step 6 (multiple) don't require specific card
+      };
+      const requiredCard = requiredCardMap[tutorialStep];
+      
+      if (requiredCard) {
+        // Check if layout contains required card
+        const hasRequiredCard = finalLayout.some(card => card === requiredCard);
+        if (!hasRequiredCard) {
+          const cardNames = { attack: 'ATTACK', defense: 'DEFENSE', heal: 'HEAL', counter: 'COUNTER' };
+          socket.emit('error_msg', { 
+            message: `Сейчас нужно сыграть: ${cardNames[requiredCard]}`,
+            code: 'tutorial_wrong_card'
+          });
+          console.log(`[TUTORIAL_WRONG_CARD] matchId=${match.id} sessionId=${sessionId} step=${tutorialStep} required=${requiredCard} got=${JSON.stringify(finalLayout)}`);
+          return;
+        }
+      }
+    }
+
     // Save confirmed layout (use finalLayout with GRASS fill for Tutorial)
     playerData.confirmed = true;
     playerData.layout = finalLayout;
     
     // Log tutorial confirm with partial layout
-    if (isTutorial && layout.length < 3) {
-      console.log(`[TUTORIAL_CONFIRM] matchId=${match.id} sessionId=${sessionId} partialLayout=${JSON.stringify(layout)} finalLayout=${JSON.stringify(finalLayout)}`);
+    if (isTutorial) {
+      console.log(`[TUTORIAL_CONFIRM_APPLIED] matchId=${match.id} sessionId=${sessionId} round=${match.roundIndex} partialLayout=${JSON.stringify(layout)} finalLayout=${JSON.stringify(finalLayout)}`);
     }
     
     // Если игрок подтвердил layout, значит он точно отправлял draft (hadDraft = true)
@@ -2506,6 +2554,27 @@ io.on('connection', (socket) => {
 
     // confirm_ok ТОЛЬКО игроку, который подтвердил
     socket.emit('confirm_ok');
+    
+    // Tutorial: Immediately start reveal after confirm (no waiting for deadline)
+    if (isTutorial) {
+      // Check if both players confirmed (bot already has draft, will be finalized)
+      const botSessionId = match.sessions.find(sid => sid === BOT_SESSION_ID);
+      const botData = getPlayerData(botSessionId);
+      
+      // Finalize bot layout if not already finalized
+      if (!botData.layout) {
+        const botFinalized = finalizeLayout(botData.layout, botData.draftLayout);
+        botData.layout = botFinalized;
+        botData.confirmed = true;
+      }
+      
+      // Both confirmed - start reveal immediately
+      if (playerData.confirmed && botData.confirmed) {
+        console.log(`[TUTORIAL_IMMEDIATE_REVEAL] matchId=${match.id} both confirmed, starting reveal`);
+        // Start play round immediately (bypass prepTimer)
+        startPlay(match);
+      }
+    }
 
     // Проверяем, можно ли начать раунд
     const oppSessionId = getOpponentSessionId(match, sessionId);

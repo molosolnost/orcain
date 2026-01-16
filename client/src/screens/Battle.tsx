@@ -260,6 +260,10 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
     socketManager.onConfirmOk(() => {
       setConfirmed(true);
+      // Tutorial: Show immediate feedback
+      if (currentMatchMode === 'TUTORIAL') {
+        // State will update to show "Смотри результат..." in overlay
+      }
     });
 
     socketManager.onStepReveal((payload: StepRevealPayload) => {
@@ -436,6 +440,25 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   }, [phase, deadlineTs, roundIndex]);
 
   const canInteract = state === 'prep' && !confirmed;
+  
+  // Tutorial: Get required card for current step
+  const getRequiredCardForStep = (step: number): CardId | null => {
+    const stepCardMap: Record<number, CardId | null> = {
+      1: 'attack',   // Step 1: ATTACK
+      3: 'defense', // Step 3: DEFENSE
+      4: 'heal',    // Step 4: HEAL
+      5: 'counter', // Step 5: COUNTER
+      // Step 2 (slots) and Step 6 (multiple) don't require specific card
+    };
+    return stepCardMap[step] || null;
+  };
+  
+  const requiredCard = currentMatchMode === 'TUTORIAL' ? getRequiredCardForStep(tutorialStep) : null;
+  const isCardAllowed = (cardId: CardId) => {
+    if (currentMatchMode !== 'TUTORIAL') return true; // PvP/PvE: all cards allowed
+    if (!requiredCard) return true; // Step doesn't require specific card
+    return cardId === requiredCard; // Only required card allowed
+  };
 
   useEffect(() => {
     if (dragState) {
