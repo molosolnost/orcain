@@ -1503,7 +1503,10 @@ function startPrepPhase(match) {
     submitTutorialBotDraft(match);
   }
 
-  const deadlineTs = Date.now() + PREP_TIME_MS;
+  // Tutorial: Extended deadline (10 minutes) to allow player to learn without timer pressure
+  // PvP/PvE: Normal 20 second deadline
+  const prepTimeMs = match.mode === 'TUTORIAL' ? 10 * 60 * 1000 : PREP_TIME_MS; // 10 minutes for tutorial, 20s for PvP/PvE
+  const deadlineTs = Date.now() + prepTimeMs;
   match.prepDeadline = deadlineTs;
 
   log(`[${match.id}] prep_start: round=${match.roundIndex}, suddenDeath=${match.suddenDeath}, p1Hp=${p1Data.hp}, p2Hp=${p2Data.hp}`);

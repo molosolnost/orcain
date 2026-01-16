@@ -289,8 +289,13 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
   // Вычисляемый countdownSeconds - источник правды для таймера
   // Всегда вычисляем от deadlineTs и текущего времени
+  // Tutorial: Show "∞" or "Disabled" instead of countdown (timer is extended to 10 minutes)
   const computedSeconds = (() => {
     if (phase === 'PREP' && deadlineTs !== null) {
+      // Tutorial: Don't show countdown pressure (deadline is 10 minutes, effectively unlimited)
+      if (currentMatchMode === 'TUTORIAL') {
+        return null; // Hide timer in tutorial (or show "∞" / "Disabled")
+      }
       const baseNow = nowTs || Date.now();
       const secs = Math.max(0, Math.ceil((deadlineTs - baseNow) / 1000));
       return isNaN(secs) ? 0 : secs;
@@ -298,44 +303,50 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     return null;
   })();
 
-  // Tutorial: Check interactive step conditions
+  // Tutorial: Check interactive step conditions (gated progression - only advance on player actions)
   useEffect(() => {
     if (currentMatchMode !== 'TUTORIAL') return;
     
-    // Step 1: ATTACK - player placed attack card in any slot
+    // Step 1: ATTACK - player placed attack card in any slot AND confirmed
+    // Gate: must have attack in slot AND confirmed (wait for confirm, not just draft)
     if (tutorialStep === 1) {
       const hasAttack = slots.some(card => card === 'attack');
+      // Check if player confirmed (state changed to 'playing' or we see confirmed layout)
+      // For tutorial, we advance after confirm (when round starts revealing)
+      // But we also allow draft-only for now, then wait for confirm in step_reveal
       if (hasAttack && !tutorialCompletedActions.has(1)) {
+        // Mark as draft completed, but wait for confirm/reveal before advancing
         setTutorialCompletedActions(prev => new Set([...prev, 1]));
-        setTimeout(() => setTutorialStep(2), 800);
+        // Don't auto-advance here - wait for confirm/reveal in step_reveal handler
       }
     }
     
     // Step 2: Slots - player moved card to different slot (check if card position changed)
+    // Gate: card must be in slot 1 or 2 (not slot 0) to show "any slot" flexibility
     if (tutorialStep === 2) {
       const hasMoved = slots.some((card, idx) => {
         if (card === null) return false;
-        // Check if card is in different position than before
-        const prevIdx = tutorialLastSlots.indexOf(card);
-        return prevIdx !== -1 && prevIdx !== idx;
+        // Check if card is in slot 1 or 2 (not slot 0) - shows flexibility
+        return idx > 0; // Slot 1 or 2
       });
       if (hasMoved && !tutorialCompletedActions.has(2)) {
         setTutorialCompletedActions(prev => new Set([...prev, 2]));
-        setTimeout(() => setTutorialStep(3), 800);
+        // Advance after confirm/reveal, not immediately
       }
     }
     
     // Step 6: Multiple cards - player filled 2+ slots
+    // Gate: must have 2+ cards in slots
     if (tutorialStep === 6) {
       const filledCount = slots.filter(card => card !== null).length;
       if (filledCount >= 2 && !tutorialCompletedActions.has(6)) {
         setTutorialCompletedActions(prev => new Set([...prev, 6]));
-        setTimeout(() => setTutorialStep(7), 800);
+        // Advance after confirm/reveal
       }
     }
   }, [slots, tutorialStep, tutorialLastSlots, tutorialCompletedActions, currentMatchMode]);
 
-  // Tutorial: Track step_reveal for DEFENSE/HEAL/COUNTER steps
+  // Tutorial: Track step_reveal for progression (gated - only advance after reveal)
   useEffect(() => {
     if (currentMatchMode !== 'TUTORIAL') return;
     
@@ -346,8 +357,18 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     
     if (!lastRevealed) return;
     
+    // Step 1: ATTACK - advance after reveal (player confirmed and round started)
+    if (tutorialStep === 1 && lastRevealed.yourCard === 'attack' && tutorialCompletedActions.has(1)) {
+      // Already marked as draft completed, now advance after reveal
+      setTimeout(() => setTutorialStep(2), 2000);
+    }
+    // Step 2: Slots - advance after reveal (player confirmed move)
+    else if (tutorialStep === 2 && tutorialCompletedActions.has(2)) {
+      // Already marked as moved, now advance after reveal
+      setTimeout(() => setTutorialStep(3), 2000);
+    }
     // Step 3: DEFENSE - player revealed defense (wait for reveal after placing card)
-    if (tutorialStep === 3 && lastRevealed.yourCard === 'defense' && !tutorialCompletedActions.has(3)) {
+    else if (tutorialStep === 3 && lastRevealed.yourCard === 'defense' && !tutorialCompletedActions.has(3)) {
       setTutorialCompletedActions(prev => new Set([...prev, 3]));
       setTimeout(() => setTutorialStep(4), 2000);
     }
@@ -747,6 +768,9 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           {phase === 'PREP' && deadlineTs !== null && computedSeconds !== null && (
             <span style={{ color: computedSeconds <= 5 ? '#ff6b6b' : '#fff', fontWeight: 'bold' }}>{computedSeconds}s</span>
           )}
+          {phase === 'PREP' && currentMatchMode === 'TUTORIAL' && (
+            <span style={{ color: '#4caf50', fontWeight: 'bold' }}>∞</span>
+          )}
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '10px' }}>
           <span>💰{tokens === null ? '—' : tokens}</span>
@@ -968,7 +992,8 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           alignItems: 'center',
           justifyContent: 'center',
           padding: '20px',
-          color: '#fff'
+          color: '#fff',
+          pointerEvents: 'none' // Allow interaction with game elements underneath
         }}>
           {(() => {
             // Debug logging for tutorial UI
@@ -984,7 +1009,8 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
             borderRadius: '12px',
             maxWidth: '420px',
             textAlign: 'center',
-            border: '2px solid #4caf50'
+            border: '2px solid #4caf50',
+            pointerEvents: 'auto' // Enable clicks/buttons inside the tutorial panel
           }}>
             {tutorialStep === 0 && (
               <>
@@ -1021,9 +1047,14 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                 <p style={{ fontSize: '14px', marginBottom: '20px', color: '#ff6b6b', fontWeight: 'bold' }}>
                   Положи карту ATTACK в любой слот
                 </p>
-                <div style={{ fontSize: '12px', color: '#aaa', fontStyle: 'italic' }}>
-                  {slots.some(c => c === 'attack') ? '✓ Готово!' : 'Перетащи ATTACK из руки в слот'}
+                <div style={{ fontSize: '12px', color: '#aaa', fontStyle: 'italic', marginBottom: '12px' }}>
+                  {slots.some(c => c === 'attack') ? '✓ Готово! Теперь нажми Confirm' : 'Перетащи ATTACK из руки в слот'}
                 </div>
+                {slots.some(c => c === 'attack') && (
+                  <p style={{ fontSize: '12px', color: '#4caf50', fontStyle: 'italic' }}>
+                    В обучении таймер отключен — у тебя есть время
+                  </p>
+                )}
               </>
             )}
             {tutorialStep === 2 && (
@@ -1033,10 +1064,10 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                   Слоты разыгрываются по порядку: сначала 1, потом 2, потом 3.
                 </p>
                 <p style={{ fontSize: '14px', marginBottom: '20px', color: '#ff6b6b', fontWeight: 'bold' }}>
-                  Перемести карту в другой слот
+                  Перемести карту в другой слот (например, в слот 2)
                 </p>
                 <div style={{ fontSize: '12px', color: '#aaa', fontStyle: 'italic' }}>
-                  Можно класть карты в любой слот
+                  {slots[1] !== null && slots[1] !== slots[0] ? '✓ Отлично! Можно класть карты в любой слот' : 'Перетащи карту в слот 2 или 3'}
                 </div>
               </>
             )}
