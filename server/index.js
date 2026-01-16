@@ -1704,13 +1704,19 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
   const acc1Nickname = acc1AccountId ? (db.getNickname(acc1AccountId) || null) : null;
   const acc2Nickname = acc2AccountId ? (db.getNickname(acc2AccountId) || null) : null;
 
-  // Определяем loserSessionId для единого payload (уже есть как аргумент)
-  // Отправляем одинаковый payload для обоих игроков с winnerId/loserId
-  // Гарантируем, что reason всегда присутствует
-  const finalReason = reason || 'normal';
+  // Tutorial: Always end with success (tutorial_complete)
+  // For tutorial, ignore normal win/loss logic and always send tutorial_complete
+  const isTutorial = match.mode === 'TUTORIAL';
+  const finalReason = isTutorial ? 'tutorial_complete' : (reason || 'normal');
+  
+  // For tutorial: player is always "winner" (no loser)
+  const tutorialWinnerSessionId = isTutorial ? (match.sessions[0] === BOT_SESSION_ID ? match.sessions[1] : match.sessions[0]) : winnerSessionId;
+  const tutorialLoserSessionId = isTutorial ? null : loserSessionId;
+  
   emitToBoth(match, 'match_end', (socketId) => {
     const sessionId = getSessionIdBySocket(socketId);
-    const isWinner = sessionId === winnerSessionId;
+    // For tutorial: player always sees "YOU" as winner (tutorial completed)
+    const isWinner = isTutorial ? (sessionId !== BOT_SESSION_ID) : (sessionId === winnerSessionId);
     const accountId = getAccountIdBySessionId(sessionId);
     const tokens = accountId ? (db.getTokens(accountId) !== null ? db.getTokens(accountId) : START_TOKENS) : START_TOKENS;
     
@@ -1718,8 +1724,8 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
     return {
       matchId: match.id,
       winner: isWinner ? 'YOU' : 'OPPONENT',
-      winnerId: winnerSessionId,
-      loserId: loserSessionId,
+      winnerId: isTutorial ? tutorialWinnerSessionId : winnerSessionId,
+      loserId: isTutorial ? tutorialLoserSessionId : loserSessionId,
       yourHp: sessionId === match.sessions[0] ? p1Hp : p2Hp,
       oppHp: sessionId === match.sessions[0] ? p2Hp : p1Hp,
       yourTokens: tokens,
@@ -1729,6 +1735,11 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
       matchMode: match.mode || 'PVP' // PVP | PVE | TUTORIAL
     };
   });
+  
+  // Tutorial completion logging
+  if (isTutorial) {
+    console.log(`[TUTORIAL_END] matchId=${match.id} reason=tutorial_complete`);
+  }
   
   // Already logged by logMatchEnd above
 
@@ -1846,21 +1857,28 @@ function endMatch(match, reason = 'normal') {
   const acc1Nickname = acc1AccountId ? (db.getNickname(acc1AccountId) || null) : null;
   const acc2Nickname = acc2AccountId ? (db.getNickname(acc2AccountId) || null) : null;
 
-  // Отправляем одинаковый payload для обоих игроков с winnerId/loserId
-  // Гарантируем, что reason всегда присутствует
-  const finalReason = reason || 'normal';
+  // Tutorial: Always end with success (tutorial_complete)
+  // For tutorial, ignore normal win/loss logic and always send tutorial_complete
+  const isTutorial = match.mode === 'TUTORIAL';
+  const finalReason = isTutorial ? 'tutorial_complete' : (reason || 'normal');
+  
+  // For tutorial: player is always "winner" (no loser)
+  const tutorialWinnerSessionId = isTutorial ? (match.sessions[0] === BOT_SESSION_ID ? match.sessions[1] : match.sessions[0]) : winnerSessionId;
+  const tutorialLoserSessionId = isTutorial ? null : loserSessionId;
+  
   emitToBoth(match, 'match_end', (socketId) => {
     const sessionId = getSessionIdBySocket(socketId);
-    const isWinner = sessionId === winnerSessionId;
+    // For tutorial: player always sees "YOU" as winner (tutorial completed)
+    const isWinner = isTutorial ? (sessionId !== BOT_SESSION_ID) : (sessionId === winnerSessionId);
     const accountId = getAccountIdBySessionId(sessionId);
     const tokens = accountId ? (db.getTokens(accountId) !== null ? db.getTokens(accountId) : START_TOKENS) : START_TOKENS;
-    
+
     // Единый payload для обоих игроков с winnerId/loserId
     return {
       matchId: match.id,
       winner: isWinner ? 'YOU' : 'OPPONENT',
-      winnerId: winnerSessionId,
-      loserId: loserSessionId,
+      winnerId: isTutorial ? tutorialWinnerSessionId : winnerSessionId,
+      loserId: isTutorial ? tutorialLoserSessionId : loserSessionId,
       yourHp: sessionId === match.sessions[0] ? p1Data.hp : p2Data.hp,
       oppHp: sessionId === match.sessions[0] ? p2Data.hp : p1Data.hp,
       yourTokens: tokens,
@@ -1870,6 +1888,11 @@ function endMatch(match, reason = 'normal') {
       matchMode: match.mode || 'PVP' // PVP | PVE | TUTORIAL
     };
   });
+  
+  // Tutorial completion logging
+  if (isTutorial) {
+    console.log(`[TUTORIAL_END] matchId=${match.id} reason=tutorial_complete`);
+  }
   
   // Already logged by logMatchEnd above
 

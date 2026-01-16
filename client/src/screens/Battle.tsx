@@ -40,6 +40,9 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   const [tutorialStep, setTutorialStep] = useState<number>(0);
   const [tutorialCompletedActions, setTutorialCompletedActions] = useState<Set<number>>(new Set());
   const [tutorialLastSlots, setTutorialLastSlots] = useState<(CardId | null)[]>([null, null, null]);
+  // Tutorial: Track confirm state for explicit confirm-gate
+  const [tutorialDidConfirmThisPrep, setTutorialDidConfirmThisPrep] = useState<boolean>(false);
+  const [tutorialMinimized, setTutorialMinimized] = useState<boolean>(false);
 
   const [dragState, setDragState] = useState<{
     card: CardId;
@@ -186,6 +189,10 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     if (isNewRound) {
       setState('prep');
       setSlots([null, null, null]);
+      // Tutorial: Reset confirm flag for new prep phase
+      if (currentMatchMode === 'TUTORIAL') {
+        setTutorialDidConfirmThisPrep(false);
+      }
       setTutorialLastSlots([null, null, null]);
       setConfirmed(false);
       setRevealedCards([]);
@@ -612,6 +619,11 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     const layout = slots.filter((card): card is CardId => card !== null);
     if (layout.length !== 3) return;
     
+    // Tutorial: Track confirm for explicit confirm-gate
+    if (currentMatchMode === 'TUTORIAL') {
+      setTutorialDidConfirmThisPrep(true);
+    }
+    
     // Convert CardId[] to string[] for server (server expects CardId strings)
     socketManager.layoutConfirm(layout);
   };
@@ -936,9 +948,49 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
       {/* Confirm Button Row - поднят выше safe-area, увеличен hit-area */}
       {state === 'prep' && !confirmed && (
-        <div style={{ 
+        <div style={{
           flexShrink: 0,
           padding: `12px 12px calc(12px + env(safe-area-inset-bottom, 0px)) 12px`,
+          position: 'relative'
+        }}>
+          {/* Tutorial: Highlight Confirm button */}
+          {currentMatchMode === 'TUTORIAL' && slots.some(c => c !== null) && (
+            <div style={{
+              position: 'absolute',
+              top: '-8px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              fontSize: '11px',
+              color: '#4caf50',
+              fontWeight: 'bold',
+              whiteSpace: 'nowrap'
+            }}>
+              Нажми Confirm (обязательно)
+            </div>
+          )}
+          <button
+            onClick={handleConfirm}
+            disabled={slots.filter(c => c !== null).length !== 3}
+            style={{
+              width: '100%',
+              padding: '14px',
+              fontSize: '16px',
+              fontWeight: 'bold',
+              borderRadius: '8px',
+              border: 'none',
+              backgroundColor: slots.filter(c => c !== null).length === 3 ? '#4caf50' : '#666',
+              color: '#fff',
+              transition: 'background-color 0.2s',
+              // Tutorial: Highlight button
+              boxShadow: currentMatchMode === 'TUTORIAL' && slots.some(c => c !== null) 
+                ? '0 0 12px rgba(76, 175, 80, 0.6)' 
+                : 'none'
+            }}
+          >
+            Confirm
+          </button>
+        </div>
+      )}
           textAlign: 'center',
           borderTop: '1px solid rgba(255, 255, 255, 0.1)'
         }}>
@@ -977,22 +1029,15 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
         </div>
       )}
 
-      {/* Tutorial Overlay - Interactive Steps */}
+      {/* Tutorial Overlay - Compact panel at top (not blocking slots) */}
       {currentMatchMode === 'TUTORIAL' && tutorialStep < 8 && (
         <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          position: 'fixed',
+          top: tutorialMinimized ? 'auto' : '60px', // Below TopBar
+          bottom: tutorialMinimized ? '80px' : 'auto', // Above hand when minimized
+          left: '12px',
+          right: '12px',
           zIndex: 1000,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '20px',
-          color: '#fff',
           pointerEvents: 'none' // Allow interaction with game elements underneath
         }}>
           {(() => {
@@ -1005,13 +1050,34 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           })()}
           <div style={{
             backgroundColor: '#1a1a1a',
-            padding: '24px',
-            borderRadius: '12px',
-            maxWidth: '420px',
+            padding: tutorialMinimized ? '8px 12px' : '16px',
+            borderRadius: '8px',
+            maxWidth: '100%',
+            maxHeight: tutorialMinimized ? 'auto' : '200px',
+            overflow: tutorialMinimized ? 'hidden' : 'auto',
             textAlign: 'center',
             border: '2px solid #4caf50',
-            pointerEvents: 'auto' // Enable clicks/buttons inside the tutorial panel
+            pointerEvents: 'auto', // Enable clicks/buttons inside the tutorial panel
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)'
           }}>
+            {/* Minimize button */}
+            <button
+              onClick={() => setTutorialMinimized(!tutorialMinimized)}
+              style={{
+                position: 'absolute',
+                top: '4px',
+                right: '4px',
+                background: 'transparent',
+                border: 'none',
+                color: '#fff',
+                fontSize: '18px',
+                cursor: 'pointer',
+                padding: '4px 8px',
+                opacity: 0.7
+              }}
+            >
+              {tutorialMinimized ? '▼' : '▲'}
+            </button>
             {tutorialStep === 0 && (
               <>
                 <h2 style={{ fontSize: '24px', marginBottom: '16px', color: '#4caf50' }}>Тренировочная арена</h2>
@@ -1040,91 +1106,176 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
             )}
             {tutorialStep === 1 && (
               <>
-                <h2 style={{ fontSize: '22px', marginBottom: '12px' }}>⚔ ATTACK</h2>
-                <p style={{ fontSize: '16px', marginBottom: '16px', lineHeight: '1.5' }}>
-                  ATTACK наносит 2 урона противнику.
-                </p>
-                <p style={{ fontSize: '14px', marginBottom: '20px', color: '#ff6b6b', fontWeight: 'bold' }}>
-                  Положи карту ATTACK в любой слот
-                </p>
-                <div style={{ fontSize: '12px', color: '#aaa', fontStyle: 'italic', marginBottom: '12px' }}>
-                  {slots.some(c => c === 'attack') ? '✓ Готово! Теперь нажми Confirm' : 'Перетащи ATTACK из руки в слот'}
-                </div>
-                {slots.some(c => c === 'attack') && (
-                  <p style={{ fontSize: '12px', color: '#4caf50', fontStyle: 'italic' }}>
-                    В обучении таймер отключен — у тебя есть время
-                  </p>
+                <h2 style={{ fontSize: tutorialMinimized ? '14px' : '18px', marginBottom: '8px', color: '#4caf50' }}>
+                  {tutorialMinimized ? 'Шаг 1/7: ATTACK' : '⚔ ATTACK'}
+                </h2>
+                {!tutorialMinimized && (
+                  <>
+                    <p style={{ fontSize: '14px', marginBottom: '12px', lineHeight: '1.4' }}>
+                      ATTACK наносит 2 урона противнику.
+                    </p>
+                    {!slots.some(c => c === 'attack') && (
+                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#ff6b6b', fontWeight: 'bold' }}>
+                        Перетащи карту ATTACK в любой слот
+                      </p>
+                    )}
+                    {slots.some(c => c === 'attack') && !tutorialDidConfirmThisPrep && (
+                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontWeight: 'bold' }}>
+                        ✓ Отлично! Теперь нажми Confirm (в обучении обязательно)
+                      </p>
+                    )}
+                    {slots.some(c => c === 'attack') && tutorialDidConfirmThisPrep && (
+                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontStyle: 'italic' }}>
+                        Смотри результат...
+                      </p>
+                    )}
+                  </>
                 )}
               </>
             )}
             {tutorialStep === 2 && (
               <>
-                <h2 style={{ fontSize: '22px', marginBottom: '12px' }}>Слоты 1→2→3</h2>
-                <p style={{ fontSize: '16px', marginBottom: '16px', lineHeight: '1.5' }}>
-                  Слоты разыгрываются по порядку: сначала 1, потом 2, потом 3.
-                </p>
-                <p style={{ fontSize: '14px', marginBottom: '20px', color: '#ff6b6b', fontWeight: 'bold' }}>
-                  Перемести карту в другой слот (например, в слот 2)
-                </p>
-                <div style={{ fontSize: '12px', color: '#aaa', fontStyle: 'italic' }}>
-                  {slots[1] !== null && slots[1] !== slots[0] ? '✓ Отлично! Можно класть карты в любой слот' : 'Перетащи карту в слот 2 или 3'}
-                </div>
+                <h2 style={{ fontSize: tutorialMinimized ? '14px' : '18px', marginBottom: '8px', color: '#4caf50' }}>
+                  {tutorialMinimized ? 'Шаг 2/7: Слоты' : 'Слоты 1→2→3'}
+                </h2>
+                {!tutorialMinimized && (
+                  <>
+                    <p style={{ fontSize: '14px', marginBottom: '12px', lineHeight: '1.4' }}>
+                      Слоты разыгрываются по порядку: сначала 1, потом 2, потом 3.
+                    </p>
+                    {!(slots[1] !== null && slots[1] !== slots[0]) && (
+                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#ff6b6b', fontWeight: 'bold' }}>
+                        Перемести карту в другой слот (например, в слот 2)
+                      </p>
+                    )}
+                    {slots[1] !== null && slots[1] !== slots[0] && !tutorialDidConfirmThisPrep && (
+                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontWeight: 'bold' }}>
+                        ✓ Отлично! Теперь нажми Confirm
+                      </p>
+                    )}
+                    {slots[1] !== null && slots[1] !== slots[0] && tutorialDidConfirmThisPrep && (
+                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontStyle: 'italic' }}>
+                        Смотри результат...
+                      </p>
+                    )}
+                  </>
+                )}
               </>
             )}
             {tutorialStep === 3 && (
               <>
-                <h2 style={{ fontSize: '22px', marginBottom: '12px' }}>🛡 DEFENSE</h2>
-                <p style={{ fontSize: '16px', marginBottom: '16px', lineHeight: '1.5' }}>
-                  DEFENSE блокирует атаку. Тренер атакует — защитись!
-                </p>
-                <p style={{ fontSize: '14px', marginBottom: '20px', color: '#ff6b6b', fontWeight: 'bold' }}>
-                  Положи DEFENSE в слот и дождись результата
-                </p>
-                <div style={{ fontSize: '12px', color: '#aaa', fontStyle: 'italic' }}>
-                  {slots.some(c => c === 'defense') ? '✓ Карта выложена, ждём reveal...' : 'Выложи DEFENSE'}
-                </div>
+                <h2 style={{ fontSize: tutorialMinimized ? '14px' : '18px', marginBottom: '8px', color: '#4caf50' }}>
+                  {tutorialMinimized ? 'Шаг 3/7: DEFENSE' : '🛡 DEFENSE'}
+                </h2>
+                {!tutorialMinimized && (
+                  <>
+                    <p style={{ fontSize: '14px', marginBottom: '12px', lineHeight: '1.4' }}>
+                      DEFENSE блокирует атаку. Тренер атакует — защитись!
+                    </p>
+                    {!slots.some(c => c === 'defense') && (
+                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#ff6b6b', fontWeight: 'bold' }}>
+                        Положи DEFENSE в слот
+                      </p>
+                    )}
+                    {slots.some(c => c === 'defense') && !tutorialDidConfirmThisPrep && (
+                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontWeight: 'bold' }}>
+                        ✓ Теперь нажми Confirm
+                      </p>
+                    )}
+                    {slots.some(c => c === 'defense') && tutorialDidConfirmThisPrep && (
+                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontStyle: 'italic' }}>
+                        Смотри результат...
+                      </p>
+                    )}
+                  </>
+                )}
               </>
             )}
             {tutorialStep === 4 && (
               <>
-                <h2 style={{ fontSize: '22px', marginBottom: '12px' }}>💚 HEAL</h2>
-                <p style={{ fontSize: '16px', marginBottom: '16px', lineHeight: '1.5' }}>
-                  HEAL восстанавливает +1 HP. Используй для лечения.
-                </p>
-                <p style={{ fontSize: '14px', marginBottom: '20px', color: '#ff6b6b', fontWeight: 'bold' }}>
-                  Сыграй HEAL и дождись результата
-                </p>
-                <div style={{ fontSize: '12px', color: '#aaa', fontStyle: 'italic' }}>
-                  {slots.some(c => c === 'heal') ? '✓ Карта выложена, ждём reveal...' : 'Выложи HEAL'}
-                </div>
+                <h2 style={{ fontSize: tutorialMinimized ? '14px' : '18px', marginBottom: '8px', color: '#4caf50' }}>
+                  {tutorialMinimized ? 'Шаг 4/7: HEAL' : '💚 HEAL'}
+                </h2>
+                {!tutorialMinimized && (
+                  <>
+                    <p style={{ fontSize: '14px', marginBottom: '12px', lineHeight: '1.4' }}>
+                      HEAL восстанавливает +1 HP. Используй для лечения.
+                    </p>
+                    {!slots.some(c => c === 'heal') && (
+                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#ff6b6b', fontWeight: 'bold' }}>
+                        Сыграй HEAL
+                      </p>
+                    )}
+                    {slots.some(c => c === 'heal') && !tutorialDidConfirmThisPrep && (
+                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontWeight: 'bold' }}>
+                        ✓ Теперь нажми Confirm
+                      </p>
+                    )}
+                    {slots.some(c => c === 'heal') && tutorialDidConfirmThisPrep && (
+                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontStyle: 'italic' }}>
+                        Смотри результат...
+                      </p>
+                    )}
+                  </>
+                )}
               </>
             )}
             {tutorialStep === 5 && (
               <>
-                <h2 style={{ fontSize: '22px', marginBottom: '12px' }}>🟣 COUNTER</h2>
-                <p style={{ fontSize: '16px', marginBottom: '16px', lineHeight: '1.5' }}>
-                  COUNTER отражает атаку — атакующий получает урон вместо тебя.
-                </p>
-                <p style={{ fontSize: '14px', marginBottom: '20px', color: '#ff6b6b', fontWeight: 'bold' }}>
-                  Сыграй COUNTER и дождись результата
-                </p>
-                <div style={{ fontSize: '12px', color: '#aaa', fontStyle: 'italic' }}>
-                  {slots.some(c => c === 'counter') ? '✓ Карта выложена, ждём reveal...' : 'Выложи COUNTER'}
-                </div>
+                <h2 style={{ fontSize: tutorialMinimized ? '14px' : '18px', marginBottom: '8px', color: '#4caf50' }}>
+                  {tutorialMinimized ? 'Шаг 5/7: COUNTER' : '🟣 COUNTER'}
+                </h2>
+                {!tutorialMinimized && (
+                  <>
+                    <p style={{ fontSize: '14px', marginBottom: '12px', lineHeight: '1.4' }}>
+                      COUNTER отражает атаку — атакующий получает урон вместо тебя.
+                    </p>
+                    {!slots.some(c => c === 'counter') && (
+                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#ff6b6b', fontWeight: 'bold' }}>
+                        Сыграй COUNTER
+                      </p>
+                    )}
+                    {slots.some(c => c === 'counter') && !tutorialDidConfirmThisPrep && (
+                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontWeight: 'bold' }}>
+                        ✓ Теперь нажми Confirm
+                      </p>
+                    )}
+                    {slots.some(c => c === 'counter') && tutorialDidConfirmThisPrep && (
+                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontStyle: 'italic' }}>
+                        Смотри результат...
+                      </p>
+                    )}
+                  </>
+                )}
               </>
             )}
             {tutorialStep === 6 && (
               <>
-                <h2 style={{ fontSize: '22px', marginBottom: '12px' }}>Множественные карты</h2>
-                <p style={{ fontSize: '16px', marginBottom: '16px', lineHeight: '1.5' }}>
-                  Можно выложить до 3 карт за раунд. Больше карт — больше эффектов!
-                </p>
-                <p style={{ fontSize: '14px', marginBottom: '20px', color: '#ff6b6b', fontWeight: 'bold' }}>
-                  Заполни минимум 2 слота картами
-                </p>
-                <div style={{ fontSize: '12px', color: '#aaa', fontStyle: 'italic' }}>
-                  {slots.filter(c => c !== null).length >= 2 ? '✓ Готово!' : `Заполнено: ${slots.filter(c => c !== null).length}/2`}
-                </div>
+                <h2 style={{ fontSize: tutorialMinimized ? '14px' : '18px', marginBottom: '8px', color: '#4caf50' }}>
+                  {tutorialMinimized ? 'Шаг 6/7: Множественные карты' : 'Множественные карты'}
+                </h2>
+                {!tutorialMinimized && (
+                  <>
+                    <p style={{ fontSize: '14px', marginBottom: '12px', lineHeight: '1.4' }}>
+                      Можно выложить до 3 карт за раунд. Больше карт — больше эффектов!
+                    </p>
+                    {slots.filter(c => c !== null).length < 2 && (
+                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#ff6b6b', fontWeight: 'bold' }}>
+                        Заполни минимум 2 слота картами ({slots.filter(c => c !== null).length}/2)
+                      </p>
+                    )}
+                    {slots.filter(c => c !== null).length >= 2 && !tutorialDidConfirmThisPrep && (
+                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontWeight: 'bold' }}>
+                        ✓ Отлично! Теперь нажми Confirm
+                      </p>
+                    )}
+                    {slots.filter(c => c !== null).length >= 2 && tutorialDidConfirmThisPrep && (
+                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontStyle: 'italic' }}>
+                        Смотри результат...
+                      </p>
+                    )}
+                  </>
+                )}
               </>
             )}
             {tutorialStep === 7 && (
@@ -1172,7 +1323,9 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           textAlign: 'center'
         }}>
           <h2 style={{ fontSize: '24px', marginBottom: '12px' }}>
-            {matchEndPayload.winner === 'YOU' ? 'YOU WIN' : 'YOU LOSE'}
+            {matchEndPayload.matchMode === 'TUTORIAL' 
+              ? 'Обучение завершено!' 
+              : (matchEndPayload.winner === 'YOU' ? 'YOU WIN' : 'YOU LOSE')}
           </h2>
           {matchEndPayload.reason === 'disconnect' && (
             <p style={{ fontSize: '12px', color: '#999', marginBottom: '16px' }}>Opponent disconnected</p>
@@ -1181,9 +1334,14 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
             <p style={{ fontSize: '12px', color: '#999', marginBottom: '16px' }}>Match timed out</p>
           )}
           {matchEndPayload.matchMode === 'TUTORIAL' && (
-            <p style={{ fontSize: '14px', color: '#4caf50', marginBottom: '16px' }}>
-              Обучение завершено! Вы можете вернуться в меню.
-            </p>
+            <>
+              <h2 style={{ fontSize: '24px', color: '#4caf50', marginBottom: '16px' }}>
+                Обучение завершено!
+              </h2>
+              <p style={{ fontSize: '16px', color: '#fff', marginBottom: '16px' }}>
+                Ты освоил основы боя. Теперь можно сражаться с реальными противниками!
+              </p>
+            </>
           )}
           <button
             onClick={onBackToMenu}
