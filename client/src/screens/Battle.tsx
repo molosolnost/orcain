@@ -54,6 +54,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   // UX Polish: Animation states
   const [slotPopAnimation, setSlotPopAnimation] = useState<number | null>(null); // slotIndex that just got a card
   const [draftToast, setDraftToast] = useState<string | null>(null); // "Card placed" / "Card removed"
+  const [slotOccupiedToast, setSlotOccupiedToast] = useState<string | null>(null); // "Slot occupied" toast
   const [hpFlash, setHpFlash] = useState<{ type: 'your' | 'opp'; direction: 'up' | 'down' } | null>(null); // Which HP to flash and direction
   const [roundBanner, setRoundBanner] = useState<string | null>(null); // "Round X - PREP" / "Round X complete"
   const [revealAnimations, setRevealAnimations] = useState<Set<number>>(new Set()); // stepIndexes that should animate
@@ -502,6 +503,16 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
   const applyDropToSlot = (card: CardId, slotIndex: number, sourceSlotIndex: number | null) => {
     if (!canInteract) return;
+    
+    // UX: Check if slot is occupied (and not swapping from same slot)
+    const targetSlotCard = slots[slotIndex];
+    if (targetSlotCard !== null && sourceSlotIndex !== slotIndex) {
+      // Slot is occupied - show toast and prevent drop
+      setSlotOccupiedToast('Слот занят. Убери карту или выбери другой слот.');
+      setTimeout(() => setSlotOccupiedToast(null), 800);
+      return;
+    }
+    
     applySlotsUpdate(prev => {
       const next = [...prev];
       const oldSlotIndex = prev.indexOf(card);
@@ -540,6 +551,29 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       return next;
     });
   };
+  
+  // UX: Remove card from slot on tap/click (mobile-friendly)
+  const handleSlotClick = (slotIndex: number) => {
+    if (!canInteract) return;
+    if (phaseRef.current !== 'PREP') return;
+    if (slots[slotIndex] === null) return; // Empty slot, nothing to remove
+    
+    applySlotsUpdate(prev => {
+      const next = [...prev];
+      next[slotIndex] = null;
+      
+      // UX: Toast feedback
+      if (draftDebounceRef.current) {
+        clearTimeout(draftDebounceRef.current);
+      }
+      setDraftToast('Card removed');
+      draftDebounceRef.current = window.setTimeout(() => {
+        setDraftToast(null);
+      }, 600);
+      
+      return next;
+    });
+  };
 
   const clearSlotIfNeeded = (sourceSlotIndex: number | null) => {
     if (sourceSlotIndex === null) return;
@@ -567,6 +601,13 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   ) => {
     if (!canInteract) return;
     if (sourceSlotIndex === null && slots.includes(card)) return;
+    
+    // UX: Block drag-start if all slots are full (X==3)
+    const slotsCount = slots.filter(c => c !== null).length;
+    if (slotsCount === 3 && sourceSlotIndex === null) {
+      // All slots full, prevent dragging new cards from hand
+      return;
+    }
 
     e.preventDefault();
     const target = e.currentTarget as HTMLElement;
@@ -936,6 +977,20 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
         </div>
       </div>
 
+      {/* Progress Indicator: X/3 cards selected */}
+      {state === 'prep' && !confirmed && (
+        <div style={{
+          flexShrink: 0,
+          textAlign: 'center',
+          padding: '4px 12px',
+          fontSize: '14px',
+          fontWeight: 'bold',
+          color: '#fff'
+        }}>
+          Выбрано: {slots.filter(c => c !== null).length}/3
+        </div>
+      )}
+
       {/* Your Slots Row - строго по центру, ровные gap */}
       <div style={{ 
         flexShrink: 0,
@@ -982,24 +1037,65 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                     ? 'transform 0.15s ease-out' 
                     : isRevealing 
                     ? 'opacity 0.2s ease-in, transform 0.3s ease-out'
-                    : 'transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease'
+                    : 'transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease',
+                  position: 'relative'
+                }}
+                onClick={(e) => {
+                  // UX: Tap/click on occupied slot removes card (only in PREP)
+                  if (canInteract && phaseRef.current === 'PREP' && displayCard && !dragState) {
+                    e.stopPropagation();
+                    handleSlotClick(index);
+                  }
                 }}
               >
                 {displayCard ? (
-                  <div
-                    className="battle-card"
-                    onPointerDown={(e) => handlePointerDown(e, displayCard, index)}
-                    onPointerMove={handlePointerMove}
-                    onPointerUp={handlePointerEnd}
-                    onPointerCancel={handlePointerCancel}
-                    style={{
-                      transform: isRevealing ? 'scale(1.05)' : 'scale(1)',
-                      filter: isRevealing ? 'drop-shadow(0 0 8px rgba(76, 175, 80, 0.6))' : 'none',
-                      transition: isRevealing ? 'transform 0.3s ease-out, filter 0.3s ease-out' : 'transform 0.2s ease'
-                    }}
-                  >
-                    {renderCard(displayCard, 'SLOT', index)}
-                  </div>
+                  <>
+                    <div
+                      className="battle-card"
+                      onPointerDown={(e) => handlePointerDown(e, displayCard, index)}
+                      onPointerMove={handlePointerMove}
+                      onPointerUp={handlePointerEnd}
+                      onPointerCancel={handlePointerCancel}
+                      style={{
+                        transform: isRevealing ? 'scale(1.05)' : 'scale(1)',
+                        filter: isRevealing ? 'drop-shadow(0 0 8px rgba(76, 175, 80, 0.6))' : 'none',
+                        transition: isRevealing ? 'transform 0.3s ease-out, filter 0.3s ease-out' : 'transform 0.2s ease'
+                      }}
+                    >
+                      {renderCard(displayCard, 'SLOT', index)}
+                    </div>
+                    {/* UX: X button to remove card (only in PREP) */}
+                    {canInteract && phaseRef.current === 'PREP' && (
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSlotClick(index);
+                        }}
+                        style={{
+                          position: 'absolute',
+                          top: '-6px',
+                          right: '-6px',
+                          width: '20px',
+                          height: '20px',
+                          borderRadius: '50%',
+                          backgroundColor: 'rgba(244, 67, 54, 0.9)',
+                          color: '#fff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '12px',
+                          fontWeight: 'bold',
+                          cursor: 'pointer',
+                          zIndex: 10,
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                          userSelect: 'none',
+                          touchAction: 'none'
+                        }}
+                      >
+                        ✕
+                      </div>
+                    )}
+                  </>
                 ) : (
                   renderCard(null, 'SLOT', index)
                 )}
@@ -1046,21 +1142,31 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
             {yourHand.map((cardId) => {
               const inSlot = slots.includes(cardId);
               const isDraggingCard = dragState?.card === cardId;
+              const slotsCount = slots.filter(c => c !== null).length;
+              const isBlocked = slotsCount === 3 && !inSlot; // Block if all slots full and card not in slot
               const cardElement = renderCard(cardId, 'HAND');
 
               return (
                 <div
                   key={cardId}
                   className="battle-card"
-                  onPointerDown={(e) => handlePointerDown(e, cardId, null)}
+                  onPointerDown={(e) => {
+                    if (isBlocked) {
+                      e.preventDefault();
+                      return;
+                    }
+                    handlePointerDown(e, cardId, null);
+                  }}
                   onPointerMove={handlePointerMove}
                   onPointerUp={handlePointerEnd}
                   onPointerCancel={handlePointerCancel}
                   style={{
-                    opacity: inSlot ? 0.5 : isDraggingCard ? 0.25 : 1,
-                    cursor: canInteract && !inSlot ? 'grab' : 'default',
+                    opacity: inSlot ? 0.5 : isDraggingCard ? 0.25 : isBlocked ? 0.35 : 1,
+                    cursor: canInteract && !inSlot && !isBlocked ? 'grab' : isBlocked ? 'not-allowed' : 'default',
                     userSelect: 'none',
-                    touchAction: 'none'
+                    touchAction: 'none',
+                    filter: isBlocked ? 'grayscale(0.5) brightness(0.7)' : 'none',
+                    transition: 'opacity 0.2s ease, filter 0.2s ease'
                   }}
                 >
                   {cardElement}
@@ -1080,11 +1186,22 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           borderTop: '1px solid rgba(255, 255, 255, 0.1)'
         }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-            {slots.filter(c => c !== null).length !== 3 && (
-              <div style={{ fontSize: '11px', color: '#999', opacity: 0.7 }}>
-                Place {3 - slots.filter(c => c !== null).length} more card{3 - slots.filter(c => c !== null).length !== 1 ? 's' : ''} to confirm
-              </div>
-            )}
+            {(() => {
+              const slotsCount = slots.filter(c => c !== null).length;
+              if (slotsCount < 3) {
+                return (
+                  <div style={{ fontSize: '11px', color: '#999', opacity: 0.7 }}>
+                    Положи ещё {3 - slotsCount} карт{3 - slotsCount !== 1 ? 'ы' : 'у'}, чтобы подтвердить ход
+                  </div>
+                );
+              } else {
+                return (
+                  <div style={{ fontSize: '11px', color: '#4caf50', opacity: 0.9 }}>
+                    Готово! Нажми Confirm
+                  </div>
+                );
+              }
+            })()}
             <button
               onClick={handleConfirm}
               disabled={slots.filter(c => c !== null).length !== 3}
@@ -1099,9 +1216,12 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                 border: 'none',
                 backgroundColor: slots.filter(c => c !== null).length === 3 ? '#4caf50' : '#666',
                 color: '#fff',
-                transition: 'background-color 0.2s, transform 0.1s ease, opacity 0.1s ease',
+                transition: 'background-color 0.2s, transform 0.1s ease, opacity 0.1s ease, box-shadow 0.2s ease',
                 transform: confirmButtonPressed ? 'scale(0.95)' : 'scale(1)',
-                opacity: confirmButtonPressed ? 0.8 : 1
+                opacity: confirmButtonPressed ? 0.8 : 1,
+                boxShadow: slots.filter(c => c !== null).length === 3 
+                  ? '0 0 12px rgba(76, 175, 80, 0.4)' 
+                  : 'none'
               }}
             >
               Confirm
@@ -1159,6 +1279,29 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           >
             Back to Menu
           </button>
+        </div>
+      )}
+
+      {/* UX: Slot occupied toast */}
+      {slotOccupiedToast && (
+        <div style={{
+          position: 'fixed',
+          bottom: '120px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: 'rgba(244, 67, 54, 0.95)',
+          color: '#fff',
+          padding: '12px 20px',
+          borderRadius: '8px',
+          fontSize: '13px',
+          fontWeight: '500',
+          zIndex: 10000,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          whiteSpace: 'nowrap',
+          maxWidth: '90vw',
+          textAlign: 'center'
+        }}>
+          {slotOccupiedToast}
         </div>
       )}
 
