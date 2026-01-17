@@ -2513,25 +2513,36 @@ io.on('connection', (socket) => {
   });
 
   socket.on('layout_confirm', (data) => {
+    // FIRST LINE: Log confirm received immediately
     const sessionId = getSessionIdBySocket(socket.id);
+    const match = getMatch(socket.id);
+    const matchId = match?.id || 'NO_MATCH';
+    const matchMode = match?.mode || 'UNKNOWN';
+    console.log(`[CONFIRM_RECEIVED] matchId=${matchId} sid=${socket.id} sessionId=${sessionId || 'NO_SESSION'} mode=${matchMode} layout=${JSON.stringify(data.layout)}`);
+    
     if (!sessionId) {
+      socket.emit('error_msg', { message: 'Not authenticated', code: 'confirm_not_authenticated' });
+      console.log(`[CONFIRM_REJECTED] matchId=${matchId} sid=${socket.id} reason=no_sessionId`);
       return;
     }
 
-    const match = getMatch(socket.id);
     // INVARIANT: phase correctness - layout_confirm only in PREP
     if (!match) {
+      socket.emit('error_msg', { message: 'Match not found', code: 'confirm_invalid_match' });
+      console.log(`[CONFIRM_REJECTED] matchId=${matchId} sid=${socket.id} sessionId=${sessionId} reason=match_not_found`);
       return;
     }
     if (!assertInvariant(match, match.state === 'prep', 'PHASE_CONFIRM', { state: match.state, event: 'layout_confirm' })) {
-      log(`[IGNORED_CONFIRM] sid=${socket.id} sessionId=${sessionId} reason=wrong_state`);
+      socket.emit('error_msg', { message: `Cannot confirm: match is in ${match.state} state`, code: 'confirm_wrong_state' });
+      log(`[CONFIRM_REJECTED] matchId=${match.id} sid=${socket.id} sessionId=${sessionId} reason=wrong_state state=${match.state}`);
       return;
     }
 
     const playerData = getPlayerData(sessionId);
     // Игнорировать confirm если already confirmed=true
     if (!playerData || playerData.confirmed) {
-      log(`[IGNORED_CONFIRM] sid=${socket.id} sessionId=${sessionId} reason=state_or_already_confirmed`);
+      socket.emit('error_msg', { message: 'Already confirmed for this round', code: 'confirm_already_confirmed' });
+      log(`[CONFIRM_REJECTED] matchId=${match.id} sid=${socket.id} sessionId=${sessionId} reason=already_confirmed`);
       return;
     }
 
@@ -2551,7 +2562,8 @@ io.on('connection', (socket) => {
     
     // Basic validation: must be array, 1-3 cards
     if (!Array.isArray(layout) || layout.length === 0 || layout.length > 3) {
-      log(`[IGNORED_CONFIRM] match=${match.id} sessionId=${sessionId} layout=${JSON.stringify(layout)} reason=invalid_length`);
+      socket.emit('error_msg', { message: 'Invalid layout: must have 1-3 cards', code: 'confirm_invalid_layout' });
+      log(`[CONFIRM_REJECTED] match=${match.id} sessionId=${sessionId} layout=${JSON.stringify(layout)} reason=invalid_length`);
       return;
     }
     
@@ -2568,7 +2580,8 @@ io.on('connection', (socket) => {
     
     // Validate final layout (must be 3 cards, unique, no nulls)
     if (!validateLayout(finalLayout)) {
-      log(`[IGNORED_CONFIRM] match=${match.id} sessionId=${sessionId} layout=${JSON.stringify(layout)} finalLayout=${JSON.stringify(finalLayout)} reason=validation_failed`);
+      socket.emit('error_msg', { message: 'Invalid layout: validation failed', code: 'confirm_validation_failed' });
+      log(`[CONFIRM_REJECTED] match=${match.id} sessionId=${sessionId} layout=${JSON.stringify(layout)} finalLayout=${JSON.stringify(finalLayout)} reason=validation_failed`);
       return;
     }
 
@@ -2578,8 +2591,8 @@ io.on('connection', (socket) => {
     if (realCards.length > 0 && !validateCardsFromHand(realCards, playerHand)) {
       console.error(`[INVALID_CARD_FROM_CLIENT] match=${match.id} sessionId=${sessionId} layout=${JSON.stringify(layout)} finalLayout=${JSON.stringify(finalLayout)} hand=${JSON.stringify(playerHand)}`);
       // Reject confirm if cards are invalid (don't accept invalid layout)
-      socket.emit('error_msg', { message: 'Invalid cards: cards must be from your hand' });
-      log(`[IGNORED_CONFIRM] match=${match.id} sessionId=${sessionId} reason=invalid_cards_from_hand`);
+      socket.emit('error_msg', { message: 'Invalid cards: cards must be from your hand', code: 'confirm_invalid_cards' });
+      log(`[CONFIRM_REJECTED] match=${match.id} sessionId=${sessionId} reason=invalid_cards_from_hand`);
       return;
     }
 
@@ -2636,14 +2649,28 @@ io.on('connection', (socket) => {
     // confirm_ok ТОЛЬКО игроку, который подтвердил
     socket.emit('confirm_ok');
     
+    // Log confirm accepted
+    console.log(`[CONFIRM_ACCEPTED] matchId=${match.id} sid=${socket.id} sessionId=${sessionId} finalLayout=${JSON.stringify(finalLayout)}`);
+    
     // Tutorial: Immediately start reveal after confirm (no waiting for deadline)
     if (isTutorial) {
-      // Bot is auto-confirmed (layout already set in submitTutorialBotDraft)
+      // Ensure bot layout exists for this round (may not be set if prep just started)
       const botSessionId = match.sessions.find(sid => sid === BOT_SESSION_ID);
       const botData = getPlayerData(botSessionId);
       
-      // Finalize bot layout if not already finalized
-      if (!botData.layout) {
+      // If bot layout not set yet, submit it now
+      if (!botData.draftLayout && !botData.layout) {
+        console.log(`[TUTORIAL_BOT_LAYOUT_MISSING] matchId=${match.id} submitting bot draft before startPlay`);
+        submitTutorialBotDraft(match);
+        // Re-read bot data after submission
+        const botDataAfter = getPlayerData(botSessionId);
+        if (!botDataAfter.layout && botDataAfter.draftLayout) {
+          const botFinalized = finalizeLayout(botDataAfter.layout, botDataAfter.draftLayout);
+          botDataAfter.layout = botFinalized;
+          botDataAfter.confirmed = true;
+        }
+      } else if (!botData.layout) {
+        // Finalize bot layout if not already finalized
         const botFinalized = finalizeLayout(botData.layout, botData.draftLayout);
         botData.layout = botFinalized;
         botData.confirmed = true;
@@ -2651,8 +2678,9 @@ io.on('connection', (socket) => {
       
       // In tutorial, bot is always "ready" (scripted), so if player confirmed, start immediately
       // IMPORTANT: playerData is already updated with confirmed layout above
+      // No need to wait for "both confirmed" - bot is auto-ready
       if (playerData.confirmed) {
-        console.log(`[TUTORIAL_IMMEDIATE_REVEAL] matchId=${match.id} playerConfirmed=${playerData.confirmed} botConfirmed=${botData.confirmed} starting reveal`);
+        console.log(`[TUTORIAL_IMMEDIATE_REVEAL] matchId=${match.id} playerConfirmed=${playerData.confirmed} starting reveal`);
         
         // Debug: Log what layouts will be used (read from match.sessions to verify mapping)
         const p1SessionId = match.sessions[0];
@@ -2676,6 +2704,9 @@ io.on('connection', (socket) => {
         
         // Start play round immediately (bypass prepTimer)
         startPlay(match);
+      } else {
+        console.error(`[TUTORIAL_CONFIRM_ERROR] matchId=${match.id} sessionId=${sessionId} playerData.confirmed=${playerData.confirmed} but should be true`);
+        socket.emit('error_msg', { message: 'Confirm failed: internal error', code: 'confirm_internal_error' });
       }
     }
 

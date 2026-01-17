@@ -43,6 +43,8 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   // Tutorial: Track confirm state for explicit confirm-gate
   const [tutorialDidConfirmThisPrep, setTutorialDidConfirmThisPrep] = useState<boolean>(false);
   const [tutorialMinimized, setTutorialMinimized] = useState<boolean>(false);
+  // Tutorial: Error message from server (for confirm rejections, etc.)
+  const [tutorialError, setTutorialError] = useState<string | null>(null);
 
   const [dragState, setDragState] = useState<{
     card: CardId;
@@ -260,9 +262,20 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
     socketManager.onConfirmOk(() => {
       setConfirmed(true);
-      // Tutorial: Show immediate feedback
+      // Tutorial: Clear error on successful confirm
       if (currentMatchMode === 'TUTORIAL') {
+        setTutorialError(null);
         // State will update to show "Смотри результат..." in overlay
+      }
+    });
+    
+    // Tutorial: Handle error_msg from server (confirm rejections, etc.)
+    socketManager.onErrorMsg((payload: { message: string; code?: string }) => {
+      if (currentMatchMode === 'TUTORIAL') {
+        console.log(`[CLIENT_ERROR_MSG] matchId=${currentMatchId} message=${payload.message} code=${payload.code || 'NO_CODE'}`);
+        setTutorialError(payload.message);
+        // Clear error after 5 seconds
+        setTimeout(() => setTutorialError(null), 5000);
       }
     });
 
@@ -672,11 +685,16 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     // Tutorial: Track confirm for explicit confirm-gate
     if (currentMatchMode === 'TUTORIAL') {
       setTutorialDidConfirmThisPrep(true);
+      // Client: Log confirm click for debugging
+      console.log(`[CLIENT_CONFIRM_CLICK] matchId=${currentMatchId || 'NO_MATCH'} mode=${currentMatchMode} layout=${JSON.stringify(layout)}`);
     }
     
     // Convert CardId[] to string[] for server (server expects CardId strings)
     // For Tutorial with < 3 cards, server will fill remaining slots with GRASS
     socketManager.layoutConfirm(layout);
+    
+    // Set UI state: "Confirm sent..." (will be cleared when step_reveal arrives or error_msg)
+    // This is handled by confirmed state and error_msg handler
   };
 
 
@@ -1105,6 +1123,22 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
             pointerEvents: 'auto', // Enable clicks/buttons inside the tutorial panel
             boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)'
           }}>
+            {/* Error message from server (if any) */}
+            {tutorialError && (
+              <div style={{
+                backgroundColor: '#ffebee',
+                color: '#c62828',
+                padding: '8px 12px',
+                borderRadius: '4px',
+                marginBottom: '8px',
+                fontSize: '13px',
+                fontWeight: 'bold',
+                border: '1px solid #ef5350'
+              }}>
+                ⚠️ {tutorialError}
+              </div>
+            )}
+            
             {/* Minimize button */}
             <button
               onClick={() => setTutorialMinimized(!tutorialMinimized)}
