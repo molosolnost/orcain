@@ -1,0 +1,54 @@
+name: CI
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  client_build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install client deps
+        run: npm ci --prefix client
+
+      - name: Client build
+        run: npm run build --prefix client
+
+  server_sim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install root deps (if present)
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else echo "no root lockfile"; fi
+
+      - name: Install server deps
+        run: |
+          if [ -f server/package-lock.json ]; then npm ci --prefix server;
+          elif [ -f server/package.json ]; then npm install --prefix server;
+          else echo "no server package.json"; fi
+
+      - name: Server syntax check
+        run: |
+          node -c server/index.js
+          node -c server/cards.js
+
+      - name: Run simulator (PvP/PvE regression)
+        env:
+          TEST_MODE: "1"
+        run: node server/scripts/sim/run_all.js

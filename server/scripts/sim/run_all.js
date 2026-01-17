@@ -10,6 +10,13 @@ const pvpPartial = require('./pvp_partial_play');
 const pveBasic = require('./pve_basic');
 
 const PORT = 3010;
+let _logBuffer = [];
+
+function runScenario(label, fn) {
+  return fn().catch((e) => {
+    throw new Error(`[sim] Scenario ${label} failed: ${e.message}`);
+  });
+}
 
 async function main() {
   const { startServer, stopServer, waitForServerReady, assertNoInvariantFail, delay } = common;
@@ -18,17 +25,18 @@ async function main() {
     TEST_PREP_MS: '1200',
     TEST_STEP_MS: '50'
   });
+  _logBuffer = logBuffer;
 
   try {
     await waitForServerReady(proc, logBuffer, PORT, 6000);
     console.log('[sim] A: pvp_basic...');
-    await pvpBasic.run(PORT, logBuffer);
+    await runScenario('A: pvp_basic', () => pvpBasic.run(PORT, logBuffer));
     console.log('[sim] A: pvp_basic OK');
     console.log('[sim] B: pvp_partial_play...');
-    await pvpPartial.run(PORT, logBuffer);
+    await runScenario('B: pvp_partial_play', () => pvpPartial.run(PORT, logBuffer));
     console.log('[sim] B: pvp_partial_play OK');
     console.log('[sim] C: pve_basic...');
-    await pveBasic.run(PORT, logBuffer);
+    await runScenario('C: pve_basic', () => pveBasic.run(PORT, logBuffer));
     console.log('[sim] C: pve_basic OK');
   } finally {
     stopServer(proc);
@@ -40,6 +48,9 @@ async function main() {
 }
 
 main().catch((e) => {
+  console.error('[sim] FAILED:', e.message);
+  const tail = (_logBuffer || []).slice(-30).join('');
+  if (tail) console.error('[sim] Last 30 server log lines:\n' + tail);
   console.error(e);
   process.exit(1);
 });
