@@ -37,13 +37,14 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   const [currentMatchMode, setCurrentMatchMode] = useState<'PVP' | 'PVE' | 'TUTORIAL' | undefined>(matchMode);
   // Tutorial: Interactive step state machine
   // 0 = intro, 1 = ATTACK, 2 = slots, 3 = DEFENSE, 4 = HEAL, 5 = COUNTER, 6 = multiple cards, 7 = final
+  // Tutorial: State machine (standalone, not battle loop)
   const [tutorialStep, setTutorialStep] = useState<number>(0);
-  const [tutorialCompletedActions, setTutorialCompletedActions] = useState<Set<number>>(new Set());
-  const [tutorialLastSlots, setTutorialLastSlots] = useState<(CardId | null)[]>([null, null, null]);
-  // Tutorial: Track confirm state for explicit confirm-gate
-  const [tutorialDidConfirmThisPrep, setTutorialDidConfirmThisPrep] = useState<boolean>(false);
+  const [tutorialRequiredCard, setTutorialRequiredCard] = useState<CardId | null>(null);
+  const [tutorialMessage, setTutorialMessage] = useState<string>('');
+  const [tutorialCanConfirm, setTutorialCanConfirm] = useState<boolean>(false);
+  const [tutorialResult, setTutorialResult] = useState<string | null>(null);
   const [tutorialMinimized, setTutorialMinimized] = useState<boolean>(false);
-  // Tutorial: Error message from server (for confirm rejections, etc.)
+  // Tutorial: Error message from server
   const [tutorialError, setTutorialError] = useState<string | null>(null);
 
   const [dragState, setDragState] = useState<{
@@ -262,20 +263,54 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
     socketManager.onConfirmOk(() => {
       setConfirmed(true);
-      // Tutorial: Clear error on successful confirm
-      if (currentMatchMode === 'TUTORIAL') {
-        setTutorialError(null);
-        // State will update to show "Смотри результат..." in overlay
-      }
+      // Tutorial: Not used (tutorial uses tutorial_step_submit instead)
     });
     
-    // Tutorial: Handle error_msg from server (confirm rejections, etc.)
+    // Tutorial: Handle error_msg from server
     socketManager.onErrorMsg((payload: { message: string; code?: string }) => {
       if (currentMatchMode === 'TUTORIAL') {
         console.log(`[CLIENT_ERROR_MSG] matchId=${currentMatchId} message=${payload.message} code=${payload.code || 'NO_CODE'}`);
         setTutorialError(payload.message);
         // Clear error after 5 seconds
         setTimeout(() => setTutorialError(null), 5000);
+      }
+    });
+    
+    // Tutorial: Standalone step state machine events
+    socketManager.onTutorialStepState((payload) => {
+      if (currentMatchMode === 'TUTORIAL' && payload.matchId === currentMatchId) {
+        setTutorialStep(payload.step);
+        setTutorialRequiredCard(payload.requiredCardId as CardId);
+        setTutorialMessage(payload.messageRu);
+        setTutorialCanConfirm(payload.canConfirm);
+        setYourHp(payload.yourHp);
+        setOppHp(payload.botHp);
+        setTutorialResult(null); // Clear previous result
+        console.log(`[CLIENT_TUTORIAL_STATE] step=${payload.step} required=${payload.requiredCardId} message=${payload.messageRu}`);
+      }
+    });
+    
+    socketManager.onTutorialStepResult((payload) => {
+      if (currentMatchMode === 'TUTORIAL' && payload.matchId === currentMatchId) {
+        setYourHp(payload.yourHpAfter);
+        setOppHp(payload.botHpAfter);
+        setTutorialResult(payload.textRu);
+        console.log(`[CLIENT_TUTORIAL_RESULT] step=${payload.step} ${payload.textRu}`);
+        // Clear result after 1.5s (next step state will arrive)
+        setTimeout(() => setTutorialResult(null), 1500);
+      }
+    });
+    
+    socketManager.onTutorialComplete((payload) => {
+      if (currentMatchMode === 'TUTORIAL' && payload.matchId === currentMatchId) {
+        console.log(`[CLIENT_TUTORIAL_COMPLETE] ${payload.messageRu}`);
+        // Set tutorial completed flag
+        localStorage.setItem('orcain_tutorial_completed', '1');
+        // Show completion message and return to menu
+        setTutorialMessage(payload.messageRu);
+        setTimeout(() => {
+          if (onBackToMenu) onBackToMenu();
+        }, 2000);
       }
     });
 
@@ -452,24 +487,13 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     };
   }, [phase, deadlineTs, roundIndex]);
 
-  const canInteract = state === 'prep' && !confirmed;
+  const canInteract = (currentMatchMode === 'TUTORIAL' ? true : (state === 'prep' && !confirmed));
   
-  // Tutorial: Get required card for current step
-  const getRequiredCardForStep = (step: number): CardId | null => {
-    const stepCardMap: Record<number, CardId | null> = {
-      1: 'attack',   // Step 1: ATTACK
-      3: 'defense', // Step 3: DEFENSE
-      4: 'heal',    // Step 4: HEAL
-      5: 'counter', // Step 5: COUNTER
-      // Step 2 (slots) and Step 6 (multiple) don't require specific card
-    };
-    return stepCardMap[step] || null;
-  };
-  
-  const requiredCard = currentMatchMode === 'TUTORIAL' ? getRequiredCardForStep(tutorialStep) : null;
+  // Tutorial: Use requiredCard from server (tutorial_step_state)
+  const requiredCard = currentMatchMode === 'TUTORIAL' ? tutorialRequiredCard : null;
   const isCardAllowed = (cardId: CardId): boolean => {
     if (currentMatchMode !== 'TUTORIAL') return true; // PvP/PvE: all cards allowed
-    if (!requiredCard) return true; // Step doesn't require specific card
+    if (!requiredCard) return true; // Step doesn't require specific card yet
     return cardId === requiredCard; // Only required card allowed
   };
 
@@ -526,11 +550,16 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   const applySlotsUpdate = (updater: (prev: (CardId | null)[]) => (CardId | null)[]) => {
     setSlots(prev => {
       const next = updater(prev);
-      scheduleDraft(next);
       
-      // Tutorial: Track slot changes for interactive steps
+      // Tutorial: Enable confirm when required card is placed
       if (currentMatchMode === 'TUTORIAL') {
-        setTutorialLastSlots(next);
+        const hasRequiredCard = tutorialRequiredCard && next.includes(tutorialRequiredCard);
+        if (hasRequiredCard && !tutorialCanConfirm) {
+          setTutorialCanConfirm(true);
+        }
+      } else {
+        // PvP/PvE: Use normal draft scheduling
+        scheduleDraft(next);
       }
       
       return next;
@@ -671,30 +700,22 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   };
 
   const handleConfirm = () => {
-    if (confirmed) return;
+    if (confirmed && currentMatchMode !== 'TUTORIAL') return;
+    
+    // Tutorial: Use layout_confirm (same as PvP/PvE, but with 1-3 cards)
+    // PvP/PvE: Use layout_confirm with exactly 3 cards
     const layout = slots.filter((card): card is CardId => card !== null);
     
-    // Tutorial: Allow confirm with 1+ card (for step-by-step learning)
-    // PvP/PvE: Require 3 cards (full layout)
-    const canConfirm = currentMatchMode === 'TUTORIAL' 
-      ? layout.length >= 1  // Tutorial: at least 1 card
-      : layout.length === 3; // PvP/PvE: exactly 3 cards
-    
-    if (!canConfirm) return;
-    
-    // Tutorial: Track confirm for explicit confirm-gate
     if (currentMatchMode === 'TUTORIAL') {
-      setTutorialDidConfirmThisPrep(true);
-      // Client: Log confirm click for debugging
-      console.log(`[CLIENT_CONFIRM_CLICK] matchId=${currentMatchId || 'NO_MATCH'} mode=${currentMatchMode} layout=${JSON.stringify(layout)}`);
+      // Tutorial: Allow 1-3 cards (server will validate required card)
+      if (layout.length === 0) return;
+      console.log(`[CLIENT_TUTORIAL_CONFIRM] matchId=${currentMatchId} layout=${JSON.stringify(layout)}`);
+    } else {
+      // PvP/PvE: Require exactly 3 cards
+      if (layout.length !== 3) return;
     }
     
-    // Convert CardId[] to string[] for server (server expects CardId strings)
-    // For Tutorial with < 3 cards, server will fill remaining slots with GRASS
     socketManager.layoutConfirm(layout);
-    
-    // Set UI state: "Confirm sent..." (will be cleared when step_reveal arrives or error_msg)
-    // This is handled by confirmed state and error_msg handler
   };
 
 
@@ -1046,11 +1067,15 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           <button
             onClick={handleConfirm}
             disabled={(() => {
+              if (currentMatchMode === 'TUTORIAL') {
+                // Tutorial: Enable only if required card is placed and canConfirm
+                const cardCount = slots.filter(c => c !== null).length;
+                const hasRequiredCard = requiredCard && slots.includes(requiredCard);
+                return cardCount < 1 || !hasRequiredCard || !tutorialCanConfirm;
+              }
+              // PvP/PvE: Require 3 cards
               const cardCount = slots.filter(c => c !== null).length;
-              // Tutorial: Enable with 1+ card, PvP/PvE: Require 3 cards
-              return currentMatchMode === 'TUTORIAL' 
-                ? cardCount < 1  // Tutorial: at least 1 card
-                : cardCount !== 3; // PvP/PvE: exactly 3 cards
+              return cardCount !== 3;
             })()}
             style={{
               width: '100%',

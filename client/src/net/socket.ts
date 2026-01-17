@@ -66,6 +66,11 @@ class SocketManager {
     this.socket?.emit('layout_confirm', { layout });
   }
 
+  // Tutorial: Standalone step submission
+  tutorialStepSubmit(matchId: string, cardId: string, slotIndex: number) {
+    this.socket?.emit('tutorial_step_submit', { matchId, cardId, slotIndex });
+  }
+
   // Incoming events
   onHelloOk(callback: (payload: HelloOkPayload) => void) {
     this.socket?.on('hello_ok', callback);
