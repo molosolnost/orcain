@@ -1164,12 +1164,12 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                         Перетащи карту ATTACK в любой слот
                       </p>
                     )}
-                    {slots.some(c => c === 'attack') && !tutorialDidConfirmThisPrep && (
+                    {slots.some(c => c === 'attack') && !confirmed && (
                       <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontWeight: 'bold' }}>
-                        ✓ Отлично! Теперь нажми Confirm (в обучении обязательно)
+                        ✓ Отлично! Теперь нажми Confirm
                       </p>
                     )}
-                    {slots.some(c => c === 'attack') && tutorialDidConfirmThisPrep && (
+                    {slots.some(c => c === 'attack') && confirmed && (
                       <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontStyle: 'italic' }}>
                         Смотри результат...
                       </p>
@@ -1193,12 +1193,12 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                         Положи DEFENSE в слот
                       </p>
                     )}
-                    {slots.some(c => c === 'defense') && !tutorialDidConfirmThisPrep && (
+                    {slots.some(c => c === 'defense') && !confirmed && (
                       <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontWeight: 'bold' }}>
                         ✓ Теперь нажми Confirm
                       </p>
                     )}
-                    {slots.some(c => c === 'defense') && tutorialDidConfirmThisPrep && (
+                    {slots.some(c => c === 'defense') && confirmed && (
                       <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontStyle: 'italic' }}>
                         Смотри результат...
                       </p>
@@ -1222,12 +1222,12 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                         Сыграй HEAL
                       </p>
                     )}
-                    {slots.some(c => c === 'heal') && !tutorialDidConfirmThisPrep && (
+                    {slots.some(c => c === 'heal') && !confirmed && (
                       <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontWeight: 'bold' }}>
                         ✓ Теперь нажми Confirm
                       </p>
                     )}
-                    {slots.some(c => c === 'heal') && tutorialDidConfirmThisPrep && (
+                    {slots.some(c => c === 'heal') && confirmed && (
                       <>
                         <p style={{ fontSize: '13px', marginBottom: '8px', color: '#4caf50', fontStyle: 'italic' }}>
                           Смотри результат...
@@ -1256,12 +1256,12 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                         Сыграй COUNTER
                       </p>
                     )}
-                    {slots.some(c => c === 'counter') && !tutorialDidConfirmThisPrep && (
+                    {slots.some(c => c === 'counter') && !confirmed && (
                       <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontWeight: 'bold' }}>
                         ✓ Теперь нажми Confirm
                       </p>
                     )}
-                    {slots.some(c => c === 'counter') && tutorialDidConfirmThisPrep && (
+                    {slots.some(c => c === 'counter') && confirmed && (
                       <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontStyle: 'italic' }}>
                         Смотри результат...
                       </p>
@@ -1285,12 +1285,12 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                         Заполни минимум 2 слота картами ({slots.filter(c => c !== null).length}/2)
                       </p>
                     )}
-                    {slots.filter(c => c !== null).length >= 2 && !tutorialDidConfirmThisPrep && (
+                    {slots.filter(c => c !== null).length >= 2 && !confirmed && (
                       <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontWeight: 'bold' }}>
                         ✓ Отлично! Теперь нажми Confirm
                       </p>
                     )}
-                    {slots.filter(c => c !== null).length >= 2 && tutorialDidConfirmThisPrep && (
+                    {slots.filter(c => c !== null).length >= 2 && confirmed && (
                       <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontStyle: 'italic' }}>
                         Смотри результат...
                       </p>
