@@ -255,9 +255,14 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     });
 
     socketManager.onStepReveal((payload: StepRevealPayload) => {
-      // CRITICAL: Flush any pending draft before phase change (PREP -> REVEAL)
-      if (phaseRef.current === 'PREP' && slotsRef.current.length === 3) {
-        flushDraft(slotsRef.current);
+      // CRITICAL: Cancel any pending draft on phase change (PREP -> REVEAL)
+      // DO NOT flush draft in REVEAL - server will use last draft from PREP
+      if (draftDebounceRef.current) {
+        window.clearTimeout(draftDebounceRef.current);
+        draftDebounceRef.current = null;
+        if (DEBUG_MATCH) {
+          console.log(`[DRAFT_CANCEL] reason=phase_change_to_reveal`);
+        }
       }
       
       setState('playing');
@@ -384,12 +389,16 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
   useEffect(() => {
     return () => {
-      // CRITICAL: Flush any pending draft on unmount
-      if (draftDebounceRef.current && slotsRef.current.length === 3) {
+      // CRITICAL: Flush any pending draft on unmount ONLY if still in PREP
+      if (phaseRef.current === 'PREP' && draftDebounceRef.current && slotsRef.current.length === 3) {
         flushDraft(slotsRef.current);
-      }
-      if (draftDebounceRef.current) {
+      } else if (draftDebounceRef.current) {
+        // Cancel draft if not in PREP
         window.clearTimeout(draftDebounceRef.current);
+        draftDebounceRef.current = null;
+        if (DEBUG_MATCH) {
+          console.log(`[DRAFT_CANCEL] reason=unmount_phase_not_prep phase=${phaseRef.current}`);
+        }
       }
     };
   }, []);
@@ -408,7 +417,23 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
   const flushDraft = (slotsToSend: (CardId | null)[]) => {
     const matchId = currentMatchIdRef.current;
-    if (!matchId) return;
+    const currentPhase = phaseRef.current;
+    
+    // GUARD: Only send draft in PREP phase
+    if (currentPhase !== 'PREP') {
+      if (DEBUG_MATCH) {
+        console.log(`[DRAFT_BLOCKED] reason=phase_not_prep phase=${currentPhase} matchId=${matchId || 'null'}`);
+      }
+      return;
+    }
+    
+    if (!matchId) {
+      if (DEBUG_MATCH) {
+        console.log(`[DRAFT_BLOCKED] reason=no_match_id phase=${currentPhase}`);
+      }
+      return;
+    }
+    
     if (draftDebounceRef.current) {
       window.clearTimeout(draftDebounceRef.current);
       draftDebounceRef.current = null;
@@ -423,7 +448,24 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   };
 
   const scheduleDraft = (nextSlots: (CardId | null)[]) => {
-    if (!currentMatchIdRef.current) return;
+    const currentPhase = phaseRef.current;
+    const matchId = currentMatchIdRef.current;
+    
+    // GUARD: Only schedule draft in PREP phase
+    if (currentPhase !== 'PREP') {
+      if (DEBUG_MATCH) {
+        console.log(`[DRAFT_BLOCKED] reason=phase_not_prep phase=${currentPhase} matchId=${matchId || 'null'}`);
+      }
+      return;
+    }
+    
+    if (!matchId) {
+      if (DEBUG_MATCH) {
+        console.log(`[DRAFT_BLOCKED] reason=no_match_id phase=${currentPhase}`);
+      }
+      return;
+    }
+    
     if (draftDebounceRef.current) {
       window.clearTimeout(draftDebounceRef.current);
     }
@@ -441,6 +483,15 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   };
 
   const applySlotsUpdate = (updater: (prev: (CardId | null)[]) => (CardId | null)[]) => {
+    // GUARD: Only update slots and schedule draft in PREP phase
+    const currentPhase = phaseRef.current;
+    if (currentPhase !== 'PREP') {
+      if (DEBUG_MATCH) {
+        console.log(`[DRAFT_BLOCKED] reason=phase_not_prep phase=${currentPhase} action=applySlotsUpdate`);
+      }
+      return;
+    }
+    
     setSlots(prev => {
       const next = updater(prev);
       slotsRef.current = next; // Keep ref in sync
@@ -613,9 +664,23 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     const layout = slots.filter((card): card is CardId => card !== null);
     if (layout.length !== 3) return;
     
-    // CRITICAL: Flush any pending draft before confirm
+    // GUARD: Only confirm in PREP phase
+    if (phaseRef.current !== 'PREP') {
+      if (DEBUG_MATCH) {
+        console.log(`[DRAFT_BLOCKED] reason=phase_not_prep phase=${phaseRef.current} action=handleConfirm`);
+      }
+      return;
+    }
+    
+    // CRITICAL: Flush any pending draft before confirm (only in PREP)
     if (draftDebounceRef.current) {
       flushDraft(slots);
+    }
+    
+    // After confirm, cancel any future draft sends until next prep_start
+    if (draftDebounceRef.current) {
+      window.clearTimeout(draftDebounceRef.current);
+      draftDebounceRef.current = null;
     }
     
     // UX: Button press feedback
