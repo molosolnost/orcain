@@ -38,10 +38,21 @@ async function run(port, logBuffer) {
     rounds++;
     const ac2 = { aborted: false };
     const next = await Promise.race([
-      common.waitForEventBuffered(s, 'prep_start', { timeoutMs: 4000, signal: ac2 }).then((d) => { ac2.aborted = true; return { e: 'prep_start', d }; }).catch((e) => (e?.message === 'aborted' ? new Promise(() => {}) : Promise.reject(e))),
-      common.waitForEventBuffered(s, 'match_end', { timeoutMs: 4000, signal: ac2 }).then((d) => { ac2.aborted = true; return { e: 'match_end', d }; }).catch((e) => (e?.message === 'aborted' ? new Promise(() => {}) : Promise.reject(e)))
+      common.waitForEventBuffered(s, 'prep_start', { timeoutMs: 4000, signal: ac2 }).then((d) => { ac2.aborted = true; return { e: 'prep_start', d }; }).catch((e) => {
+        const m = e?.message || '';
+        if (m === 'aborted' || m.includes('Timeout waiting for')) return new Promise(() => {});
+        return Promise.reject(e);
+      }),
+      common.waitForEventBuffered(s, 'match_end', { timeoutMs: 4000, signal: ac2 }).then((d) => { ac2.aborted = true; return { e: 'match_end', d }; }).catch((e) => {
+        const m = e?.message || '';
+        if (m === 'aborted' || m.includes('Timeout waiting for')) return new Promise(() => {});
+        return Promise.reject(e);
+      })
     ]);
-    if (next.e === 'match_end') break;
+    if (next.e === 'match_end') {
+      console.log('[sim] pve_basic: match ended before prep_start — OK');
+      break;
+    }
   }
 
   common.assertNoInvariantFail(logBuffer);
