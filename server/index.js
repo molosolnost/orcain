@@ -2844,7 +2844,7 @@ io.on('connection', (socket) => {
     
     // Validate required card
     if (cardId !== match.tutorial.requiredCard) {
-      const cardNames: Record<string, string> = { attack: 'ATTACK', defense: 'DEFENSE', heal: 'HEAL', counter: 'COUNTER' };
+      const cardNames = { attack: 'ATTACK', defense: 'DEFENSE', heal: 'HEAL', counter: 'COUNTER' };
       socket.emit('error_msg', { 
         message: `Сейчас нужно сыграть: ${cardNames[match.tutorial.requiredCard] || match.tutorial.requiredCard}`,
         code: 'tutorial_wrong_card'
@@ -2906,8 +2906,8 @@ io.on('connection', (socket) => {
       
       // Send next step state after short delay (client will show result first)
       setTimeout(() => {
-        const getTutorialStepMessage = (step: number): string => {
-          const messages: Record<number, string> = {
+        const getTutorialStepMessage = (step) => {
+          const messages = {
             1: 'Положи ATTACK в любой слот и нажми Confirm',
             2: 'Положи DEFENSE в любой слот и нажми Confirm',
             3: 'Положи HEAL в любой слот и нажми Confirm',
@@ -2956,8 +2956,8 @@ io.on('connection', (socket) => {
   });
   
   // Helper function for required card per step
-  function getRequiredCardForStep(step: number): string {
-    const stepCardMap: Record<number, string> = {
+  function getRequiredCardForStep(step) {
+    const stepCardMap = {
       1: 'attack',
       2: 'defense',
       3: 'heal',
