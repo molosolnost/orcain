@@ -276,17 +276,21 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       }
     });
     
-    // Tutorial: Standalone step state machine events
+    // Tutorial: Standalone step state machine events (server is source of truth)
     socketManager.onTutorialStepState((payload) => {
       if (currentMatchMode === 'TUTORIAL' && payload.matchId === currentMatchId) {
-        setTutorialStep(payload.step);
-        setTutorialRequiredCard(payload.requiredCardId as CardId);
-        setTutorialMessage(payload.messageRu);
-        setTutorialCanConfirm(payload.canConfirm);
+        setTutorialStep(payload.step); // Server step (0-6)
+        setTutorialRequiredCard(payload.requiredCardId as CardId | null);
         setYourHp(payload.yourHp);
         setOppHp(payload.botHp);
         setTutorialResult(null); // Clear previous result
-        console.log(`[CLIENT_TUTORIAL_STATE] step=${payload.step} required=${payload.requiredCardId} message=${payload.messageRu}`);
+        setTutorialError(null); // Clear errors
+        // Reset slots for new step (except step 0 and step 6)
+        if (payload.step > 0 && payload.step < 6) {
+          setSlots([null, null, null]);
+          setConfirmed(false);
+        }
+        console.log(`[CLIENT_TUTORIAL_STATE] step=${payload.step} required=${payload.requiredCardId}`);
       }
     });
     
@@ -551,12 +555,26 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     setSlots(prev => {
       const next = updater(prev);
       
-      // Tutorial: Enable confirm when required card is placed
+      // Tutorial: Enable confirm when step requirements are met
       if (currentMatchMode === 'TUTORIAL') {
-        const hasRequiredCard = tutorialRequiredCard && next.includes(tutorialRequiredCard);
-        if (hasRequiredCard && !tutorialCanConfirm) {
-          setTutorialCanConfirm(true);
+        const realCards = next.filter(card => card !== null);
+        let canConfirm = false;
+        
+        if (tutorialStep === 0) {
+          // Step 0: Intro - no confirm needed
+          canConfirm = false;
+        } else if (tutorialStep === 5) {
+          // Step 5: Multiple cards - need at least 2 cards
+          canConfirm = realCards.length >= 2;
+        } else if (tutorialStep === 6) {
+          // Step 6: Final - no confirm needed
+          canConfirm = false;
+        } else if (tutorialRequiredCard) {
+          // Steps 1-4: Need required card
+          canConfirm = realCards.includes(tutorialRequiredCard);
         }
+        
+        setTutorialCanConfirm(canConfirm);
       } else {
         // PvP/PvE: Use normal draft scheduling
         scheduleDraft(next);
@@ -707,9 +725,22 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     const layout = slots.filter((card): card is CardId => card !== null);
     
     if (currentMatchMode === 'TUTORIAL') {
-      // Tutorial: Allow 1-3 cards (server will validate required card)
+      // Tutorial: Validate step requirements
+      if (tutorialStep === 0 || tutorialStep === 6) {
+        // Step 0 (intro) and Step 6 (final) - no confirm
+        return;
+      }
+      if (tutorialStep === 5) {
+        // Step 5: Multiple cards - need at least 2
+        if (layout.length < 2) return;
+      } else if (tutorialRequiredCard) {
+        // Steps 1-4: Need required card
+        if (!layout.includes(tutorialRequiredCard)) return;
+      }
       if (layout.length === 0) return;
-      console.log(`[CLIENT_TUTORIAL_CONFIRM] matchId=${currentMatchId} layout=${JSON.stringify(layout)}`);
+      
+      console.log(`[CLIENT_TUTORIAL_CONFIRM] matchId=${currentMatchId} step=${tutorialStep} layout=${JSON.stringify(layout)}`);
+      setConfirmed(true);
     } else {
       // PvP/PvE: Require exactly 3 cards
       if (layout.length !== 3) return;
@@ -1068,10 +1099,9 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
             onClick={handleConfirm}
             disabled={(() => {
               if (currentMatchMode === 'TUTORIAL') {
-                // Tutorial: Enable only if required card is placed and canConfirm
-                const cardCount = slots.filter(c => c !== null).length;
-                const hasRequiredCard = requiredCard && slots.includes(requiredCard);
-                return cardCount < 1 || !hasRequiredCard || !tutorialCanConfirm;
+                // Tutorial: Use tutorialCanConfirm (set by server step requirements)
+                if (tutorialStep === 0 || tutorialStep === 6) return true; // Intro and final - no confirm
+                return !tutorialCanConfirm;
               }
               // PvP/PvE: Require 3 cards
               const cardCount = slots.filter(c => c !== null).length;
@@ -1211,7 +1241,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
             {tutorialStep === 1 && (
               <>
                 <h2 style={{ fontSize: tutorialMinimized ? '14px' : '18px', marginBottom: '8px', color: '#4caf50' }}>
-                  {tutorialMinimized ? 'Шаг 1/7: ATTACK' : '⚔ ATTACK'}
+                  {tutorialMinimized ? 'Шаг 1/6: ATTACK' : '⚔ ATTACK'}
                 </h2>
                 {!tutorialMinimized && (
                   <>
@@ -1240,35 +1270,6 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
             {tutorialStep === 2 && (
               <>
                 <h2 style={{ fontSize: tutorialMinimized ? '14px' : '18px', marginBottom: '8px', color: '#4caf50' }}>
-                  {tutorialMinimized ? 'Шаг 2/7: Слоты' : 'Слоты 1→2→3'}
-                </h2>
-                {!tutorialMinimized && (
-                  <>
-                    <p style={{ fontSize: '14px', marginBottom: '12px', lineHeight: '1.4' }}>
-                      Слоты разыгрываются по порядку: сначала 1, потом 2, потом 3.
-                    </p>
-                    {!(slots[1] !== null && slots[1] !== slots[0]) && (
-                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#ff6b6b', fontWeight: 'bold' }}>
-                        Перемести карту в другой слот (например, в слот 2)
-                      </p>
-                    )}
-                    {slots[1] !== null && slots[1] !== slots[0] && !tutorialDidConfirmThisPrep && (
-                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontWeight: 'bold' }}>
-                        ✓ Отлично! Теперь нажми Confirm
-                      </p>
-                    )}
-                    {slots[1] !== null && slots[1] !== slots[0] && tutorialDidConfirmThisPrep && (
-                      <p style={{ fontSize: '13px', marginBottom: '12px', color: '#4caf50', fontStyle: 'italic' }}>
-                        Смотри результат...
-                      </p>
-                    )}
-                  </>
-                )}
-              </>
-            )}
-            {tutorialStep === 3 && (
-              <>
-                <h2 style={{ fontSize: tutorialMinimized ? '14px' : '18px', marginBottom: '8px', color: '#4caf50' }}>
                   {tutorialMinimized ? 'Шаг 3/7: DEFENSE' : '🛡 DEFENSE'}
                 </h2>
                 {!tutorialMinimized && (
@@ -1295,10 +1296,10 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                 )}
               </>
             )}
-            {tutorialStep === 4 && (
+            {tutorialStep === 3 && (
               <>
                 <h2 style={{ fontSize: tutorialMinimized ? '14px' : '18px', marginBottom: '8px', color: '#4caf50' }}>
-                  {tutorialMinimized ? 'Шаг 4/7: HEAL' : '💚 HEAL'}
+                  {tutorialMinimized ? 'Шаг 3/6: HEAL' : '💚 HEAL'}
                 </h2>
                 {!tutorialMinimized && (
                   <>
@@ -1329,10 +1330,10 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                 )}
               </>
             )}
-            {tutorialStep === 5 && (
+            {tutorialStep === 4 && (
               <>
                 <h2 style={{ fontSize: tutorialMinimized ? '14px' : '18px', marginBottom: '8px', color: '#4caf50' }}>
-                  {tutorialMinimized ? 'Шаг 5/7: COUNTER' : '🟣 COUNTER'}
+                  {tutorialMinimized ? 'Шаг 4/6: COUNTER' : '🟣 COUNTER'}
                 </h2>
                 {!tutorialMinimized && (
                   <>
@@ -1358,10 +1359,10 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                 )}
               </>
             )}
-            {tutorialStep === 6 && (
+            {tutorialStep === 5 && (
               <>
                 <h2 style={{ fontSize: tutorialMinimized ? '14px' : '18px', marginBottom: '8px', color: '#4caf50' }}>
-                  {tutorialMinimized ? 'Шаг 6/7: Множественные карты' : 'Множественные карты'}
+                  {tutorialMinimized ? 'Шаг 5/6: Множественные карты' : 'Множественные карты'}
                 </h2>
                 {!tutorialMinimized && (
                   <>
@@ -1387,7 +1388,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                 )}
               </>
             )}
-            {tutorialStep === 7 && (
+            {tutorialStep === 6 && (
               <>
                 <h2 style={{ fontSize: '24px', marginBottom: '16px', color: '#4caf50' }}>Обучение завершено!</h2>
                 <p style={{ fontSize: '16px', marginBottom: '20px', lineHeight: '1.5' }}>

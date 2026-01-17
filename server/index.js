@@ -321,16 +321,22 @@ function createPvEMatch(playerSocket) {
 // Tutorial bot constants
 const TUTORIAL_BOT_NICKNAME = 'Тренер';
 
-// Tutorial script: bot card per step (for visual demonstration)
+// Tutorial script: bot card per step (for guided tutorial)
+// Step 0: Intro (no cards)
 // Step 1: Bot plays GRASS (player attacks, bot takes damage)
 // Step 2: Bot plays ATTACK (player defends, shows block)
 // Step 3: Bot plays GRASS (player heals)
 // Step 4: Bot plays ATTACK (player counters, bot takes reflected damage)
+// Step 5: Bot plays ATTACK (player uses multiple cards)
+// Step 6: Final (no cards)
 const TUTORIAL_BOT_SCRIPT = {
-  1: 'grass',  // Step 1: Player attacks, bot takes damage
+  0: null,    // Step 0: Intro
+  1: 'grass', // Step 1: Player attacks, bot takes damage
   2: 'attack', // Step 2: Bot attacks, player blocks
-  3: 'grass',  // Step 3: Player heals
-  4: 'attack'  // Step 4: Bot attacks, player counters
+  3: 'grass', // Step 3: Player heals
+  4: 'attack', // Step 4: Bot attacks, player counters
+  5: 'attack', // Step 5: Bot attacks, player uses multiple cards
+  6: null     // Step 6: Final
 };
 
 // Create Tutorial match (player vs scripted bot)
@@ -411,8 +417,8 @@ function createTutorialMatch(playerSocket) {
       requiredCard: 'attack', // Step 1 requires attack
       botCard: TUTORIAL_BOT_SCRIPT[1] // Bot card for current step
     },
-    // Tutorial step tracking (for layout_confirm validation)
-    tutorialStep: 1, // Current tutorial step (1=ATTACK, 3=DEFENSE, 4=HEAL, 5=COUNTER, 6=multiple)
+    // Tutorial step tracking (source of truth for tutorial flow)
+    tutorialStep: 0, // Current tutorial step (0=intro, 1=ATTACK, 2=DEFENSE, 3=HEAL, 4=COUNTER, 5=multiple, 6=final)
     tutorialRoundStartedByConfirm: false, // Flag: round started by player confirm (not auto)
     tutorialScript: TUTORIAL_BOT_SCRIPT // Scripted bot cards per step
   };
@@ -1505,11 +1511,43 @@ function finishRound(match) {
   // IMPORTANT: Only increment if round was started by player confirm (not auto-progression)
   if (match.mode === 'TUTORIAL') {
     if (match.tutorialRoundStartedByConfirm) {
-      // Increment step: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
-      // Step 2 (slots) and Step 6 (multiple) are handled by client, server just tracks main card steps
-      if (match.tutorialStep < 7) {
-        match.tutorialStep = Math.min(match.tutorialStep + 1, 7);
+      // Increment step: 0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 6
+      // Step 0: intro, Step 1: ATTACK, Step 2: DEFENSE, Step 3: HEAL, Step 4: COUNTER, Step 5: multiple, Step 6: final
+      if (match.tutorialStep < 6) {
+        match.tutorialStep = Math.min(match.tutorialStep + 1, 6);
         console.log(`[TUTORIAL_STEP_INCREMENT] matchId=${match.id} round=${match.roundIndex} newStep=${match.tutorialStep}`);
+        
+        // Send tutorial step state to client
+        const playerSessionId = match.sessions.find(sid => sid !== BOT_SESSION_ID);
+        const playerSocketId = match.socketIds.find(sid => sid !== null);
+        if (playerSocketId) {
+          const getRequiredCardForStep = (step) => {
+            const stepCardMap = {
+              1: 'attack',
+              2: 'defense',
+              3: 'heal',
+              4: 'counter',
+              5: null // Step 5: any card (multiple)
+            };
+            return stepCardMap[step] || null;
+          };
+          
+          const requiredCard = getRequiredCardForStep(match.tutorialStep);
+          const p1Data = getPlayerData(match.sessions[0]);
+          const p2Data = getPlayerData(match.sessions[1]);
+          
+          io.to(playerSocketId).emit('tutorial_step_state', {
+            matchId: match.id,
+            step: match.tutorialStep,
+            requiredCardId: requiredCard,
+            yourHp: p1Data.hp,
+            botHp: p2Data.hp
+          });
+        }
+      } else if (match.tutorialStep === 6) {
+        // Step 6: Final - end tutorial
+        console.log(`[TUTORIAL_COMPLETE] matchId=${match.id} tutorial completed`);
+        endMatch(match, match.sessions.find(sid => sid !== BOT_SESSION_ID), null, 'tutorial_complete');
       }
       // Reset flag for next round
       match.tutorialRoundStartedByConfirm = false;
@@ -2517,7 +2555,7 @@ io.on('connection', (socket) => {
       // Get nicknames
       const playerNickname = playerAccountId ? (db.getNickname(playerAccountId) || null) : null;
 
-      console.log(`[TUTORIAL_MATCH_CREATED] matchId=${match.id} player=${sessionId}`);
+      console.log(`[TUTORIAL_MATCH_CREATED] matchId=${match.id} player=${sessionId} step=${match.tutorialStep}`);
 
       // Send match_found to player (bot doesn't receive events)
       socket.emit('match_found', {
@@ -2530,6 +2568,15 @@ io.on('connection', (socket) => {
         oppNickname: TUTORIAL_BOT_NICKNAME,
         yourHand: playerHand,
         matchMode: match.mode || 'TUTORIAL' // PVP | PVE | TUTORIAL
+      });
+      
+      // Send initial tutorial step state (step 0: intro)
+      socket.emit('tutorial_step_state', {
+        matchId: match.id,
+        step: match.tutorialStep, // 0: intro
+        requiredCardId: null, // Step 0: no card required
+        yourHp: playerData.hp,
+        botHp: botData.hp
       });
 
       // Start first round
@@ -2673,19 +2720,19 @@ io.on('connection', (socket) => {
     // PvP/PvE: Use layout as-is (already 3 cards)
     let finalLayout = layout;
     
-    // Tutorial: Simplified validation (only check real cards, not GRASS requirement)
+    // Tutorial: NO validation errors - accept any valid cards from hand
     if (isTutorial) {
-      // Tutorial: Only validate that cards are from hand (no GRASS requirement)
+      // Tutorial: Only validate that cards are from hand (NO errors, just check)
       const playerHand = match.hands.get(sessionId) || [];
       const realCards = layout.filter(card => card !== null && card !== GRASS);
       if (realCards.length === 0) {
-        socket.emit('error_msg', { message: 'Invalid layout: must have at least 1 card', code: 'confirm_invalid_layout' });
-        log(`[CONFIRM_REJECTED] match=${match.id} sessionId=${sessionId} layout=${JSON.stringify(layout)} reason=no_real_cards`);
+        // Tutorial: Don't show error, just ignore (client should prevent this)
+        log(`[TUTORIAL_CONFIRM_EMPTY] match=${match.id} sessionId=${sessionId} empty layout, ignoring`);
         return;
       }
       if (!validateCardsFromHand(realCards, playerHand)) {
-        socket.emit('error_msg', { message: 'Invalid cards: cards must be from your hand', code: 'confirm_invalid_cards' });
-        log(`[CONFIRM_REJECTED] match=${match.id} sessionId=${sessionId} reason=invalid_cards_from_hand`);
+        // Tutorial: Don't show error, just ignore (client should prevent this)
+        log(`[TUTORIAL_CONFIRM_INVALID] match=${match.id} sessionId=${sessionId} invalid cards, ignoring`);
         return;
       }
     } else {
@@ -2709,17 +2756,17 @@ io.on('connection', (socket) => {
       }
     }
 
-    // Tutorial: Validate required card for current step
+    // Tutorial: Validate required card for current step (NO errors, just check)
     if (isTutorial) {
-      const tutorialStep = match.tutorialStep || 1;
+      const tutorialStep = match.tutorialStep || 0;
       // Map tutorial step to required card
-      // Step 1: ATTACK, Step 3: DEFENSE, Step 4: HEAL, Step 5: COUNTER, Step 6: any (multiple cards)
+      // Step 0: intro (no cards), Step 1: ATTACK, Step 2: DEFENSE, Step 3: HEAL, Step 4: COUNTER, Step 5: any (multiple), Step 6: final
       const requiredCardMap = {
-        1: 'attack',   // ATTACK step
-        3: 'defense',  // DEFENSE step
-        4: 'heal',     // HEAL step
-        5: 'counter',  // COUNTER step
-        // Step 2 (slots) and Step 6 (multiple) don't require specific card
+        1: 'attack',   // Step 1: ATTACK
+        2: 'defense',  // Step 2: DEFENSE
+        3: 'heal',     // Step 3: HEAL
+        4: 'counter',  // Step 4: COUNTER
+        // Step 0 (intro), Step 5 (multiple), Step 6 (final) don't require specific card
       };
       const requiredCard = requiredCardMap[tutorialStep];
       
@@ -2728,12 +2775,8 @@ io.on('connection', (socket) => {
         const realCards = layout.filter(card => card !== null && card !== GRASS);
         const hasRequiredCard = realCards.some(card => card === requiredCard);
         if (!hasRequiredCard) {
-          const cardNames = { attack: 'ATTACK', defense: 'DEFENSE', heal: 'HEAL', counter: 'COUNTER' };
-          socket.emit('error_msg', { 
-            message: `Сейчас нужно сыграть: ${cardNames[requiredCard]}`,
-            code: 'tutorial_wrong_card'
-          });
-          console.log(`[TUTORIAL_WRONG_CARD] matchId=${match.id} sessionId=${sessionId} step=${tutorialStep} required=${requiredCard} got=${JSON.stringify(layout)}`);
+          // Tutorial: Don't show error, just ignore (client should prevent this)
+          console.log(`[TUTORIAL_WRONG_CARD] matchId=${match.id} sessionId=${sessionId} step=${tutorialStep} required=${requiredCard} got=${JSON.stringify(layout)} - ignoring`);
           return;
         }
       }
@@ -2769,14 +2812,20 @@ io.on('connection', (socket) => {
       const botData = getPlayerData(botSessionId);
       
       // Get scripted bot card for current tutorial step
-      const tutorialStep = match.tutorialStep || 1;
-      const botCard = match.tutorialScript && match.tutorialScript[tutorialStep] 
-        ? match.tutorialScript[tutorialStep][0] 
-        : 'attack'; // Fallback
+      const tutorialStep = match.tutorialStep || 0;
+      const botCard = match.tutorialScript && match.tutorialScript[tutorialStep] !== undefined
+        ? match.tutorialScript[tutorialStep]
+        : 'grass'; // Fallback
       
-      // Set bot layout: [botCard, null, null] - will be used as-is (NO GRASS fill in Tutorial)
+      // Set bot layout based on step
       if (!botData.layout) {
-        botData.layout = [botCard, null, null]; // Tutorial: Use real card, not GRASS
+        if (botCard === null) {
+          // Step 0 (intro) or Step 6 (final) - no bot card
+          botData.layout = [null, null, null];
+        } else {
+          // Regular step - bot plays one card
+          botData.layout = [botCard, null, null]; // Tutorial: Use real card, not GRASS
+        }
         botData.confirmed = true; // Bot is always ready in Tutorial
         console.log(`[TUTORIAL_BOT_LAYOUT] matchId=${match.id} step=${tutorialStep} botCard=${botCard} layout=${JSON.stringify(botData.layout)}`);
       }
