@@ -383,6 +383,7 @@ function createTutorialMatch(playerSocket) {
     player2: null, // Bot has no socket
     roundIndex: 1,
     tutorialStep: 1, // Track tutorial step on server (1=ATTACK, 3=DEFENSE, 4=HEAL, 5=COUNTER, 6=multiple)
+    tutorialRoundStartedByConfirm: false, // Flag: round started only after player confirm
     suddenDeath: false,
     state: 'prep',
     prepDeadline: null,
@@ -762,6 +763,17 @@ function finalizeLayout(confirmedLayout, draftLayout) {
 // ЕДИНАЯ ФУНКЦИЯ ФИНАЛИЗАЦИИ РАУНДА - вызывается РОВНО 1 раз на раунд по дедлайну PREP
 // Делает весь порядок: финализация layout, определение AFK, обновление streaks, проверка end conditions
 function finalizeRound(match) {
+  // Tutorial: Guard - do not auto-progress if player has not confirmed
+  if (match.mode === 'TUTORIAL') {
+    const playerSessionId = match.sessions[0]; // Player is always sessions[0] in tutorial
+    const playerData = getPlayerData(playerSessionId);
+    
+    if (!playerData.confirmed) {
+      console.log(`[TUTORIAL_WAITING_CONFIRM] matchId=${match.id} round=${match.roundIndex} step=${match.tutorialStep || 1} player has not confirmed - blocking auto-progression`);
+      return false; // Do not progress, stay in PREP
+    }
+  }
+  
   // INVARIANT: finalizeRound single-run - не может выполниться 2 раза для одного roundIndex
   if (match.finalizedRoundIndex === match.roundIndex) {
     assertInvariant(match, false, 'FINALIZE_ROUND_DOUBLE', { finalizedRoundIndex: match.finalizedRoundIndex, currentRoundIndex: match.roundIndex });
@@ -1407,12 +1419,19 @@ function finishRound(match) {
   const p2Data = getPlayerData(match.sessions[1]);
   
   // Tutorial: Increment tutorial step after round completion
+  // IMPORTANT: Only increment if round was started by player confirm (not auto-progression)
   if (match.mode === 'TUTORIAL') {
-    // Increment step: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
-    // Step 2 (slots) and Step 6 (multiple) are handled by client, server just tracks main card steps
-    if (match.tutorialStep < 7) {
-      match.tutorialStep = Math.min(match.tutorialStep + 1, 7);
-      console.log(`[TUTORIAL_STEP_INCREMENT] matchId=${match.id} round=${match.roundIndex} newStep=${match.tutorialStep}`);
+    if (match.tutorialRoundStartedByConfirm) {
+      // Increment step: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
+      // Step 2 (slots) and Step 6 (multiple) are handled by client, server just tracks main card steps
+      if (match.tutorialStep < 7) {
+        match.tutorialStep = Math.min(match.tutorialStep + 1, 7);
+        console.log(`[TUTORIAL_STEP_INCREMENT] matchId=${match.id} round=${match.roundIndex} newStep=${match.tutorialStep}`);
+      }
+      // Reset flag for next round
+      match.tutorialRoundStartedByConfirm = false;
+    } else {
+      console.log(`[TUTORIAL_STEP_GUARD_BLOCK] matchId=${match.id} round=${match.roundIndex} step increment blocked - round not started by confirm`);
     }
   }
   
@@ -1537,8 +1556,14 @@ function startPrepPhase(match) {
         log(`[WATCHDOG] state=playing no clear loser, match may be stuck`);
       }
     } else if (currentMatch.state === 'prep') {
-      // В prep watchdog только логирует, не завершает матч (prepTimer сам запустит playRound)
-      log(`[WATCHDOG] state=prep (prepTimer will handle autoplay)`);
+      // В prep watchdog только логирует, не завершает матч
+      // PvP/PvE: prepTimer сам запустит playRound
+      // Tutorial: prepTimer disabled, rounds start only after player confirm
+      if (currentMatch.mode === 'TUTORIAL') {
+        log(`[WATCHDOG] state=prep mode=TUTORIAL (waiting for player confirm, no autoplay)`);
+      } else {
+        log(`[WATCHDOG] state=prep (prepTimer will handle autoplay)`);
+      }
     }
   }, PLAY_STEP_TIMEOUT_MS);
   
@@ -1573,6 +1598,11 @@ function startPrepPhase(match) {
   const prepTimeMs = match.mode === 'TUTORIAL' ? 10 * 60 * 1000 : PREP_TIME_MS; // 10 minutes for tutorial, 20s for PvP/PvE
   const deadlineTs = Date.now() + prepTimeMs;
   match.prepDeadline = deadlineTs;
+  
+  // Tutorial: Reset flag for new round (round starts only after player confirm)
+  if (match.mode === 'TUTORIAL') {
+    match.tutorialRoundStartedByConfirm = false;
+  }
 
   log(`[${match.id}] prep_start: round=${match.roundIndex}, suddenDeath=${match.suddenDeath}, p1Hp=${p1Data.hp}, p2Hp=${p2Data.hp}`);
 
@@ -1627,7 +1657,13 @@ function startPrepPhase(match) {
 
   // Таймер: при истечении для каждого НЕ confirmed генерируем случайную раскладку и ставим confirmed=true
   // ВАЖНО: этот таймер ВСЕГДА срабатывает и запускает playRound, никаких условий не должно блокировать
-  match.prepTimer = setTimeout(() => {
+  // EXCEPTION: Tutorial - rounds start ONLY after player confirm, no auto-progression
+  if (match.mode === 'TUTORIAL') {
+    // Tutorial: DO NOT schedule prepTimer - rounds start only after player confirm
+    match.prepTimer = null;
+    console.log(`[TUTORIAL_TIMER_SKIPPED] matchId=${match.id} round=${match.roundIndex} prepTimer disabled - waiting for player confirm`);
+  } else {
+    match.prepTimer = setTimeout(() => {
     const currentMatch = matchesById.get(match.id);
     if (!currentMatch) return; // Матч уже завершён
     
@@ -1653,7 +1689,8 @@ function startPrepPhase(match) {
       log(`[PREP_TIMEOUT] match=${currentMatch.id} starting play`);
       startPlay(currentMatch);
     }
-  }, PREP_TIME_MS);
+  }, prepTimeMs);
+  }
 }
 
 function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
@@ -2632,6 +2669,10 @@ io.on('connection', (socket) => {
             console.log(`[TUTORIAL_MAPPING_OK] matchId=${match.id} sessionId=${sessionId} layouts match correctly`);
           }
         }
+        
+        // Set flag: round started by player confirm (required for step increment)
+        match.tutorialRoundStartedByConfirm = true;
+        console.log(`[TUTORIAL_ROUND_STARTED_BY_CONFIRM] matchId=${match.id} round=${match.roundIndex} flag set`);
         
         // Start play round immediately (bypass prepTimer)
         startPlay(match);
