@@ -6,9 +6,10 @@ const crypto = require('crypto');
 const db = require('./db');
 const {
   CARD_IDS,
+  GRASS,
   CARD_METADATA,
   CARD_ID_TO_TYPE,
-  DEFAULT_DECK,
+  DEFAULT_HAND,
   getHandForAccount,
   isValidCardId,
   cardIdToType
@@ -30,7 +31,7 @@ const io = new Server(server, {
 // CARDS is now deprecated - use CARD_IDS and cardIdToType for battle engine
 // Legacy CARDS array kept for backward compatibility in applyStepLogic
 const CARDS = ['ATTACK', 'DEFENSE', 'HEAL', 'COUNTER'];
-const GRASS = 'GRASS';
+// GRASS is now imported from cards.js
 const MAX_HP = 10;
 const START_HP = 10;
 const PREP_TIME_MS = 20000; // 20 seconds
@@ -222,7 +223,8 @@ function createMatch(player1Socket, player2Socket) {
 const BOT_SESSION_ID = 'BOT';
 const BOT_ACCOUNT_ID = 'BOT';
 const BOT_NICKNAME = 'Orc Bot';
-const BOT_HAND = ['attack', 'defense', 'heal', 'counter']; // Fixed hand for bot
+// Bot uses same default hand as players (from cards.js)
+const BOT_HAND = [...DEFAULT_HAND];
 
 // Create PvE match (player vs bot)
 function createPvEMatch(playerSocket) {
@@ -2132,16 +2134,29 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Валидация: все карты должны быть из hand игрока
+    // Валидация: все карты должны быть из hand игрока (with duplicate counting)
     const playerHand = match.hands.get(sessionId) || [];
     if (!validateCardsFromHand(data.layout, playerHand)) {
       console.error(`[INVALID_CARD_FROM_CLIENT] match=${match.id} sessionId=${sessionId} layout=${JSON.stringify(data.layout)} hand=${JSON.stringify(playerHand)}`);
-      // Ignore invalid cards (replace with null) - don't crash, but log error
+      // Sanitize invalid cards: replace with null (don't crash, but log error)
+      // Count available cards in hand (for duplicate handling)
+      const handCount = new Map();
+      playerHand.forEach(cardId => {
+        handCount.set(cardId, (handCount.get(cardId) || 0) + 1);
+      });
+      const usedCount = new Map();
       data.layout = data.layout.map(cardId => {
         if (cardId === null) return null;
-        if (!isValidCardId(cardId) || !playerHand.includes(cardId)) {
-          return null; // Replace invalid card with null
+        if (!isValidCardId(cardId)) {
+          return null; // Invalid card ID
         }
+        // Check if card is in hand and not overused
+        const available = handCount.get(cardId) || 0;
+        const used = usedCount.get(cardId) || 0;
+        if (used >= available) {
+          return null; // Card overused (duplicate beyond hand count)
+        }
+        usedCount.set(cardId, used + 1);
         return cardId;
       });
       log(`[DRAFT_FIXED] match=${match.id} sessionId=${sessionId} fixed_layout=${JSON.stringify(data.layout)}`);

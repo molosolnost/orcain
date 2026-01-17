@@ -60,16 +60,49 @@ queue → match_found → prep_start (R1) → step_reveal x3 → round_end
 
 ### Layout Format
 ```typescript
-type Layout = [Card | null, Card | null, Card | null];
+type Layout = [CardId | null, CardId | null, CardId | null];
 ```
 
 - Array of exactly 3 elements
-- Each element is either a `Card` or `null`
+- Each element is either a `CardId` or `null`
 - `null` means "empty slot" (will be filled with GRASS if player is active)
+- Client sends `(CardId | null)[]` in `layout_draft` and `layout_confirm`
+- Server stores as `(CardId | GRASS | null)[]` internally
 
-### Cards
+### CardId & Hand Contract
+
+**CardId** (stable card identifiers):
 ```typescript
-type Card = 'ATTACK' | 'DEFENSE' | 'HEAL' | 'COUNTER';
+type CardId = 'attack' | 'defense' | 'heal' | 'counter';
+```
+
+- **Server is source of truth**: `server/cards.js` defines all valid CardIds
+- **Client mirrors**: `client/src/cards.ts` mirrors server definitions (for UI only)
+- **Hand**: Each player has exactly 4 CardIds (stable for entire match)
+- **Hand source**: `getHandForAccount(accountId)` returns `CardId[4]` (currently `DEFAULT_HAND`)
+- **Hand storage**: `match.hands` (Map: `sessionId -> CardId[4]`)
+
+**CardId → CardType mapping** (for battle engine):
+- `'attack'` → `'ATTACK'`
+- `'defense'` → `'DEFENSE'`
+- `'heal'` → `'HEAL'`
+- `'counter'` → `'COUNTER'`
+
+**Validation rules**:
+- Client **NEVER** generates cards - only displays `yourHand` from server
+- `layout_draft`/`layout_confirm` must contain only CardIds from player's hand
+- Duplicates allowed: if hand has `['attack', 'attack', 'heal', 'counter']`, layout can use `'attack'` twice
+- Invalid cards in draft: sanitized to `null` (logged as `[INVALID_CARD_FROM_CLIENT]`)
+- Invalid cards in confirm: rejected with `error_msg` (strict validation)
+
+**Payloads**:
+- `match_found`: `{ yourHand: CardId[4], ... }`
+- `prep_start`: `{ yourHand: CardId[4], ... }` (same hand, stable across rounds)
+- `step_reveal`: `{ yourCard: CardId, oppCard: CardId, ... }`
+
+### Cards (Legacy CardType - for battle engine only)
+```typescript
+type CardType = 'ATTACK' | 'DEFENSE' | 'HEAL' | 'COUNTER';
 ```
 
 - **ATTACK**: Deals 2 damage (unless blocked)
@@ -77,11 +110,13 @@ type Card = 'ATTACK' | 'DEFENSE' | 'HEAL' | 'COUNTER';
 - **HEAL**: Restores +1 HP (max HP cap)
 - **COUNTER**: Reflects ATTACK back to attacker (-2 to attacker, 0 to defender)
 
+**Note**: Battle engine uses `CardType`, but client/server protocol uses `CardId`. Conversion via `cardIdToType()`.
+
 ### GRASS
-- Server-only placeholder
+- Server-only placeholder (never sent to client)
 - Represents "no card played"
-- Never sent to client
-- Used internally for AFK players
+- Used internally for AFK players and empty slots
+- `GRASS = 'GRASS'` (constant in `server/cards.js`)
 
 ---
 

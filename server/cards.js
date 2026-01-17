@@ -1,17 +1,16 @@
 // Card System - Source of Truth
 // This file defines all cards with stable IDs and metadata
 
-const CARD_IDS = {
-  ATTACK: 'attack',
-  DEFENSE: 'defense',
-  HEAL: 'heal',
-  COUNTER: 'counter'
-};
+// Canonical CardId array (stable order)
+const CARD_IDS = ['attack', 'defense', 'heal', 'counter'];
+
+// GRASS is server-only placeholder (never sent to client)
+const GRASS = 'GRASS';
 
 // Card metadata
 const CARD_METADATA = {
-  [CARD_IDS.ATTACK]: {
-    id: CARD_IDS.ATTACK,
+  'attack': {
+    id: 'attack',
     title: 'Attack',
     type: 'ATTACK',
     icon: '⚔',
@@ -19,8 +18,8 @@ const CARD_METADATA = {
     description: 'Deals 2 damage',
     enabled: true
   },
-  [CARD_IDS.DEFENSE]: {
-    id: CARD_IDS.DEFENSE,
+  'defense': {
+    id: 'defense',
     title: 'Defense',
     type: 'DEFENSE',
     icon: '🛡',
@@ -28,8 +27,8 @@ const CARD_METADATA = {
     description: 'Blocks attack',
     enabled: true
   },
-  [CARD_IDS.HEAL]: {
-    id: CARD_IDS.HEAL,
+  'heal': {
+    id: 'heal',
     title: 'Heal',
     type: 'HEAL',
     icon: '💚',
@@ -37,8 +36,8 @@ const CARD_METADATA = {
     description: 'Restores +1 HP',
     enabled: true
   },
-  [CARD_IDS.COUNTER]: {
-    id: CARD_IDS.COUNTER,
+  'counter': {
+    id: 'counter',
     title: 'Counter',
     type: 'COUNTER',
     icon: '🟣',
@@ -50,27 +49,22 @@ const CARD_METADATA = {
 
 // Mapping: CardId -> CardType (for battle engine compatibility)
 const CARD_ID_TO_TYPE = {
-  [CARD_IDS.ATTACK]: 'ATTACK',
-  [CARD_IDS.DEFENSE]: 'DEFENSE',
-  [CARD_IDS.HEAL]: 'HEAL',
-  [CARD_IDS.COUNTER]: 'COUNTER'
+  'attack': 'ATTACK',
+  'defense': 'DEFENSE',
+  'heal': 'HEAL',
+  'counter': 'COUNTER'
 };
 
 // Reverse mapping: CardType -> CardId (for legacy compatibility)
 const CARD_TYPE_TO_ID = {
-  'ATTACK': CARD_IDS.ATTACK,
-  'DEFENSE': CARD_IDS.DEFENSE,
-  'HEAL': CARD_IDS.HEAL,
-  'COUNTER': CARD_IDS.COUNTER
+  'ATTACK': 'attack',
+  'DEFENSE': 'defense',
+  'HEAL': 'heal',
+  'COUNTER': 'counter'
 };
 
-// Default deck (4 cards) - will be replaced by deck builder later
-const DEFAULT_DECK = [
-  CARD_IDS.ATTACK,
-  CARD_IDS.DEFENSE,
-  CARD_IDS.HEAL,
-  CARD_IDS.COUNTER
-];
+// Default hand (4 cards) - will be replaced by deck builder later
+const DEFAULT_HAND = ['attack', 'defense', 'heal', 'counter'];
 
 // Get hand for account (currently returns default deck, later will use deck builder)
 function getHandForAccount(accountId) {
@@ -97,15 +91,16 @@ function cardTypeToId(cardType) {
 
 // Get all enabled card IDs
 function getAllEnabledCardIds() {
-  return Object.values(CARD_IDS).filter(id => CARD_METADATA[id].enabled);
+  return CARD_IDS.filter(id => CARD_METADATA[id].enabled);
 }
 
 module.exports = {
   CARD_IDS,
+  GRASS,
   CARD_METADATA,
   CARD_ID_TO_TYPE,
   CARD_TYPE_TO_ID,
-  DEFAULT_DECK,
+  DEFAULT_HAND,
   getHandForAccount,
   isValidCardId,
   cardIdToType,

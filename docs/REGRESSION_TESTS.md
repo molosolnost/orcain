@@ -264,6 +264,71 @@ Verify that:
 - `layout_confirm` only accepted in `state === 'prep'`
 - `step_reveal` only sent when `state === 'playing'`
 
+---
+
+## Client Phase Guards
+
+### Test 11: No layout_draft in REVEAL phase
+
+**Expected**: Client never sends `layout_draft` when phase is REVEAL
+
+**Steps**:
+1. Start a match
+2. Both players confirm in Round 1 PREP
+3. Wait for REVEAL phase to begin
+4. Try to drag/drop cards (if UI allows)
+5. Verify:
+   - No `layout_draft` events sent to server
+   - Server logs show no `[DRAFT_RECV]` during REVEAL
+   - Client debug logs (if enabled) show `[DRAFT_BLOCKED] reason=phase_not_prep phase=REVEAL`
+
+**Pass Criteria**:
+- ✅ No `layout_draft` sent in REVEAL
+- ✅ No `[INVARIANT_FAIL] PHASE_DRAFT` errors
+- ✅ Client guards prevent draft sends outside PREP
+
+---
+
+### Test 12: Debounce cancelled after confirm
+
+**Expected**: After confirm, no pending draft sends until next prep_start
+
+**Steps**:
+1. Start a match
+2. Player A: Drafts 1 card (triggers debounced draft)
+3. Player A: Immediately confirms (before debounce fires)
+4. Verify:
+   - Confirm sent successfully
+   - Debounce timer cancelled
+   - No additional `layout_draft` sent after confirm
+   - Next round: Draft works normally again
+
+**Pass Criteria**:
+- ✅ Debounce cancelled on confirm
+- ✅ No draft sends after confirm
+- ✅ Next round draft works normally
+
+---
+
+### Test 13: Unmount draft flush only in PREP
+
+**Expected**: Draft only flushed on unmount if still in PREP phase
+
+**Steps**:
+1. Start a match
+2. Player A: Drafts 1 card in PREP
+3. Wait for REVEAL phase
+4. Player A: Close browser/tab (unmount)
+5. Verify:
+   - If unmounted in PREP: Draft flushed (if enabled)
+   - If unmounted in REVEAL: Draft NOT flushed, debounce cancelled
+   - Server logs show appropriate behavior
+
+**Pass Criteria**:
+- ✅ Unmount in PREP: Draft handled correctly
+- ✅ Unmount in REVEAL: No draft flush, debounce cancelled
+- ✅ No `[INVARIANT_FAIL]` errors
+
 ### HP Sanity
 
 Verify that:
@@ -308,4 +373,120 @@ A future enhancement could automate these tests using a test harness that:
 
 ---
 
-**Last Updated**: 2025-01-15
+## Card System Tests
+
+### Test 14: Partial Play (1 card, no confirm) → Card preserved
+
+**Expected**: Player places 1 card, doesn't confirm → card preserved, other slots become GRASS
+
+**Steps**:
+1. Start PvP match
+2. Round 1 PREP:
+   - Player A: Places 1 card (e.g., `'attack'`) in slot 0, does NOT confirm
+   - Player B: Confirms 3 cards
+3. Wait for PREP timeout
+4. Verify:
+   - Player A's `finalLayout`: `['attack', GRASS, GRASS]` (card preserved)
+   - Player A's `hadDraftThisRound = true` (not AFK)
+   - Server log shows `[FINALIZE_CHECK] p1_final=["attack","GRASS","GRASS"]`
+   - Round proceeds normally with Player A's attack card
+
+**Pass Criteria**:
+- ✅ Partial play card preserved (not replaced with GRASS)
+- ✅ Empty slots filled with GRASS
+- ✅ Player not considered AFK
+- ✅ No `[INVARIANT_FAIL]` errors
+
+---
+
+### Test 15: Invalid card from client → Draft sanitized, Confirm rejected
+
+**Expected**: Invalid cards in draft sanitized to null; invalid cards in confirm rejected
+
+**Steps**:
+1. Start PvP match
+2. Round 1 PREP:
+   - Player A: Sends `layout_draft` with invalid card (e.g., `['invalid_card', null, null]`)
+   - Verify: Server sanitizes to `[null, null, null]`, logs `[INVALID_CARD_FROM_CLIENT]`
+   - Player A: Sends `layout_confirm` with invalid card (e.g., `['invalid_card', 'attack', 'defense']`)
+   - Verify: Server rejects with `error_msg`, logs `[IGNORED_CONFIRM] reason=invalid_cards_from_hand`
+3. Verify:
+   - Draft with invalid card: sanitized to null (no crash)
+   - Confirm with invalid card: rejected (strict validation)
+
+**Pass Criteria**:
+- ✅ Draft sanitizes invalid cards (replaces with null)
+- ✅ Confirm rejects invalid cards (strict validation)
+- ✅ Server logs show `[INVALID_CARD_FROM_CLIENT]` and `[DRAFT_FIXED]`
+- ✅ No crashes or `[INVARIANT_FAIL]` errors
+
+---
+
+### Test 16: Hand stable across rounds
+
+**Expected**: Player's hand is identical in `match_found` and all `prep_start` events
+
+**Steps**:
+1. Start PvP match
+2. Check `match_found` payload: `yourHand = ['attack', 'defense', 'heal', 'counter']`
+3. Play Round 1 (both confirm)
+4. Check `prep_start` (Round 2): `yourHand = ['attack', 'defense', 'heal', 'counter']` (same)
+5. Play Round 2
+6. Check `prep_start` (Round 3): `yourHand = ['attack', 'defense', 'heal', 'counter']` (same)
+
+**Pass Criteria**:
+- ✅ Hand is identical across all rounds
+- ✅ Hand always contains exactly 4 CardIds
+- ✅ Hand matches `DEFAULT_HAND` from `server/cards.js`
+- ✅ No hand regeneration or changes
+
+---
+
+### Test 17: Duplicate cards in hand → Layout can use duplicates
+
+**Expected**: If hand has duplicates (future deck builder), layout can use them correctly
+
+**Steps**:
+1. **Note**: This test requires hand with duplicates (e.g., `['attack', 'attack', 'heal', 'counter']`)
+2. **Current**: Default hand has no duplicates, so this test is for future deck builder
+3. **Verification**: `validateCardsFromHand` correctly counts duplicates
+   - Hand: `['attack', 'attack', 'heal', 'counter']`
+   - Layout: `['attack', 'attack', 'heal']` → ✅ Valid (2 attacks used, 2 available)
+   - Layout: `['attack', 'attack', 'attack', 'heal']` → ❌ Invalid (3 attacks used, only 2 available)
+
+**Pass Criteria**:
+- ✅ `validateCardsFromHand` counts duplicates correctly
+- ✅ Layout can use cards up to hand count (not more)
+- ✅ Server validation prevents overuse of duplicates
+
+---
+
+## Expected Render Logs (No Red Flags)
+
+After running all tests, verify server logs contain **NO** red flags:
+
+### ❌ Must NOT Appear
+- `[INVARIANT_FAIL] code=PHASE_DRAFT` - Client sent draft outside PREP
+- `[INVARIANT_FAIL] code=PHASE_CONFIRM` - Client sent confirm outside PREP
+- `[INVARIANT_FAIL] code=FINALIZE_ROUND_DOUBLE` - finalizeRound called twice
+- `[INVARIANT_FAIL] code=ENDMATCH_IDEMPOTENT` - endMatch called twice
+- `[INVARIANT_FAIL] code=AFK_CANON_*` - AFK rules violated
+
+### ✅ Should Appear (Normal Operation)
+- `[FINALIZE_ROUND]` - Once per round
+- `[FINALIZE_ROUND_DECISION]` - Decision for each round
+- `[MATCH_END]` - When match ends
+- `[STATE_TRANSITION]` - State changes
+- `[DRAFT]` - Draft received (PREP only)
+- `[DRAFT_RECV]` - Draft received (if DEBUG_MATCH=1)
+
+### Debug Logs (Optional)
+If `DEBUG_MATCH=1` or client `?debug=1`:
+- `[DRAFT_SEND]` - Client sent draft
+- `[DRAFT_BLOCKED]` - Client blocked draft (expected in REVEAL)
+- `[DRAFT_CANCEL]` - Debounce cancelled
+- `[FINALIZE_CHECK]` - Finalize round check
+
+---
+
+**Last Updated**: 2026-01-17
