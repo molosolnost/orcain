@@ -2578,6 +2578,9 @@ io.on('connection', (socket) => {
         yourHp: playerData.hp,
         botHp: botData.hp
       });
+      
+      // Start prep phase for tutorial (allows player to begin)
+      startPrepPhase(match);
 
       // Start first round
       startPrepPhase(match);
@@ -2867,6 +2870,54 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     handleDisconnect(socket.id);
+  });
+  
+  // Tutorial: Advance from step 0 (intro) to step 1
+  socket.on('tutorial_begin', (data) => {
+    const sessionId = getSessionIdBySocket(socket.id);
+    if (!sessionId) {
+      socket.emit('error_msg', { message: 'Not authenticated', code: 'tutorial_not_authenticated' });
+      return;
+    }
+    
+    const match = getMatch(socket.id);
+    if (!match || match.mode !== 'TUTORIAL') {
+      socket.emit('error_msg', { message: 'Not in tutorial match', code: 'tutorial_invalid_match' });
+      return;
+    }
+    
+    if (match.tutorialStep !== 0) {
+      // Already past intro
+      return;
+    }
+    
+    // Advance to step 1
+    match.tutorialStep = 1;
+    const p1Data = getPlayerData(match.sessions[0]);
+    const p2Data = getPlayerData(match.sessions[1]);
+    
+    const getRequiredCardForStep = (step) => {
+      const stepCardMap = {
+        1: 'attack',
+        2: 'defense',
+        3: 'heal',
+        4: 'counter',
+        5: null // Step 5: any card (multiple)
+      };
+      return stepCardMap[step] || null;
+    };
+    
+    const requiredCard = getRequiredCardForStep(match.tutorialStep);
+    
+    socket.emit('tutorial_step_state', {
+      matchId: match.id,
+      step: match.tutorialStep,
+      requiredCardId: requiredCard,
+      yourHp: p1Data.hp,
+      botHp: p2Data.hp
+    });
+    
+    console.log(`[TUTORIAL_BEGIN] matchId=${match.id} advanced to step 1`);
   });
   
   // Tutorial: Standalone step submission (NOT using layout_confirm)

@@ -58,6 +58,10 @@ class SocketManager {
     this.socket?.emit('tutorial_start');
   }
 
+  tutorialBegin() {
+    this.socket?.emit('tutorial_begin', {});
+  }
+
   layoutDraft(matchId: string, layout: (string | null)[]) {
     this.socket?.emit('layout_draft', { matchId, layout });
   }
@@ -120,6 +124,18 @@ class SocketManager {
 
   onSyncState(callback: (payload: { inMatch: boolean; matchId?: string; phase?: string; roundIndex?: number; suddenDeath?: boolean; yourHp?: number; oppHp?: number; deadlineTs?: number }) => void) {
     this.socket?.on('sync_state', callback);
+  }
+
+  onTutorialStepState(callback: (payload: { matchId: string; step: number; requiredCardId: string | null; yourHp: number; botHp: number }) => void) {
+    this.socket?.on('tutorial_step_state', callback);
+  }
+
+  onTutorialStepResult(callback: (payload: { matchId: string; step: number; playedCardId: string; botCardId: string; yourHpBefore: number; yourHpAfter: number; botHpBefore: number; botHpAfter: number; textRu: string }) => void) {
+    this.socket?.on('tutorial_step_result', callback);
+  }
+
+  onTutorialComplete(callback: (payload: { matchId: string; messageRu: string }) => void) {
+    this.socket?.on('tutorial_complete', callback);
   }
 
   // Remove listeners

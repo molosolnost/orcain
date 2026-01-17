@@ -1222,7 +1222,10 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                   В руке 4 карты. Выложи до 3 карт в слоты.
                 </p>
                 <button
-                  onClick={() => setTutorialStep(1)}
+                  onClick={() => {
+                    // Step 0: Start tutorial - send event to server to advance to step 1
+                    socketManager.tutorialBegin();
+                  }}
                   style={{
                     padding: '12px 24px',
                     fontSize: '16px',
