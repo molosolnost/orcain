@@ -355,12 +355,15 @@ DEBUG_MATCH=1 node server/index.js
 # 6. Test 6 (Double endMatch - manual code check)
 ```
 
-### Automated Test (Future)
+### Automated simulator scenarios D–H
 
-A future enhancement could automate these tests using a test harness that:
-- Simulates socket connections
-- Sends events programmatically
-- Verifies invariants automatically
+The sim `run_all.js` runs scenarios D–H (see `docs/AUTOTESTS.md`):
+
+- **D) pvp_partial_play_no_confirm**: A: layout_draft 1 card, no confirm. B: layout_confirm 3. Expect: A not AFK, empty slots→GRASS, round plays, prep_start round 2 (no match_end).
+- **E) pvp_both_afk_two_rounds**: Both do nothing 2 rounds. Expect: match_end reason=timeout after 2nd round.
+- **F) pvp_one_afk_two_rounds**: A nothing 2 rounds, B confirm each. Expect: match_end reason=timeout, winnerId/loserId set.
+- **G) pvp_attack_vs_grass**: A confirm [attack,...], B nothing. Expect: B's yourHp=8 after step 0 (ATTACK vs GRASS = 2 damage).
+- **H) pvp_endmatch_idempotent**: Both AFK 2 rounds. Count match_end per client; expect 1 each. No server crash.
 
 ---
 

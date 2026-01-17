@@ -1,13 +1,18 @@
 #!/usr/bin/env node
 /**
- * Runs all sim scenarios (A: pvp_basic, B: pvp_partial_play, C: pve_basic).
- * Starts server with TEST_MODE=1, TEST_PREP_MS=1200, TEST_STEP_MS=50.
+ * Runs all sim scenarios (A–H).
+ * Starts server with TEST_MODE=1, TEST_PREP_MS=300, TEST_STEP_MS=50.
  * Usage: node server/scripts/sim/run_all.js
  */
 const common = require('./common');
 const pvpBasic = require('./pvp_basic');
 const pvpPartial = require('./pvp_partial_play');
 const pveBasic = require('./pve_basic');
+const pvpPartialNoConfirm = require('./pvp_partial_play_no_confirm');
+const pvpBothAfk = require('./pvp_both_afk_two_rounds');
+const pvpOneAfk = require('./pvp_one_afk_two_rounds');
+const pvpAttackVsGrass = require('./pvp_attack_vs_grass');
+const pvpEndmatchIdempotent = require('./pvp_endmatch_idempotent');
 
 const PORT = 3010;
 let _logBuffer = [];
@@ -22,7 +27,7 @@ async function main() {
   const { startServer, stopServer, waitForServerReady, assertNoInvariantFail, delay } = common;
   const { proc, logBuffer } = startServer({
     PORT: String(PORT),
-    TEST_PREP_MS: '1200',
+    TEST_PREP_MS: '300',
     TEST_STEP_MS: '50'
   });
   _logBuffer = logBuffer;
@@ -38,6 +43,21 @@ async function main() {
     console.log('[sim] C: pve_basic...');
     await runScenario('C: pve_basic', () => pveBasic.run(PORT, logBuffer));
     console.log('[sim] C: pve_basic OK');
+    console.log('[sim] D: pvp_partial_play_no_confirm...');
+    await runScenario('D: pvp_partial_play_no_confirm', () => pvpPartialNoConfirm.run(PORT, logBuffer));
+    console.log('[sim] D: pvp_partial_play_no_confirm OK');
+    console.log('[sim] E: pvp_both_afk_two_rounds...');
+    await runScenario('E: pvp_both_afk_two_rounds', () => pvpBothAfk.run(PORT, logBuffer));
+    console.log('[sim] E: pvp_both_afk_two_rounds OK');
+    console.log('[sim] F: pvp_one_afk_two_rounds...');
+    await runScenario('F: pvp_one_afk_two_rounds', () => pvpOneAfk.run(PORT, logBuffer));
+    console.log('[sim] F: pvp_one_afk_two_rounds OK');
+    console.log('[sim] G: pvp_attack_vs_grass...');
+    await runScenario('G: pvp_attack_vs_grass', () => pvpAttackVsGrass.run(PORT, logBuffer));
+    console.log('[sim] G: pvp_attack_vs_grass OK');
+    console.log('[sim] H: pvp_endmatch_idempotent...');
+    await runScenario('H: pvp_endmatch_idempotent', () => pvpEndmatchIdempotent.run(PORT, logBuffer));
+    console.log('[sim] H: pvp_endmatch_idempotent OK');
   } finally {
     stopServer(proc);
     await delay(200);
