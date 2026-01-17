@@ -1,4 +1,5 @@
 const BUILD = import.meta.env.VITE_BUILD_ID ?? "dev";
+import orcainLogo from "../assets/orcain_logo.png";
 
 interface MenuProps {
   onStartBattle: () => void;
@@ -23,7 +24,18 @@ export default function Menu({ onStartBattle, onStartPvE, onCancelSearch, isSear
       gap: '20px',
       position: 'relative'
     }}>
-      <h1 style={{ fontSize: '48px', margin: 0 }}>ORCAIN</h1>
+      <img
+        src={orcainLogo}
+        alt="ORCAIN logo"
+        style={{
+          width: "min(80vw, 380px)",
+          height: "auto",
+          margin: "0 auto 24px",
+          display: "block",
+          userSelect: "none",
+          pointerEvents: "none",
+        }}
+      />
       {nickname && (
         <div style={{ fontSize: '18px', color: '#666', marginTop: '-10px' }}>
           Welcome, <strong>{nickname}</strong>
