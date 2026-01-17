@@ -66,10 +66,10 @@ const CARD_TYPE_TO_ID = {
 // Default hand (4 cards) - will be replaced by deck builder later
 const DEFAULT_HAND = ['attack', 'defense', 'heal', 'counter'];
 
-// Get hand for account (currently returns default deck, later will use deck builder)
+// Get hand for account (currently returns default hand, later will use deck builder)
 function getHandForAccount(accountId) {
   // TODO: Load from deck builder when implemented
-  return [...DEFAULT_DECK];
+  return [...DEFAULT_HAND];
 }
 
 // Validate card ID
