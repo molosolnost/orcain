@@ -654,6 +654,11 @@ function finalizeRound(match) {
   // (2) Определяем hadDraftThisRound и isAfkThisRound
   const hadDraft1 = match.hadDraftThisRound.get(sid1) === true;
   const hadDraft2 = match.hadDraftThisRound.get(sid2) === true;
+  
+  // DEBUG: Log finalize check
+  if (DEBUG) {
+    console.log(`[FINALIZE_CHECK] matchId=${match.id} round=${match.roundIndex} p1_hadDraft=${hadDraft1} p1_final=${JSON.stringify(p1Data.layout)} p2_hadDraft=${hadDraft2} p2_final=${JSON.stringify(p2Data.layout)}`);
+  }
   // BOT is NEVER considered AFK
   const isAfk1 = sid1 === BOT_SESSION_ID ? false : !hadDraft1; // Источник правды: hadDraft === false
   const isAfk2 = sid2 === BOT_SESSION_ID ? false : !hadDraft2;
@@ -2147,6 +2152,11 @@ io.on('connection', (socket) => {
     
     // Отмечаем что игрок отправил draft в этом раунде (источник правды для AFK)
     match.hadDraftThisRound.set(sessionId, true);
+    
+    // DEBUG: Log draft received
+    if (DEBUG) {
+      console.log(`[DRAFT_RECV] matchId=${match.id} sessionId=${sessionId} layout=${JSON.stringify(data.layout)}`);
+    }
     
     log(`[DRAFT] match=${match.id} sessionId=${sessionId} draft=${JSON.stringify(playerData.draftLayout)}`);
   });

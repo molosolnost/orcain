@@ -47,6 +47,9 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   const dragPointerIdRef = useRef<number | null>(null);
   const draftDebounceRef = useRef<number | null>(null);
   const lastAppliedRoundIndexRef = useRef<number | null>(null);
+  const slotsRef = useRef<(CardId | null)[]>([null, null, null]);
+  const phaseRef = useRef<'PREP' | 'REVEAL' | 'END'>('PREP');
+  const currentMatchIdRef = useRef<string | null>(null);
   
   // UX Polish: Animation states
   const [slotPopAnimation, setSlotPopAnimation] = useState<number | null>(null); // slotIndex that just got a card
@@ -111,10 +114,16 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     };
   }, []);
 
+  // Sync currentMatchIdRef with prop
+  useEffect(() => {
+    currentMatchIdRef.current = currentMatchId;
+  }, [currentMatchId]);
+
   useEffect(() => {
     if (matchEndPayload) {
       setState('ended');
       setPhase('END');
+      phaseRef.current = 'END';
       setYourHp(matchEndPayload.yourHp);
       setOppHp(matchEndPayload.oppHp);
       setCurrentStepIndex(null);
@@ -124,6 +133,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       // Очищаем END состояние если matchEndPayload стал null
       if (phase === 'END') {
         setPhase('PREP');
+        phaseRef.current = 'PREP';
         setState('prep');
       }
     }
@@ -159,6 +169,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     // КРИТИЧНО: устанавливаем все данные немедленно, включая R1
     setRoundIndex(lastPrepStart.roundIndex);
     setPhase('PREP');
+    phaseRef.current = 'PREP';
     setNowTs(Date.now()); // Обновляем nowTs для корректного расчета таймера
     setDeadlineTs(lastPrepStart.deadlineTs); // deadlineTs - источник правды для таймера
     setYourHp(lastPrepStart.yourHp);
@@ -180,6 +191,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     if (isNewRound) {
       setState('prep');
       setSlots([null, null, null]);
+      slotsRef.current = [null, null, null];
       setConfirmed(false);
       setRevealedCards([]);
       setCurrentStepIndex(null);
@@ -209,12 +221,14 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       // При старте нового матча очищаем все локальные стейты и устанавливаем начальные значения
       setState('prep');
       setPhase('PREP');
+      phaseRef.current = 'PREP';
       setYourHp(payload.yourHp);
       setOppHp(payload.oppHp);
       prevYourHpRef.current = payload.yourHp;
       prevOppHpRef.current = payload.oppHp;
       setPot(payload.pot);
       setSlots([null, null, null]);
+      slotsRef.current = [null, null, null];
       setConfirmed(false);
       setRevealedCards([]);
       setCurrentStepIndex(null);
@@ -227,6 +241,11 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       // Hand устанавливаем из match_found (source of truth)
       setYourHand(payload.yourHand || []);
       // deadlineTs придет в prep_start, но уже сейчас готовы к его получению
+      
+      // DEBUG: Log match boot
+      if (DEBUG_MATCH) {
+        console.log(`[BATTLE_BOOT] matchId=${payload.matchId} yourHand=${JSON.stringify(payload.yourHand || [])}`);
+      }
     });
 
     // Убрана прямая подписка на prep_start - теперь получаем через props (lastPrepStart)
@@ -236,8 +255,14 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     });
 
     socketManager.onStepReveal((payload: StepRevealPayload) => {
+      // CRITICAL: Flush any pending draft before phase change (PREP -> REVEAL)
+      if (phaseRef.current === 'PREP' && slotsRef.current.length === 3) {
+        flushDraft(slotsRef.current);
+      }
+      
       setState('playing');
       setPhase('REVEAL');
+      phaseRef.current = 'REVEAL';
       
       // UX: HP feedback (flash red if decreased, green if increased)
       const prevYourHp = prevYourHpRef.current;
@@ -289,6 +314,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setRevealedCards([]);
       setCurrentStepIndex(null);
       setPhase('PREP');
+      phaseRef.current = 'PREP';
       
       // UX: Round end banner
       setRoundBanner(`Round ${roundIndex} complete`);
@@ -358,6 +384,10 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
   useEffect(() => {
     return () => {
+      // CRITICAL: Flush any pending draft on unmount
+      if (draftDebounceRef.current && slotsRef.current.length === 3) {
+        flushDraft(slotsRef.current);
+      }
       if (draftDebounceRef.current) {
         window.clearTimeout(draftDebounceRef.current);
       }
@@ -374,16 +404,31 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
   const toCardCode = (v: CardId | null): string | null => (v ? v : null);
 
+  const DEBUG_MATCH = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
+
+  const flushDraft = (slotsToSend: (CardId | null)[]) => {
+    const matchId = currentMatchIdRef.current;
+    if (!matchId) return;
+    if (draftDebounceRef.current) {
+      window.clearTimeout(draftDebounceRef.current);
+      draftDebounceRef.current = null;
+    }
+    const layoutWithNulls: (string | null)[] = slotsToSend.map(toCardCode);
+    if (layoutWithNulls.length === 3) {
+      if (DEBUG_MATCH) {
+        console.log(`[DRAFT_SEND] matchId=${matchId} layout=${JSON.stringify(layoutWithNulls)}`);
+      }
+      socketManager.layoutDraft(matchId, layoutWithNulls);
+    }
+  };
+
   const scheduleDraft = (nextSlots: (CardId | null)[]) => {
-    if (!currentMatchId) return;
+    if (!currentMatchIdRef.current) return;
     if (draftDebounceRef.current) {
       window.clearTimeout(draftDebounceRef.current);
     }
     draftDebounceRef.current = window.setTimeout(() => {
-      const layoutWithNulls: (string | null)[] = nextSlots.map(toCardCode);
-      if (layoutWithNulls.length === 3) {
-        socketManager.layoutDraft(currentMatchId, layoutWithNulls);
-      }
+      flushDraft(nextSlots);
     }, 150);
   };
 
@@ -398,6 +443,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   const applySlotsUpdate = (updater: (prev: (CardId | null)[]) => (CardId | null)[]) => {
     setSlots(prev => {
       const next = updater(prev);
+      slotsRef.current = next; // Keep ref in sync
       scheduleDraft(next);
       return next;
     });
@@ -405,7 +451,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
 
   const applyDropToSlot = (card: CardId, slotIndex: number, sourceSlotIndex: number | null) => {
     if (!canInteract) return;
-    setSlots(prev => {
+    applySlotsUpdate(prev => {
       const next = [...prev];
       const oldSlotIndex = prev.indexOf(card);
       const wasEmpty = prev[slotIndex] === null;
@@ -419,6 +465,11 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       }
 
       next[slotIndex] = card;
+      
+      // DEBUG: Log local draft state
+      if (DEBUG_MATCH) {
+        console.log(`[DRAFT_LOCAL] matchId=${currentMatchId} slotsRaw=${JSON.stringify(next)} mappedLayout=${JSON.stringify(next.map(toCardCode))}`);
+      }
       
       // UX: Pop animation for slot that received card
       if (wasEmpty) {
@@ -561,6 +612,11 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     if (confirmed) return;
     const layout = slots.filter((card): card is CardId => card !== null);
     if (layout.length !== 3) return;
+    
+    // CRITICAL: Flush any pending draft before confirm
+    if (draftDebounceRef.current) {
+      flushDraft(slots);
+    }
     
     // UX: Button press feedback
     setConfirmButtonPressed(true);
