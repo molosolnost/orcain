@@ -36,6 +36,11 @@ const MAX_HP = 10;
 const START_HP = 10;
 const PREP_TIME_MS = 20000; // 20 seconds
 const STEP_DELAY_MS = 900; // ~0.9 seconds between steps
+// TEST_MODE=1: shorter timings for simulations (default OFF)
+const TEST_MODE = process.env.TEST_MODE === '1' || process.env.TEST_MODE === 'true';
+const PREP_MS = TEST_MODE ? Number(process.env.TEST_PREP_MS || 300) : PREP_TIME_MS;
+const STEP_DELAY_MS_ACTUAL = TEST_MODE ? Number(process.env.TEST_STEP_MS || 50) : STEP_DELAY_MS;
+const STEP_FIRST_DELAY_MS = TEST_MODE ? 50 : 250;
 const ROUNDS_PER_MATCH = 3;
 const START_TOKENS = 10;
 const MATCH_COST = 1;
@@ -1108,8 +1113,8 @@ function scheduleStep(match) {
   const token = match.playAbortToken;
   const stepIndex = match.currentStepIndex;
   
-  // Задержка: первый шаг 250ms, остальные STEP_DELAY_MS
-  const delay = stepIndex === 0 ? 250 : STEP_DELAY_MS;
+  // Задержка: первый шаг STEP_FIRST_DELAY_MS, остальные STEP_DELAY_MS_ACTUAL
+  const delay = stepIndex === 0 ? STEP_FIRST_DELAY_MS : STEP_DELAY_MS_ACTUAL;
   
   match.stepTimer = setTimeout(() => {
     // Проверка паузы после задержки
@@ -1355,7 +1360,7 @@ function startPrepPhase(match) {
     submitBotDraft(match);
   }
 
-  const deadlineTs = Date.now() + PREP_TIME_MS;
+  const deadlineTs = Date.now() + PREP_MS;
   match.prepDeadline = deadlineTs;
 
   log(`[${match.id}] prep_start: round=${match.roundIndex}, suddenDeath=${match.suddenDeath}, p1Hp=${p1Data.hp}, p2Hp=${p2Data.hp}`);
@@ -1435,7 +1440,7 @@ function startPrepPhase(match) {
       log(`[PREP_TIMEOUT] match=${currentMatch.id} starting play`);
       startPlay(currentMatch);
     }
-  }, PREP_TIME_MS);
+  }, PREP_MS);
 }
 
 function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
@@ -2256,10 +2261,10 @@ io.on('connection', (socket) => {
   });
 });
 
-// Health endpoint
-app.get('/health', (req, res) => {
-  res.json({ ok: true });
-});
+// Health endpoint for sim (TEST_MODE only); Render uses /healthz
+if (TEST_MODE) {
+  app.get('/health', (req, res) => res.json({ ok: true }));
+}
 
 // Health check for Render
 app.get('/healthz', (req, res) => {
