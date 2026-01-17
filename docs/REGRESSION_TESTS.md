@@ -133,7 +133,76 @@ This document provides a manual test checklist to verify that battle rules are n
 
 ---
 
-### Test 6: endMatch double-call protected
+### Test 6: Disconnect in PREP → disconnect loses, opponent wins
+
+**Expected**: Disconnected player loses immediately, opponent wins, pot goes to winner
+
+**Steps**:
+1. Start a match between Player A and Player B
+2. In Round 1 PREP:
+   - Player A: Drafts cards (or does nothing)
+   - Player B: Disconnects (close browser/tab)
+3. Wait for disconnect grace period (5 seconds)
+4. Verify:
+   - `match_end` event received with `reason="disconnect"`
+   - Player A wins (gets pot)
+   - Player B loses
+   - Server log shows `[MATCH_END] reason=disconnect winner=PlayerA loser=PlayerB`
+   - Pot goes to Player A
+
+**Pass Criteria**:
+- ✅ Match ends immediately on disconnect (no AFK wait)
+- ✅ Disconnected player loses
+- ✅ Active player wins and receives pot
+- ✅ No `[INVARIANT_FAIL]` errors
+
+---
+
+### Test 7: Disconnect in REVEAL → disconnect loses, opponent wins
+
+**Expected**: Disconnected player loses immediately during reveal phase
+
+**Steps**:
+1. Start a match between Player A and Player B
+2. Both players confirm in Round 1 PREP
+3. During REVEAL phase (step 0, 1, or 2):
+   - Player B: Disconnects (close browser/tab)
+4. Wait for disconnect grace period
+5. Verify:
+   - `match_end` event received with `reason="disconnect"`
+   - Player A wins
+   - Server log shows `[WATCHDOG] state=playing p2 disconnected`
+
+**Pass Criteria**:
+- ✅ Match ends on disconnect during reveal
+- ✅ Watchdog handles disconnect in PLAYING state
+- ✅ No `[INVARIANT_FAIL]` errors
+
+---
+
+### Test 8: Sudden Death → no infinite loop
+
+**Expected**: Match continues until HP difference, then ends normally
+
+**Steps**:
+1. Start a match between two players
+2. Play 3 rounds with equal HP (both players maintain same HP)
+3. Verify:
+   - Round 4 starts (sudden death activated)
+   - `suddenDeath=true` in prep_start payload
+   - Match continues until HP difference occurs
+   - Match ends normally when HP differs
+   - Server log shows `suddenDeath=true` in round 4+
+
+**Pass Criteria**:
+- ✅ Sudden death activates after 3 rounds with equal HP
+- ✅ Match continues (no infinite loop)
+- ✅ Match ends when HP differs
+- ✅ No `[INVARIANT_FAIL]` errors
+
+---
+
+### Test 9: endMatch double-call protected
 
 **Expected**: Multiple calls to endMatch are idempotent (no double-ending)
 
@@ -150,6 +219,30 @@ This document provides a manual test checklist to verify that battle rules are n
 - ✅ `match.state === 'ended'` prevents double-ending
 - ✅ Guards log `[INVARIANT_FAIL]` if violated
 - ✅ Only one `match_end` event per player
+
+---
+
+### Test 10: PvE Training → no rewards, bot never AFK
+
+**Expected**: PvE match works correctly, bot always plays, no token rewards
+
+**Steps**:
+1. Start PvE Training match
+2. Play through 1-3 rounds
+3. Verify:
+   - Bot always submits draft (never AFK)
+   - Bot plays cards correctly
+   - Match ends normally (HP-based or player disconnect)
+   - No tokens added to player account (pot=0)
+   - Server log shows `[PVE_MATCH_CREATED]` and `[BOT_LAYOUT_SUBMITTED]`
+   - `bothAfkStreak` never grows (bot excluded)
+
+**Pass Criteria**:
+- ✅ PvE uses same battle engine as PvP
+- ✅ Bot never considered AFK
+- ✅ No token rewards
+- ✅ Match ends correctly
+- ✅ No `[INVARIANT_FAIL]` errors
 
 ---
 

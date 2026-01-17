@@ -47,6 +47,16 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   const dragPointerIdRef = useRef<number | null>(null);
   const draftDebounceRef = useRef<number | null>(null);
   const lastAppliedRoundIndexRef = useRef<number | null>(null);
+  
+  // UX Polish: Animation states
+  const [slotPopAnimation, setSlotPopAnimation] = useState<number | null>(null); // slotIndex that just got a card
+  const [draftToast, setDraftToast] = useState<string | null>(null); // "Card placed" / "Card removed"
+  const [hpFlash, setHpFlash] = useState<{ type: 'your' | 'opp'; direction: 'up' | 'down' } | null>(null); // Which HP to flash and direction
+  const [roundBanner, setRoundBanner] = useState<string | null>(null); // "Round X - PREP" / "Round X complete"
+  const [revealAnimations, setRevealAnimations] = useState<Set<number>>(new Set()); // stepIndexes that should animate
+  const [confirmButtonPressed, setConfirmButtonPressed] = useState(false);
+  const prevYourHpRef = useRef<number>(10);
+  const prevOppHpRef = useRef<number>(10);
 
   // Блокировка scroll на body/html при монтировании Battle
   useEffect(() => {
@@ -153,6 +163,8 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     setDeadlineTs(lastPrepStart.deadlineTs); // deadlineTs - источник правды для таймера
     setYourHp(lastPrepStart.yourHp);
     setOppHp(lastPrepStart.oppHp);
+    prevYourHpRef.current = lastPrepStart.yourHp;
+    prevOppHpRef.current = lastPrepStart.oppHp;
     setPot(lastPrepStart.pot);
     setSuddenDeath(lastPrepStart.suddenDeath);
     // Use yourHand from server (source of truth)
@@ -172,6 +184,13 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setRevealedCards([]);
       setCurrentStepIndex(null);
       lastAppliedRoundIndexRef.current = lastPrepStart.roundIndex;
+      
+      // UX: Round start banner
+      const bannerText = lastPrepStart.suddenDeath 
+        ? `Round ${lastPrepStart.roundIndex} — PREP (Sudden Death)`
+        : `Round ${lastPrepStart.roundIndex} — PREP`;
+      setRoundBanner(bannerText);
+      setTimeout(() => setRoundBanner(null), 700);
     }
     
     // DEBUG: логируем после установки состояния
@@ -192,6 +211,8 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setPhase('PREP');
       setYourHp(payload.yourHp);
       setOppHp(payload.oppHp);
+      prevYourHpRef.current = payload.yourHp;
+      prevOppHpRef.current = payload.oppHp;
       setPot(payload.pot);
       setSlots([null, null, null]);
       setConfirmed(false);
@@ -217,9 +238,41 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     socketManager.onStepReveal((payload: StepRevealPayload) => {
       setState('playing');
       setPhase('REVEAL');
+      
+      // UX: HP feedback (flash red if decreased, green if increased)
+      const prevYourHp = prevYourHpRef.current;
+      const prevOppHp = prevOppHpRef.current;
+      
+      if (payload.yourHp < prevYourHp) {
+        setHpFlash({ type: 'your', direction: 'down' });
+        setTimeout(() => setHpFlash(null), 400);
+      } else if (payload.yourHp > prevYourHp) {
+        setHpFlash({ type: 'your', direction: 'up' });
+        setTimeout(() => setHpFlash(null), 400);
+      }
+      if (payload.oppHp < prevOppHp) {
+        setHpFlash({ type: 'opp', direction: 'down' });
+        setTimeout(() => setHpFlash(null), 400);
+      } else if (payload.oppHp > prevOppHp) {
+        setHpFlash({ type: 'opp', direction: 'up' });
+        setTimeout(() => setHpFlash(null), 400);
+      }
+      
+      prevYourHpRef.current = payload.yourHp;
+      prevOppHpRef.current = payload.oppHp;
       setYourHp(payload.yourHp);
       setOppHp(payload.oppHp);
       setCurrentStepIndex(payload.stepIndex);
+      
+      // UX: Reveal animation trigger (for both your and opp cards)
+      setRevealAnimations(prev => new Set([...prev, payload.stepIndex]));
+      setTimeout(() => {
+        setRevealAnimations(prev => {
+          const next = new Set(prev);
+          next.delete(payload.stepIndex);
+          return next;
+        });
+      }, 600);
       
       setRevealedCards(prev => {
         const newRevealed = [...prev];
@@ -236,6 +289,10 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setRevealedCards([]);
       setCurrentStepIndex(null);
       setPhase('PREP');
+      
+      // UX: Round end banner
+      setRoundBanner(`Round ${roundIndex} complete`);
+      setTimeout(() => setRoundBanner(null), 700);
     });
 
     return () => {
@@ -351,6 +408,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     setSlots(prev => {
       const next = [...prev];
       const oldSlotIndex = prev.indexOf(card);
+      const wasEmpty = prev[slotIndex] === null;
 
       if (oldSlotIndex !== -1) {
         next[oldSlotIndex] = null;
@@ -361,6 +419,22 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       }
 
       next[slotIndex] = card;
+      
+      // UX: Pop animation for slot that received card
+      if (wasEmpty) {
+        setSlotPopAnimation(slotIndex);
+        setTimeout(() => setSlotPopAnimation(null), 300);
+        
+        // UX: Toast feedback (debounced)
+        if (draftDebounceRef.current) {
+          clearTimeout(draftDebounceRef.current);
+        }
+        setDraftToast('Card placed');
+        draftDebounceRef.current = window.setTimeout(() => {
+          setDraftToast(null);
+        }, 600);
+      }
+      
       return next;
     });
   };
@@ -370,6 +444,16 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     applySlotsUpdate(prev => {
       const next = [...prev];
       next[sourceSlotIndex] = null;
+      
+      // UX: Toast feedback for card removal
+      if (draftDebounceRef.current) {
+        clearTimeout(draftDebounceRef.current);
+      }
+      setDraftToast('Card removed');
+      draftDebounceRef.current = window.setTimeout(() => {
+        setDraftToast(null);
+      }, 600);
+      
       return next;
     });
   };
@@ -477,6 +561,10 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
     if (confirmed) return;
     const layout = slots.filter((card): card is CardId => card !== null);
     if (layout.length !== 3) return;
+    
+    // UX: Button press feedback
+    setConfirmButtonPressed(true);
+    setTimeout(() => setConfirmButtonPressed(false), 200);
     
     // Convert CardId[] to string[] for server (server expects CardId strings)
     socketManager.layoutConfirm(layout);
@@ -640,11 +728,39 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           <span>🏆{pot}</span>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', fontSize: '11px', fontWeight: 'bold' }}>
-          <span style={{ color: '#4caf50' }}>
-            {yourNickname || 'You'}: {yourHp}
+          <span 
+            style={{ 
+              color: '#4caf50',
+              textOverflow: 'ellipsis',
+              overflow: 'hidden',
+              whiteSpace: 'nowrap',
+              maxWidth: '80px',
+              transition: hpFlash?.type === 'your' ? 'background-color 0.3s ease' : 'none',
+              backgroundColor: hpFlash?.type === 'your' 
+                ? (hpFlash.direction === 'down' ? 'rgba(244, 67, 54, 0.3)' : 'rgba(76, 175, 80, 0.3)')
+                : 'transparent',
+              padding: hpFlash?.type === 'your' ? '2px 4px' : '0',
+              borderRadius: hpFlash?.type === 'your' ? '4px' : '0'
+            }}
+          >
+            {(yourNickname || 'You').length > 10 ? (yourNickname || 'You').substring(0, 10) + '...' : (yourNickname || 'You')}: {yourHp}
           </span>
-          <span style={{ color: '#f44336' }}>
-            {oppNickname || 'Opp'}: {oppHp}
+          <span 
+            style={{ 
+              color: '#f44336',
+              textOverflow: 'ellipsis',
+              overflow: 'hidden',
+              whiteSpace: 'nowrap',
+              maxWidth: '80px',
+              transition: hpFlash?.type === 'opp' ? 'background-color 0.3s ease' : 'none',
+              backgroundColor: hpFlash?.type === 'opp' 
+                ? (hpFlash.direction === 'down' ? 'rgba(244, 67, 54, 0.3)' : 'rgba(76, 175, 80, 0.3)')
+                : 'transparent',
+              padding: hpFlash?.type === 'opp' ? '2px 4px' : '0',
+              borderRadius: hpFlash?.type === 'opp' ? '4px' : '0'
+            }}
+          >
+            {(oppNickname || 'Opp').length > 10 ? (oppNickname || 'Opp').substring(0, 10) + '...' : (oppNickname || 'Opp')}: {oppHp}
           </span>
         </div>
       </div>
@@ -662,6 +778,7 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           {[0, 1, 2].map((index) => {
             const revealed = revealedCards[index];
             const isCurrentStep = currentStepIndex === index;
+            const isRevealing = revealAnimations.has(index);
             // В PREP всегда рубашка, в REVEAL показываем только если это текущий шаг или уже был вскрыт
             const shouldShowRevealed = phase !== 'PREP' && revealed && (isCurrentStep || phase === 'END');
             
@@ -671,11 +788,24 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                 style={{
                   border: isCurrentStep ? '2px solid #ff6b6b' : 'none',
                   borderRadius: '8px',
-                  padding: isCurrentStep ? '1px' : '0'
+                  padding: isCurrentStep ? '1px' : '0',
+                  transform: isRevealing ? 'translateY(-4px)' : 'translateY(0)',
+                  opacity: isRevealing ? 0 : 1,
+                  transition: isRevealing 
+                    ? 'opacity 0.2s ease-in, transform 0.3s ease-out' 
+                    : 'transform 0.2s ease, opacity 0.2s ease'
                 }}
               >
                 {shouldShowRevealed ? (
-                  renderCard(revealed.oppCard, 'REVEAL', index)
+                  <div
+                    style={{
+                      animation: isRevealing ? 'cardReveal 0.4s ease-out' : 'none',
+                      filter: isRevealing ? 'drop-shadow(0 0 8px rgba(255, 107, 107, 0.6))' : 'none',
+                      transition: isRevealing ? 'filter 0.3s ease-out' : 'filter 0.2s ease'
+                    }}
+                  >
+                    {renderCard(revealed.oppCard, 'REVEAL', index)}
+                  </div>
                 ) : (
                   renderCard(null, 'BACK')
                 )}
@@ -700,9 +830,20 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
             const displayCard = revealed ? revealed.yourCard : card;
             const isCurrentStep = currentStepIndex === index;
             const isHovered = dragState !== null && hoveredSlotIndex === index;
-            const hoverBorder = isHovered ? '2px solid #4caf50' : null;
-            const stepBorder = isCurrentStep ? '2px solid #ff6b6b' : 'none';
-            const border = hoverBorder || stepBorder;
+            const isPopping = slotPopAnimation === index;
+            const isRevealing = revealAnimations.has(index);
+            
+            // UX: Slot border states
+            let border = 'none';
+            if (isCurrentStep) {
+              border = '2px solid #ff6b6b';
+            } else if (isHovered) {
+              border = '2px solid #4caf50';
+            } else if (displayCard) {
+              border = '2px solid rgba(255, 255, 255, 0.3)';
+            } else {
+              border = '2px dashed rgba(255, 255, 255, 0.2)';
+            }
 
             return (
               <div
@@ -713,7 +854,14 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                   borderRadius: '8px',
                   padding: border !== 'none' ? '1px' : '0',
                   cursor: canInteract ? 'pointer' : 'default',
-                  boxShadow: isHovered ? '0 0 0 2px rgba(76, 175, 80, 0.2)' : 'none'
+                  boxShadow: isHovered ? `0 0 0 2px rgba(76, 175, 80, 0.3)` : 'none',
+                  transform: isPopping ? 'scale(1.03)' : isRevealing ? 'translateY(-4px)' : 'scale(1)',
+                  opacity: isRevealing ? 0 : 1,
+                  transition: isPopping 
+                    ? 'transform 0.15s ease-out' 
+                    : isRevealing 
+                    ? 'opacity 0.2s ease-in, transform 0.3s ease-out'
+                    : 'transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease'
                 }}
               >
                 {displayCard ? (
@@ -723,6 +871,11 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerEnd}
                     onPointerCancel={handlePointerCancel}
+                    style={{
+                      transform: isRevealing ? 'scale(1.05)' : 'scale(1)',
+                      filter: isRevealing ? 'drop-shadow(0 0 8px rgba(76, 175, 80, 0.6))' : 'none',
+                      transition: isRevealing ? 'transform 0.3s ease-out, filter 0.3s ease-out' : 'transform 0.2s ease'
+                    }}
                   >
                     {renderCard(displayCard, 'SLOT', index)}
                   </div>
@@ -805,25 +958,34 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
           textAlign: 'center',
           borderTop: '1px solid rgba(255, 255, 255, 0.1)'
         }}>
-          <button
-            onClick={handleConfirm}
-            disabled={slots.filter(c => c !== null).length !== 3}
-            style={{
-              padding: '14px 32px',
-              fontSize: '16px',
-              fontWeight: 'bold',
-              cursor: slots.filter(c => c !== null).length === 3 ? 'pointer' : 'not-allowed',
-              minWidth: '140px',
-              minHeight: '52px',
-              borderRadius: '8px',
-              border: 'none',
-              backgroundColor: slots.filter(c => c !== null).length === 3 ? '#4caf50' : '#666',
-              color: '#fff',
-              transition: 'background-color 0.2s'
-            }}
-          >
-            Confirm
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+            {slots.filter(c => c !== null).length !== 3 && (
+              <div style={{ fontSize: '11px', color: '#999', opacity: 0.7 }}>
+                Place {3 - slots.filter(c => c !== null).length} more card{3 - slots.filter(c => c !== null).length !== 1 ? 's' : ''} to confirm
+              </div>
+            )}
+            <button
+              onClick={handleConfirm}
+              disabled={slots.filter(c => c !== null).length !== 3}
+              style={{
+                padding: '14px 32px',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                cursor: slots.filter(c => c !== null).length === 3 ? 'pointer' : 'not-allowed',
+                minWidth: '140px',
+                minHeight: '48px',
+                borderRadius: '8px',
+                border: 'none',
+                backgroundColor: slots.filter(c => c !== null).length === 3 ? '#4caf50' : '#666',
+                color: '#fff',
+                transition: 'background-color 0.2s, transform 0.1s ease, opacity 0.1s ease',
+                transform: confirmButtonPressed ? 'scale(0.95)' : 'scale(1)',
+                opacity: confirmButtonPressed ? 0.8 : 1
+              }}
+            >
+              Confirm
+            </button>
+          </div>
         </div>
       )}
 
@@ -879,6 +1041,48 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
         </div>
       )}
 
+      {/* UX: Draft toast feedback */}
+      {draftToast && (
+        <div style={{
+          position: 'fixed',
+          bottom: '120px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          color: '#fff',
+          padding: '8px 16px',
+          borderRadius: '6px',
+          fontSize: '12px',
+          zIndex: 10000,
+          pointerEvents: 'none',
+          animation: 'fadeInOut 0.6s ease'
+        }}>
+          {draftToast}
+        </div>
+      )}
+
+      {/* UX: Round transition banner */}
+      {roundBanner && (
+        <div style={{
+          position: 'fixed',
+          top: '40px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: 'rgba(0, 0, 0, 0.9)',
+          color: '#fff',
+          padding: '8px 20px',
+          borderRadius: '6px',
+          fontSize: '13px',
+          fontWeight: 'bold',
+          zIndex: 10001,
+          pointerEvents: 'none',
+          animation: 'fadeInOut 0.7s ease',
+          border: '1px solid rgba(255, 255, 255, 0.2)'
+        }}>
+          {roundBanner}
+        </div>
+      )}
+
       {dragState && (
         <div
           className="battle-card"
@@ -887,7 +1091,9 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
             left: dragState.x,
             top: dragState.y,
             zIndex: 9999,
-            pointerEvents: 'none'
+            pointerEvents: 'none',
+            transform: 'rotate(5deg)',
+            opacity: 0.9
           }}
         >
           {renderCard(dragState.card, 'HAND')}
