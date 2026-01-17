@@ -118,6 +118,61 @@ function waitForEvent(socket, eventName, timeoutMs = 8000) {
 }
 
 /**
+ * Event buffer: subscribe to eventNames and store all payloads so they are never lost.
+ * Must be called before emitting actions that trigger these events.
+ * @param {object} socket
+ * @param {string[]} eventNames
+ * @returns {{ buffer: Record<string, any[]>, last: Record<string, any> }}
+ */
+function attachEventBuffer(socket, eventNames) {
+  const buf = (socket._simBuffer = socket._simBuffer || { buffer: {}, last: {} });
+  for (const en of eventNames) {
+    if (buf.buffer[en]) continue; // already attached
+    buf.buffer[en] = [];
+    socket.on(en, (payload) => {
+      buf.buffer[en].push(payload);
+      buf.last[en] = payload;
+      const m = payload?.matchId ?? '-';
+      const r = payload?.roundIndex ?? '-';
+      console.log(`[sim][recv] event=${en} matchId=${m} roundIndex=${r}`);
+    });
+  }
+  return buf;
+}
+
+/**
+ * Wait for an event, consuming from the buffer if already arrived. Never misses events
+ * that were emitted before the wait started.
+ * @param {object} socket - must have been passed to attachEventBuffer first
+ * @param {string} eventName
+ * @param {{ timeoutMs?: number, predicate?: (p: any) => boolean, signal?: AbortSignal }} opts
+ */
+async function waitForEventBuffered(socket, eventName, opts = {}) {
+  const { timeoutMs = 8000, predicate = () => true, signal } = opts;
+  const buf = socket._simBuffer;
+  if (!buf) throw new Error('attachEventBuffer(socket, [eventNames]) must be called before waitForEventBuffered');
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (signal?.aborted) throw new Error('aborted');
+    const arr = buf.buffer[eventName] || [];
+    const idx = arr.findIndex(predicate);
+    if (idx >= 0) {
+      const payload = arr[idx];
+      arr.splice(idx, 1);
+      return payload;
+    }
+    await delay(50);
+  }
+  const seen = Object.entries(buf.buffer || {}).map(([e, arr]) => ({
+    event: e,
+    count: (arr || []).length,
+    last: buf.last ? buf.last[e] : undefined
+  }));
+  console.error('[sim] Seen events summary:', JSON.stringify(seen, null, 2));
+  throw new Error(`Timeout waiting for ${eventName}. Seen: ${JSON.stringify(seen)}`);
+}
+
+/**
  * Assert no [INVARIANT_FAIL] in server logs.
  * @param {string[]} logBuffer - array of log chunks
  */
@@ -137,5 +192,7 @@ module.exports = {
   waitForServerReady,
   connectClient,
   waitForEvent,
+  attachEventBuffer,
+  waitForEventBuffered,
   assertNoInvariantFail
 };
