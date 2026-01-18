@@ -140,7 +140,24 @@ Quick manual verification checklist to ensure battle engine baseline is working 
 
 ---
 
-### ✅ Test 8: Render Logs Check
+### ✅ Test 8: Build Version Badge
+
+**Steps**:
+1. Open Menu screen
+2. Check bottom of screen for version badge
+
+**Expected**:
+- ✅ Badge shows: `dev • local` or `prod • <sha>` (if VITE_BUILD_SHA set)
+- ✅ In prod without `?debug=1`: badge hidden or very subtle (opacity ~0.3)
+- ✅ In dev or with `?debug=1`: badge visible (opacity ~0.7)
+
+**Red Flags**:
+- ❌ Badge missing in dev
+- ❌ Badge too prominent in prod (should be subtle/hidden)
+
+---
+
+### ✅ Test 9: Render Logs Check
 
 **Steps**:
 1. Run any of the above tests
@@ -181,7 +198,7 @@ grep "INVARIANT_FAIL" logs.txt
 
 ## Pass Criteria
 
-All 8 tests pass:
+All 9 tests pass:
 - ✅ Partial play works
 - ✅ Confirm validation works
 - ✅ PvE free and bot works

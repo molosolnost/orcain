@@ -79,6 +79,7 @@ function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [lastPrepStart, setLastPrepStart] = useState<PrepStartPayload | null>(null);
+  const [matchMode, setMatchMode] = useState<'pvp' | 'pve' | null>(null); // Track PvP vs PvE
   
   // Boot state machine
   const [bootState, setBootState] = useState<BootState>('checking');
@@ -307,6 +308,12 @@ function App() {
       if (payload.matchId) {
         setCurrentMatchId(payload.matchId);
       }
+      // Infer matchMode from pot (PvE has pot=0)
+      if (payload.pot === 0 && matchMode === null) {
+        setMatchMode('pve');
+      } else if (payload.pot > 0 && matchMode === null) {
+        setMatchMode('pvp');
+      }
       setMatchEndPayload(null);
       setLastPrepStart(null);
       setIsSearching(false);
@@ -379,11 +386,13 @@ function App() {
   };
 
   const handleStartBattle = () => {
+    setMatchMode('pvp');
     setIsSearching(true);
     socketManager.queueJoin();
   };
 
   const handleStartPvE = () => {
+    setMatchMode('pve');
     // PvE is immediate - no queue, no tokens
     socketManager.pveStart();
     // match_found will be sent, which will switch to battle screen
@@ -394,7 +403,22 @@ function App() {
   };
 
   const handleBackToMenu = () => {
+    setMatchMode(null);
+    setMatchEndPayload(null);
+    setLastPrepStart(null);
+    setCurrentMatchId(null);
     setScreen('menu');
+  };
+
+  const handlePlayAgain = () => {
+    setMatchEndPayload(null);
+    setLastPrepStart(null);
+    setCurrentMatchId(null);
+    if (matchMode === 'pve') {
+      handleStartPvE();
+    } else if (matchMode === 'pvp') {
+      handleStartBattle();
+    }
   };
 
   // Debug info
@@ -541,7 +565,9 @@ function App() {
         )}
         {screen === 'battle' && (
           <Battle 
-            onBackToMenu={handleBackToMenu} 
+            onBackToMenu={handleBackToMenu}
+            onPlayAgain={handlePlayAgain}
+            matchMode={matchMode}
             tokens={tokens}
             matchEndPayload={matchEndPayload}
             lastPrepStart={lastPrepStart}

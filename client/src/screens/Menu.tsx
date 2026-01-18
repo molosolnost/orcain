@@ -1,5 +1,10 @@
-const BUILD = import.meta.env.VITE_BUILD_ID ?? "dev";
 import orcainLogo from "../assets/orcain_logo.png";
+
+// Build version badge: mode + sha
+const buildMode: 'dev' | 'prod' = import.meta.env.PROD ? 'prod' : 'dev';
+const buildId: string = import.meta.env.VITE_BUILD_SHA || 'local';
+const isDebug = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
+const showBuildBadge = isDebug || buildMode === 'dev';
 
 interface MenuProps {
   onStartBattle: () => void;
@@ -87,15 +92,19 @@ export default function Menu({ onStartBattle, onStartPvE, onCancelSearch, isSear
           </button>
         </>
       )}
-      <div style={{ 
-        position: 'absolute', 
-        bottom: '20px', 
-        fontSize: '12px', 
-        color: '#666',
-        textAlign: 'center'
-      }}>
-        build: {BUILD}
-      </div>
+      {showBuildBadge && (
+        <div style={{ 
+          position: 'absolute', 
+          bottom: '20px', 
+          fontSize: '11px', 
+          color: isDebug ? '#999' : '#666',
+          opacity: buildMode === 'prod' && !isDebug ? 0.3 : 0.7,
+          textAlign: 'center',
+          fontFamily: 'monospace'
+        }}>
+          {buildMode} • {buildId}
+        </div>
+      )}
     </div>
   );
 }

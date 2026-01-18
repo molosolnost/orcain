@@ -7,13 +7,15 @@ type BattleState = 'prep' | 'playing' | 'ended';
 
 interface BattleProps {
   onBackToMenu: () => void;
+  onPlayAgain?: () => void;
+  matchMode?: 'pvp' | 'pve' | null;
   tokens: number | null;
   matchEndPayload: MatchEndPayload | null;
   lastPrepStart: PrepStartPayload | null;
   currentMatchId: string | null;
 }
 
-export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrepStart, currentMatchId }: BattleProps) {
+export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, matchEndPayload, lastPrepStart, currentMatchId }: BattleProps) {
   const [state, setState] = useState<BattleState>('prep');
   const [yourHp, setYourHp] = useState(10);
   const [oppHp, setOppHp] = useState(10);
@@ -61,6 +63,8 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   const [confirmButtonPressed, setConfirmButtonPressed] = useState(false);
   const prevYourHpRef = useRef<number>(10);
   const prevOppHpRef = useRef<number>(10);
+
+  const DEBUG_MATCH = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
 
   // Блокировка scroll на body/html при монтировании Battle
   useEffect(() => {
@@ -130,6 +134,15 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
       setCurrentStepIndex(null);
       // Останавливаем таймер при завершении матча
       setDeadlineTs(null);
+      
+      // CRITICAL: Cancel any pending draft on match end
+      if (draftDebounceRef.current) {
+        window.clearTimeout(draftDebounceRef.current);
+        draftDebounceRef.current = null;
+        if (DEBUG_MATCH) {
+          console.log(`[DRAFT_CANCEL] reason=match_end`);
+        }
+      }
     } else {
       // Очищаем END состояние если matchEndPayload стал null
       if (phase === 'END') {
@@ -413,8 +426,6 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
   }, [canInteract, dragState]);
 
   const toCardCode = (v: CardId | null): string | null => (v ? v : null);
-
-  const DEBUG_MATCH = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
 
   const flushDraft = (slotsToSend: (CardId | null)[]) => {
     const matchId = currentMatchIdRef.current;
@@ -1243,44 +1254,163 @@ export default function Battle({ onBackToMenu, tokens, matchEndPayload, lastPrep
         </div>
       )}
 
-      {/* Match End */}
-      {matchEndPayload && (
-        <div style={{ 
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.9)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 10000,
-          padding: '20px',
-          textAlign: 'center'
-        }}>
-          <h2 style={{ fontSize: '24px', marginBottom: '12px' }}>
-            {matchEndPayload.winner === 'YOU' ? 'YOU WIN' : 'YOU LOSE'}
-          </h2>
-          {matchEndPayload.reason === 'disconnect' && (
-            <p style={{ fontSize: '12px', color: '#999', marginBottom: '16px' }}>Opponent disconnected</p>
-          )}
-          {matchEndPayload.reason === 'timeout' && (
-            <p style={{ fontSize: '12px', color: '#999', marginBottom: '16px' }}>Match timed out</p>
-          )}
-          <button
-            onClick={onBackToMenu}
-            style={{
-              padding: '10px 20px',
-              fontSize: '14px',
-              cursor: 'pointer'
-            }}
-          >
-            Back to Menu
-          </button>
-        </div>
-      )}
+      {/* Match End Screen */}
+      {matchEndPayload && (() => {
+        const getResultTitle = () => {
+          if (matchEndPayload.winner === 'YOU') return 'Победа';
+          if (matchEndPayload.reason === 'timeout' && !matchEndPayload.winnerId) return 'Ничья';
+          return 'Поражение';
+        };
+        
+        const getReasonText = () => {
+          switch (matchEndPayload.reason) {
+            case 'normal':
+              return 'Матч завершён';
+            case 'timeout':
+              return matchEndPayload.winnerId ? 'Противник бездействовал' : 'Оба бездействовали (токены сгорели)';
+            case 'disconnect':
+              return 'Противник отключился';
+            default:
+              return 'Матч завершён';
+          }
+        };
+        
+        return (
+          <div style={{ 
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.92)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            padding: '24px',
+            textAlign: 'center',
+            animation: 'fadeIn 0.3s ease-in'
+          }}>
+            <div style={{
+              backgroundColor: 'rgba(36, 36, 36, 0.95)',
+              borderRadius: '12px',
+              padding: '28px 24px',
+              maxWidth: '90vw',
+              width: 'min(400px, 90vw)',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+              transform: 'translateY(0)',
+              animation: 'slideUp 0.4s ease-out'
+            }}>
+              <h2 style={{ 
+                fontSize: 'clamp(24px, 6vw, 32px)', 
+                marginBottom: '8px',
+                color: matchEndPayload.winner === 'YOU' ? '#4caf50' : (matchEndPayload.reason === 'timeout' && !matchEndPayload.winnerId ? '#ffa726' : '#f44336'),
+                fontWeight: 'bold'
+              }}>
+                {getResultTitle()}
+              </h2>
+              <p style={{ 
+                fontSize: 'clamp(12px, 3vw, 14px)', 
+                color: '#999', 
+                marginBottom: '20px' 
+              }}>
+                {getReasonText()}
+              </p>
+              
+              {/* Счёт */}
+              <div style={{
+                marginBottom: '20px',
+                padding: '12px',
+                backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                borderRadius: '8px'
+              }}>
+                <div style={{ fontSize: 'clamp(13px, 3.5vw, 15px)', marginBottom: '8px', color: '#ccc' }}>
+                  Счёт
+                </div>
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-around', 
+                  fontSize: 'clamp(14px, 4vw, 16px)',
+                  fontWeight: 'bold'
+                }}>
+                  <span style={{ color: '#4caf50' }}>
+                    Ты: {matchEndPayload.yourHp}
+                  </span>
+                  <span style={{ color: '#f44336' }}>
+                    Противник: {matchEndPayload.oppHp}
+                  </span>
+                </div>
+                {lastPrepStart && (
+                  <div style={{ 
+                    fontSize: 'clamp(11px, 2.8vw, 13px)', 
+                    color: '#999', 
+                    marginTop: '8px' 
+                  }}>
+                    Раунд {lastPrepStart.roundIndex}
+                  </div>
+                )}
+              </div>
+              
+              {/* Экономика (если токены доступны) */}
+              {matchEndPayload.yourTokens !== undefined && (
+                <div style={{
+                  marginBottom: '20px',
+                  fontSize: 'clamp(13px, 3.5vw, 15px)',
+                  color: '#ccc'
+                }}>
+                  Токены: {matchEndPayload.yourTokens}
+                </div>
+              )}
+              
+              {/* Кнопки */}
+              <div style={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: '12px',
+                marginTop: '24px'
+              }}>
+                {onPlayAgain && matchMode && (
+                  <button
+                    onClick={onPlayAgain}
+                    style={{
+                      padding: '14px 24px',
+                      fontSize: 'clamp(14px, 4vw, 16px)',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      backgroundColor: '#4caf50',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '8px',
+                      transition: 'opacity 0.2s, transform 0.1s',
+                      minHeight: '48px'
+                    }}
+                  >
+                    Сыграть ещё
+                  </button>
+                )}
+                <button
+                  onClick={onBackToMenu}
+                  style={{
+                    padding: '14px 24px',
+                    fontSize: 'clamp(14px, 4vw, 16px)',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    color: '#fff',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '8px',
+                    transition: 'opacity 0.2s, transform 0.1s',
+                    minHeight: '48px'
+                  }}
+                >
+                  Back to Menu
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* UX: Slot occupied toast */}
       {slotOccupiedToast && (
