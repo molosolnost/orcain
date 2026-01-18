@@ -12,6 +12,7 @@
 7. [Card Interactions](#card-interactions)
 8. [Sudden Death](#sudden-death)
 9. [Match End Rules](#match-end-rules)
+10. [Economy / Tokens](#economy--tokens)
 
 ---
 
@@ -252,6 +253,39 @@ type CardType = 'ATTACK' | 'DEFENSE' | 'HEAL' | 'COUNTER';
 - `endMatch(match, reason)`: Normal end (HP-based)
 - `endMatchForfeit(match, loser, winner, reason)`: One player forfeits (AFK/disconnect)
 - `endMatchBothAfk(match)`: Both players AFK (pot burn)
+
+---
+
+## Economy / Tokens
+
+### PvP (paid)
+
+- **COST_PVP_START** = 1 token (per player). Stored in `server/economy.js`.
+- **queue_join**: If `tokens < COST_PVP_START` → do **not** add to queue; emit `error_msg` `{ code: 'not_enough_tokens', message: 'Недостаточно токенов для PvP боя' }`.
+- **Charge**: When a PvP match is created, `economy.chargePvpStart(accountId, match)` is called for each player. Charge is **idempotent** (stored in `match.econCharged`); duplicate calls log `[ECON_CHARGE_DUPLICATE]` and are NO-OP.
+- **pot** = `COST_PVP_START * 2` (both paid).
+
+### PvP payout (settleMatchPayout)
+
+| reason | winner | action |
+|--------|--------|--------|
+| normal | yes | winner +pot |
+| timeout (one AFK 2 rounds) | yes | winner +pot |
+| disconnect | yes | winner +pot |
+| timeout (both AFK 2 rounds) | no | **pot burn** (nobody gets) |
+
+- **PvE**: `settleMatchPayout` is **skip** (no charge, no payout). `pot = 0`.
+
+### PvE (free)
+
+- **pve_start**: No token check, no charge. `pot = 0`. No `addTokens`/`deductTokens` on match end.
+
+### Logs
+
+- `[ECON_CHARGE] accountId=... matchId=... cost=... tokensBefore=... tokensAfter=...`
+- `[ECON_CHARGE_DUPLICATE] accountId=... matchId=...` (idempotent guard)
+- `[ECON_SETTLE] matchId=... reason=... pot=... action=paid|burn|skip`
+- `[ECON_GUARD_FAIL]` on invalid settle (e.g. pot&lt;0, PvE payout attempt).
 
 ---
 

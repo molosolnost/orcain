@@ -13,6 +13,10 @@ const pvpBothAfk = require('./pvp_both_afk_two_rounds');
 const pvpOneAfk = require('./pvp_one_afk_two_rounds');
 const pvpAttackVsGrass = require('./pvp_attack_vs_grass');
 const pvpEndmatchIdempotent = require('./pvp_endmatch_idempotent');
+const pvpNotEnoughTokens = require('./pvp_not_enough_tokens');
+const pvpChargeOnce = require('./pvp_charge_once');
+const pvpTimeoutBurnPot = require('./pvp_timeout_burn_pot');
+const pveNoTokenChange = require('./pve_no_token_change');
 
 const PORT = 3010;
 let _logBuffer = [];
@@ -58,6 +62,18 @@ async function main() {
     console.log('[sim] H: pvp_endmatch_idempotent...');
     await runScenario('H: pvp_endmatch_idempotent', () => pvpEndmatchIdempotent.run(PORT, logBuffer));
     console.log('[sim] H: pvp_endmatch_idempotent OK');
+    console.log('[sim] I: pvp_not_enough_tokens...');
+    await runScenario('I: pvp_not_enough_tokens', () => pvpNotEnoughTokens.run(PORT, logBuffer));
+    console.log('[sim] I: pvp_not_enough_tokens OK');
+    console.log('[sim] J: pvp_charge_once...');
+    await runScenario('J: pvp_charge_once', () => pvpChargeOnce.run(PORT, logBuffer));
+    console.log('[sim] J: pvp_charge_once OK');
+    console.log('[sim] K: pvp_timeout_burn_pot...');
+    await runScenario('K: pvp_timeout_burn_pot', () => pvpTimeoutBurnPot.run(PORT, logBuffer));
+    console.log('[sim] K: pvp_timeout_burn_pot OK');
+    console.log('[sim] M: pve_no_token_change...');
+    await runScenario('M: pve_no_token_change', () => pveNoTokenChange.run(PORT, logBuffer));
+    console.log('[sim] M: pve_no_token_change OK');
   } finally {
     stopServer(proc);
     await delay(200);

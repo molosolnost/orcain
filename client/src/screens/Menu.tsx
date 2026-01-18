@@ -80,8 +80,9 @@ export default function Menu({ onStartBattle, onStartPvE, onCancelSearch, isSear
                 opacity: hasEnoughTokens ? 1 : 0.5
               }}
             >
-              {hasEnoughTokens ? 'Start Battle' : 'Not enough tokens'}
+              {hasEnoughTokens ? 'Start Battle' : 'Недостаточно токенов'}
             </button>
+            <div style={{ fontSize: '13px', color: '#888' }}>Стоимость PvP: 1 токен</div>
             <button 
               onClick={onStartPvE}
               style={{
@@ -96,6 +97,7 @@ export default function Menu({ onStartBattle, onStartPvE, onCancelSearch, isSear
             >
               Start PvE Training
             </button>
+            <div style={{ fontSize: '13px', color: '#888' }}>PvE бесплатно (без наград)</div>
           </>
         )}
         {showBuildBadge && (

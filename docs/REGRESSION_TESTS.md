@@ -355,15 +355,27 @@ DEBUG_MATCH=1 node server/index.js
 # 6. Test 6 (Double endMatch - manual code check)
 ```
 
-### Automated simulator scenarios D–H
+### Economy (PvP paid, PvE free)
 
-The sim `run_all.js` runs scenarios D–H (see `docs/AUTOTESTS.md`):
+- **PvP tokens=0**: Start Battle disabled or `error_msg` `not_enough_tokens`; no queue, no match.
+- **PvP charge**: 1 token per player at match create; `yourTokens` in `match_found`/`match_end` reflects balance.
+- **PvP normal/afk/disconnect**: Winner gets pot (2); loser gets 0.
+- **PvP both AFK 2 rounds**: `match_end` reason=timeout; pot burn; `yourTokens` unchanged from post-charge (9 each).
+- **PvE**: No charge, no payout; `yourTokens` unchanged.
+
+### Automated simulator scenarios D–K, M
+
+The sim `run_all.js` runs scenarios D–K and M (see `docs/AUTOTESTS.md`):
 
 - **D) pvp_partial_play_no_confirm**: A: layout_draft 1 card, no confirm. B: layout_confirm 3. Expect: A not AFK, empty slots→GRASS, round plays, prep_start round 2 (no match_end).
 - **E) pvp_both_afk_two_rounds**: Both do nothing 2 rounds. Expect: match_end reason=timeout after 2nd round.
 - **F) pvp_one_afk_two_rounds**: A nothing 2 rounds, B confirm each. Expect: match_end reason=timeout, winnerId/loserId set.
 - **G) pvp_attack_vs_grass**: A confirm [attack,...], B nothing. Expect: B's yourHp=8 after step 0 (ATTACK vs GRASS = 2 damage).
 - **H) pvp_endmatch_idempotent**: Both AFK 2 rounds. Count match_end per client; expect 1 each. No server crash.
+- **I) pvp_not_enough_tokens**: Account with 0 tokens, queue_join → error_msg `not_enough_tokens`, no match.
+- **J) pvp_charge_once**: Two accounts queue_join; after prep_start each has tokens = start - 1.
+- **K) pvp_timeout_burn_pot**: Both AFK 2 rounds; match_end reason=timeout; `yourTokens` = 9 (pot burn).
+- **M) pve_no_token_change**: PvE to match_end; `db.getTokens` before = after.
 
 ---
 

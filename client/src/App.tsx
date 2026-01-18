@@ -276,6 +276,9 @@ function App() {
         setConnected(false);
         setTokens(null);
         setIsSearching(false);
+      } else if (payload.code === 'not_enough_tokens') {
+        setIsSearching(false);
+        alert(payload.message || 'Недостаточно токенов для PvP боя');
       } else if (isSearching) {
         setIsSearching(false);
         alert(payload.message);

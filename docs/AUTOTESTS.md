@@ -13,7 +13,7 @@ npm run test:sim
 ```
 
 - **test:smoke**: client `npm run build`, `node -c server/index.js`, `node -c server/cards.js`
-- **test:sim**: runs test:smoke, then `server/scripts/sim/run_all.js` (A–H). Server: `TEST_MODE=1`, `TEST_PREP_MS=300`, `TEST_STEP_MS=50`.
+- **test:sim**: runs test:smoke, then `server/scripts/sim/run_all.js` (A–K, M). Server: `TEST_MODE=1`, `TEST_PREP_MS=300`, `TEST_STEP_MS=50`. (L pvp_normal_payout exists but is not in run_all; I–K,M cover economy.)
 
 ## Env (sim only, server)
 
@@ -64,6 +64,26 @@ Prod timings are unchanged when `TEST_MODE` is unset.
 
 - Both AFK 2 rounds. Asserts: match_end count 1 per client, no `[INVARIANT_FAIL]`.
 
+### I) pvp_not_enough_tokens — economy: 0 tokens → error, no match
+
+- One account with `db.setTokens(accountId, 0)`, queue_join. Asserts: `error_msg` with `code === 'not_enough_tokens'`, no `match_found`.
+
+### J) pvp_charge_once — economy: charge once per player
+
+- Two accounts, queue_join both. After prep_start: `db.getTokens` each = start - 1.
+
+### K) pvp_timeout_burn_pot — economy: both AFK → pot burn
+
+- Both AFK 2 rounds. Asserts: match_end reason=timeout, `yourTokens === 9` (10 - 1, no pot).
+
+### L) pvp_normal_payout — economy: winner gets pot (optional, not in run_all)
+
+- PvP to a clear winner. Asserts: winner `yourTokens === 11`, loser `yourTokens === 9`. File exists; not run in run_all.
+
+### M) pve_no_token_change — economy: PvE no token change
+
+- PvE to match_end. Asserts: `db.getTokens(accountId)` before === after.
+
 ## How to read failures
 
 - **`[INVARIANT_FAIL]` in server logs**: `assertNoInvariantFail` throws; fix invariant or scenario.
@@ -82,7 +102,12 @@ Prod timings are unchanged when `TEST_MODE` is unset.
 - `server/scripts/sim/pvp_one_afk_two_rounds.js` — F.
 - `server/scripts/sim/pvp_attack_vs_grass.js` — G.
 - `server/scripts/sim/pvp_endmatch_idempotent.js` — H.
-- `server/scripts/sim/run_all.js` — starts server (TEST_PREP_MS=300, TEST_STEP_MS=50), runs A–H, `assertNoInvariantFail`.
+- `server/scripts/sim/pvp_not_enough_tokens.js` — I.
+- `server/scripts/sim/pvp_charge_once.js` — J.
+- `server/scripts/sim/pvp_timeout_burn_pot.js` — K.
+- `server/scripts/sim/pvp_normal_payout.js` — L.
+- `server/scripts/sim/pve_no_token_change.js` — M.
+- `server/scripts/sim/run_all.js` — starts server (TEST_PREP_MS=300, TEST_STEP_MS=50), runs A–M, `assertNoInvariantFail`.
 - `server/scripts/lib/sim_utils.js` — `startServer`, `stopServer`, `waitForServerReady`, `waitForEvent`, `attachEventBuffer`, `waitForEventBuffered`, `assertNoInvariantFail`.
 
 ## Adding a scenario

@@ -71,7 +71,7 @@ class SocketManager {
     this.socket?.on('connected', callback);
   }
 
-  onErrorMsg(callback: (payload: { message: string }) => void) {
+  onErrorMsg(callback: (payload: { message: string; code?: string }) => void) {
     this.socket?.on('error_msg', callback);
   }
 

@@ -4,6 +4,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const crypto = require('crypto');
 const db = require('./db');
+const economy = require('./economy');
 const {
   CARD_IDS,
   GRASS,
@@ -43,7 +44,6 @@ const STEP_DELAY_MS_ACTUAL = TEST_MODE ? Number(process.env.TEST_STEP_MS || 50) 
 const STEP_FIRST_DELAY_MS = TEST_MODE ? 50 : 250;
 const ROUNDS_PER_MATCH = 3;
 const START_TOKENS = 10;
-const MATCH_COST = 1;
 const DISCONNECT_GRACE_MS = 5000; // 5 seconds grace period for reconnect
 const PLAY_STEP_TIMEOUT_MS = 15000; // 15 seconds global timeout for PLAY phase
 
@@ -138,18 +138,12 @@ function createMatch(player1Socket, player2Socket) {
   const p1Data = getPlayerData(s1SessionId);
   const p2Data = getPlayerData(s2SessionId);
 
-  // Перед стартом матча снять MATCH_COST с каждого аккаунта (по accountId)
-  if (!db.deductTokens(acc1AccountId, MATCH_COST) || !db.deductTokens(acc2AccountId, MATCH_COST)) {
-    throw new Error('Cannot create match: not enough tokens');
-  }
+  const pot = economy.COST_PVP_START * 2;
 
-  // Создать pot = MATCH_COST * 2
-  const pot = MATCH_COST * 2;
-  
   // Get hands for both players (source of truth - server decides hand)
   const p1Hand = getHandForAccount(acc1AccountId);
   const p2Hand = getHandForAccount(acc2AccountId);
-  
+
   // INVARIANT: hand must be exactly 4 cards
   if (p1Hand.length !== 4) {
     console.error(`[INVARIANT_FAIL] code=HAND_SIZE_P1 handSize=${p1Hand.length} expected=4`);
@@ -159,7 +153,7 @@ function createMatch(player1Socket, player2Socket) {
     console.error(`[INVARIANT_FAIL] code=HAND_SIZE_P2 handSize=${p2Hand.length} expected=4`);
     throw new Error(`Invalid hand size for player 2: ${p2Hand.length}, expected 4`);
   }
-  
+
   const match = {
     id: matchId,
     mode: 'PVP', // 'PVP' | 'PVE'
@@ -174,7 +168,8 @@ function createMatch(player1Socket, player2Socket) {
     prepTimer: null,
     roundInProgress: false,
     playAbortToken: 0,
-    pot: pot,
+    pot,
+    econCharged: {},
     paused: false,
     pauseReason: null,
     currentStepIndex: null,
@@ -196,6 +191,15 @@ function createMatch(player1Socket, player2Socket) {
   match.hands.set(s1SessionId, p1Hand);
   match.hands.set(s2SessionId, p2Hand);
 
+  // Charge both players (idempotent). On second failure, refund first.
+  if (!economy.chargePvpStart(acc1AccountId, match)) {
+    throw new Error('Cannot create match: not enough tokens (p1)');
+  }
+  if (!economy.chargePvpStart(acc2AccountId, match)) {
+    db.addTokens(acc1AccountId, economy.COST_PVP_START);
+    throw new Error('Cannot create match: not enough tokens (p2)');
+  }
+
   // Сохраняем матч по ID и по socketId
   matchesById.set(matchId, match);
   matchIdBySocket.set(player1Socket.id, matchId);
@@ -205,8 +209,7 @@ function createMatch(player1Socket, player2Socket) {
   io.sockets.sockets.get(player1Socket.id)?.join(matchId);
   io.sockets.sockets.get(player2Socket.id)?.join(matchId);
 
-  // DEBUG лог на матч
-  log(`[TOKENS] after_deduct s1=${s1SessionId} acc1=${acc1AccountId} tokens=${db.getTokens(acc1AccountId)} s2=${s2SessionId} acc2=${acc2AccountId} tokens=${db.getTokens(acc2AccountId)} pot=${pot}`);
+  log(`[TOKENS] after_charge s1=${s1SessionId} acc1=${acc1AccountId} tokens=${db.getTokens(acc1AccountId)} s2=${s2SessionId} acc2=${acc2AccountId} tokens=${db.getTokens(acc2AccountId)} pot=${pot}`);
 
   // Устанавливаем HP на 10 и обновляем matchId
   p1Data.hp = START_HP;
@@ -812,9 +815,8 @@ function endMatchBothAfk(match) {
   const p1Hp = p1Data ? p1Data.hp : START_HP;
   const p2Hp = p2Data ? p2Data.hp : START_HP;
   
-  // Pot сгорает - никто не получает токены
-  log(`[END_BOTH_AFK] match=${match.id} pot=${match.pot} burned`);
-  
+  economy.settleMatchPayout(match, 'timeout', null);
+
   // Получаем токены по accountId для отправки
   const acc1AccountId = getAccountIdBySessionId(match.sessions[0]);
   const acc2AccountId = getAccountIdBySessionId(match.sessions[1]);
@@ -1533,16 +1535,9 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
   
   log(`[FORFEIT] match=${match.id} loser=${loserSessionId} winner=${winnerSessionId} reason=${reason}`);
 
-  // PvE: No rewards (pot = 0, no tokens added)
-  // PvP: WinnerAccountId получает +match.pot (по accountId, не sessionId)
-  if (match.mode === 'PVP' && match.pot > 0) {
-    const winnerAccountId = getAccountIdBySessionId(winnerSessionId);
-    if (winnerAccountId && winnerAccountId !== BOT_ACCOUNT_ID) {
-      db.addTokens(winnerAccountId, match.pot);
-    }
-  }
+  const winnerAccountId = getAccountIdBySessionId(winnerSessionId);
+  economy.settleMatchPayout(match, reason || 'normal', winnerAccountId === BOT_ACCOUNT_ID ? null : winnerAccountId);
 
-  // Лог в endMatch
   logMatchEnd(match, reason, winnerSessionId, loserSessionId);
   
   // Получаем токены по accountId для отправки
@@ -1674,16 +1669,9 @@ function endMatch(match, reason = 'normal') {
     log(`[ENDMATCH_TIE] match=${match.id} p1Hp=${p1Data.hp} p2Hp=${p2Data.hp} using sessions[0] as winner`);
   }
 
-  // PvE: No rewards (pot = 0, no tokens added)
-  // PvP: WinnerAccountId получает +match.pot (по accountId, не sessionId)
-  if (match.mode === 'PVP' && match.pot > 0) {
-    const winnerAccountId = getAccountIdBySessionId(winnerSessionId);
-    if (winnerAccountId && winnerAccountId !== BOT_ACCOUNT_ID) {
-      db.addTokens(winnerAccountId, match.pot);
-    }
-  }
+  const winnerAccountId = getAccountIdBySessionId(winnerSessionId);
+  economy.settleMatchPayout(match, reason || 'normal', winnerAccountId === BOT_ACCOUNT_ID ? null : winnerAccountId);
 
-  // Структурированный лог (теперь winnerSessionId и loserSessionId уже определены)
   logMatchEnd(match, reason, winnerSessionId, loserSessionId);
   
   // Получаем токены по accountId для отправки
@@ -1708,6 +1696,7 @@ function endMatch(match, reason = 'normal') {
     
     // Единый payload для обоих игроков с winnerId/loserId
     return {
+      matchId: match.id,
       winner: isWinner ? 'YOU' : 'OPPONENT',
       winnerId: winnerSessionId,
       loserId: loserSessionId,
@@ -1719,30 +1708,23 @@ function endMatch(match, reason = 'normal') {
       oppNickname: sessionId === match.sessions[0] ? acc2Nickname : acc1Nickname
     };
   });
-  
-  // Already logged by logMatchEnd above
 
-  // Очистка: не удаляем players, только сбрасываем matchId/layout/confirmed, hp оставляем
+  // Очистка
   p1Data.matchId = null;
   p1Data.confirmed = false;
   p1Data.layout = null;
   p1Data.draftLayout = null;
-  p1Data.hp = START_HP; // Сбрасываем HP на 10 после матча
+  p1Data.hp = START_HP;
 
   p2Data.matchId = null;
   p2Data.confirmed = false;
   p2Data.layout = null;
   p2Data.draftLayout = null;
-  p2Data.hp = START_HP; // Сбрасываем HP на 10 после матча
+  p2Data.hp = START_HP;
 
-  // Удаляем матч из хранилищ
   matchesById.delete(match.id);
   matchIdBySocket.delete(match.player1);
   matchIdBySocket.delete(match.player2);
-  
-  // Socket.IO автоматически очистит room при disconnect всех участников
-  // Но можно явно покинуть room если нужно
-  // io.socketsLeave(match.id);
 }
 
 function handleDisconnect(socketId) {
@@ -1948,12 +1930,12 @@ io.on('connection', (socket) => {
       return;
     }
     
-    // Проверка токенов: если tokens < MATCH_COST, не добавлять в очередь (по accountId)
-    const tokens = db.getTokens(accountId);
-    if (tokens === null || tokens < MATCH_COST) {
-      socket.emit('error_msg', { message: 'Not enough tokens' });
+    const { can, reason } = economy.canStartPvp(accountId);
+    if (!can) {
+      socket.emit('error_msg', { code: 'not_enough_tokens', message: 'Недостаточно токенов для PvP боя' });
       return;
     }
+    const tokens = db.getTokens(accountId);
 
     // Queue должна избегать дубликатов sessionId
     if (queue.includes(sessionId)) {
