@@ -21,7 +21,8 @@ build/
 
 # OS
 .DS_Store
+**/.DS_Store
 Thumbs.db
 
 # Database (optional - можно включить если нужна тестовая БД в репо)
-# server/data/*.sqlite
+server/data/*.sqlite
