@@ -48,6 +48,8 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
   const [hoveredSlotIndex, setHoveredSlotIndex] = useState<number | null>(null);
   const dragPointerIdRef = useRef<number | null>(null);
   const draftDebounceRef = useRef<number | null>(null);
+  const draftToastTimeoutRef = useRef<number | null>(null); // Separate ref for draftToast timeout
+  const slotOccupiedToastTimeoutRef = useRef<number | null>(null); // Separate ref for slotOccupiedToast timeout
   const lastAppliedRoundIndexRef = useRef<number | null>(null);
   const slotsRef = useRef<(CardId | null)[]>([null, null, null]);
   const phaseRef = useRef<'PREP' | 'REVEAL' | 'END'>('PREP');
@@ -142,6 +144,18 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
         if (DEBUG_MATCH) {
           console.log(`[DRAFT_CANCEL] reason=match_end`);
         }
+      }
+      
+      // CRITICAL: Immediately hide all toasts on match end
+      setDraftToast(null);
+      setSlotOccupiedToast(null);
+      if (draftToastTimeoutRef.current) {
+        window.clearTimeout(draftToastTimeoutRef.current);
+        draftToastTimeoutRef.current = null;
+      }
+      if (slotOccupiedToastTimeoutRef.current) {
+        window.clearTimeout(slotOccupiedToastTimeoutRef.current);
+        slotOccupiedToastTimeoutRef.current = null;
       }
     } else {
       // Очищаем END состояние если matchEndPayload стал null
@@ -279,6 +293,18 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
         }
       }
       
+      // CRITICAL: Hide all toasts on phase change (PREP -> REVEAL)
+      setDraftToast(null);
+      setSlotOccupiedToast(null);
+      if (draftToastTimeoutRef.current) {
+        window.clearTimeout(draftToastTimeoutRef.current);
+        draftToastTimeoutRef.current = null;
+      }
+      if (slotOccupiedToastTimeoutRef.current) {
+        window.clearTimeout(slotOccupiedToastTimeoutRef.current);
+        slotOccupiedToastTimeoutRef.current = null;
+      }
+      
       setState('playing');
       setPhase('REVEAL');
       phaseRef.current = 'REVEAL';
@@ -414,6 +440,18 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
           console.log(`[DRAFT_CANCEL] reason=unmount_phase_not_prep phase=${phaseRef.current}`);
         }
       }
+      
+      // CRITICAL: Clear all toast timeouts and states on unmount
+      setDraftToast(null);
+      setSlotOccupiedToast(null);
+      if (draftToastTimeoutRef.current) {
+        window.clearTimeout(draftToastTimeoutRef.current);
+        draftToastTimeoutRef.current = null;
+      }
+      if (slotOccupiedToastTimeoutRef.current) {
+        window.clearTimeout(slotOccupiedToastTimeoutRef.current);
+        slotOccupiedToastTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -518,9 +556,17 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
     // UX: Check if slot is occupied (and not swapping from same slot)
     const targetSlotCard = slots[slotIndex];
     if (targetSlotCard !== null && sourceSlotIndex !== slotIndex) {
-      // Slot is occupied - show toast and prevent drop
-      setSlotOccupiedToast('Слот занят. Убери карту или выбери другой слот.');
-      setTimeout(() => setSlotOccupiedToast(null), 800);
+      // Slot is occupied - show toast and prevent drop (only in PREP phase)
+      if (phaseRef.current === 'PREP') {
+        if (slotOccupiedToastTimeoutRef.current) {
+          clearTimeout(slotOccupiedToastTimeoutRef.current);
+        }
+        setSlotOccupiedToast('Слот занят. Убери карту или выбери другой слот.');
+        slotOccupiedToastTimeoutRef.current = window.setTimeout(() => {
+          setSlotOccupiedToast(null);
+          slotOccupiedToastTimeoutRef.current = null;
+        }, 800);
+      }
       return;
     }
     
@@ -549,14 +595,17 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
         setSlotPopAnimation(slotIndex);
         setTimeout(() => setSlotPopAnimation(null), 300);
         
-        // UX: Toast feedback (debounced)
-        if (draftDebounceRef.current) {
-          clearTimeout(draftDebounceRef.current);
+        // UX: Toast feedback (only in PREP phase)
+        if (phaseRef.current === 'PREP') {
+          if (draftToastTimeoutRef.current) {
+            clearTimeout(draftToastTimeoutRef.current);
+          }
+          setDraftToast('Card placed');
+          draftToastTimeoutRef.current = window.setTimeout(() => {
+            setDraftToast(null);
+            draftToastTimeoutRef.current = null;
+          }, 600);
         }
-        setDraftToast('Card placed');
-        draftDebounceRef.current = window.setTimeout(() => {
-          setDraftToast(null);
-        }, 600);
       }
       
       return next;
@@ -573,14 +622,17 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
       const next = [...prev];
       next[slotIndex] = null;
       
-      // UX: Toast feedback
-      if (draftDebounceRef.current) {
-        clearTimeout(draftDebounceRef.current);
+      // UX: Toast feedback (only in PREP phase)
+      if (phaseRef.current === 'PREP') {
+        if (draftToastTimeoutRef.current) {
+          clearTimeout(draftToastTimeoutRef.current);
+        }
+        setDraftToast('Card removed');
+        draftToastTimeoutRef.current = window.setTimeout(() => {
+          setDraftToast(null);
+          draftToastTimeoutRef.current = null;
+        }, 600);
       }
-      setDraftToast('Card removed');
-      draftDebounceRef.current = window.setTimeout(() => {
-        setDraftToast(null);
-      }, 600);
       
       return next;
     });
@@ -592,14 +644,17 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
       const next = [...prev];
       next[sourceSlotIndex] = null;
       
-      // UX: Toast feedback for card removal
-      if (draftDebounceRef.current) {
-        clearTimeout(draftDebounceRef.current);
+      // UX: Toast feedback for card removal (only in PREP phase)
+      if (phaseRef.current === 'PREP') {
+        if (draftToastTimeoutRef.current) {
+          clearTimeout(draftToastTimeoutRef.current);
+        }
+        setDraftToast('Card removed');
+        draftToastTimeoutRef.current = window.setTimeout(() => {
+          setDraftToast(null);
+          draftToastTimeoutRef.current = null;
+        }, 600);
       }
-      setDraftToast('Card removed');
-      draftDebounceRef.current = window.setTimeout(() => {
-        setDraftToast(null);
-      }, 600);
       
       return next;
     });
@@ -1412,8 +1467,8 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
         );
       })()}
 
-      {/* UX: Slot occupied toast */}
-      {slotOccupiedToast && (
+      {/* UX: Slot occupied toast (only in PREP phase) */}
+      {slotOccupiedToast && phase === 'PREP' && (
         <div style={{
           position: 'fixed',
           bottom: '120px',
@@ -1435,8 +1490,8 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
         </div>
       )}
 
-      {/* UX: Draft toast feedback */}
-      {draftToast && (
+      {/* UX: Draft toast feedback (only in PREP phase) */}
+      {draftToast && phase === 'PREP' && (
         <div style={{
           position: 'fixed',
           bottom: '120px',
