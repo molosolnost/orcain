@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import menuBg from "../assets/menu_bg.png";
+import BackgroundLayout from "../components/BackgroundLayout";
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://orcain-server.onrender.com';
 
@@ -72,61 +74,66 @@ export default function Onboarding({ authToken, onNicknameSet }: OnboardingProps
     }
   };
 
+  // Slightly higher overlay for input readability (still subtle, art stays visible)
   return (
-    <div style={{ 
-      display: 'flex', 
-      flexDirection: 'column', 
-      alignItems: 'center', 
-      justifyContent: 'center',
-      height: '100vh',
-      gap: '20px',
-      padding: '20px'
-    }}>
-      <h1 style={{ fontSize: '36px', margin: 0 }}>Welcome to ORCAIN</h1>
-      <p style={{ fontSize: '18px', color: '#666', textAlign: 'center', maxWidth: '400px' }}>
-        Choose your unique nickname to start playing
-      </p>
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px', width: '100%', maxWidth: '400px' }}>
-        <input
-          type="text"
-          value={nickname}
-          onChange={(e) => {
-            setNickname(e.target.value);
-            setError(null);
-          }}
-          placeholder="Enter your nickname (3-16 characters)"
-          disabled={loading}
-          style={{
-            padding: '12px',
-            fontSize: '16px',
-            border: '2px solid #333',
-            borderRadius: '8px',
-            outline: 'none'
-          }}
-          maxLength={16}
-        />
-        {error && (
-          <div style={{ color: 'red', fontSize: '14px', textAlign: 'center' }}>
-            {error}
-          </div>
-        )}
-        <button
-          type="submit"
-          disabled={loading || nickname.trim().length < 3}
-          style={{
-            padding: '12px 24px',
-            fontSize: '18px',
-            cursor: loading || nickname.trim().length < 3 ? 'not-allowed' : 'pointer',
-            opacity: loading || nickname.trim().length < 3 ? 0.7 : 1,
-            borderRadius: '8px',
-            border: 'none',
-            backgroundColor: '#646cff',
-            color: 'white'
-          }}
-        >
-          {loading ? 'Saving...' : 'Save & Continue'}
-        </button>
-      </form>
-    </div>
+    <BackgroundLayout bgImage={menuBg} overlay={0.24}>
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        gap: '20px',
+        padding: '20px',
+        width: '100%',
+        maxWidth: '500px'
+      }}>
+        <h1 style={{ fontSize: '36px', margin: 0 }}>Welcome to ORCAIN</h1>
+        <p style={{ fontSize: '18px', color: '#666', textAlign: 'center', maxWidth: '400px' }}>
+          Choose your unique nickname to start playing
+        </p>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px', width: '100%', maxWidth: '400px' }}>
+          <input
+            type="text"
+            value={nickname}
+            onChange={(e) => {
+              setNickname(e.target.value);
+              setError(null);
+            }}
+            placeholder="Enter your nickname (3-16 characters)"
+            disabled={loading}
+            style={{
+              padding: '12px',
+              fontSize: '16px',
+              border: '2px solid #333',
+              borderRadius: '8px',
+              outline: 'none',
+              backgroundColor: 'rgba(255, 255, 255, 0.95)'
+            }}
+            maxLength={16}
+          />
+          {error && (
+            <div style={{ color: 'red', fontSize: '14px', textAlign: 'center' }}>
+              {error}
+            </div>
+          )}
+          <button
+            type="submit"
+            disabled={loading || nickname.trim().length < 3}
+            style={{
+              padding: '12px 24px',
+              fontSize: '18px',
+              cursor: loading || nickname.trim().length < 3 ? 'not-allowed' : 'pointer',
+              opacity: loading || nickname.trim().length < 3 ? 0.7 : 1,
+              borderRadius: '8px',
+              border: 'none',
+              backgroundColor: '#646cff',
+              color: 'white'
+            }}
+          >
+            {loading ? 'Saving...' : 'Save & Continue'}
+          </button>
+        </form>
+      </div>
+    </BackgroundLayout>
   );
 }

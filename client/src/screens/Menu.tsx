@@ -1,5 +1,6 @@
 import orcainLogo from "../assets/orcain_logo.png";
 import menuBg from "../assets/menu_bg.png";
+import BackgroundLayout from "../components/BackgroundLayout";
 
 // Build version badge: mode + sha
 const buildMode: 'dev' | 'prod' = import.meta.env.PROD ? 'prod' : 'dev';
@@ -20,47 +21,12 @@ export default function Menu({ onStartBattle, onStartPvE, onCancelSearch, isSear
   // Кнопка Start Battle disabled если tokens !== null && tokens < 1
   const hasEnoughTokens = tokens !== null && tokens >= 1;
 
-  // Debug mode: adjust overlay opacity
-  const overlayOpacity = isDebug ? 0.55 : 0.45;
-  const bgOpacity = isDebug ? 0.3 : 0.5;
+  // Subtle overlay only for readability; no opacity on bg (keeps original tones)
+  const overlay = isDebug ? 0.2 : 0.18;
 
   return (
-    <div style={{ 
-      position: 'relative',
-      minHeight: '100vh', // Fallback for browsers without dvh support, '100dvh' can be added via CSS custom properties if needed
-      overflow: 'hidden',
-      paddingTop: 'env(safe-area-inset-top, 0px)',
-      paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center'
-    }}>
-      {/* Background layer */}
+    <BackgroundLayout bgImage={menuBg} overlay={overlay}>
       <div style={{
-        position: 'absolute',
-        inset: 0,
-        backgroundImage: `url(${menuBg})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-        opacity: bgOpacity,
-        pointerEvents: 'none'
-      }} />
-      
-      {/* Dark overlay */}
-      <div style={{
-        position: 'absolute',
-        inset: 0,
-        backgroundColor: `rgba(0, 0, 0, ${overlayOpacity})`,
-        pointerEvents: 'none'
-      }} />
-      
-      {/* Content layer */}
-      <div style={{
-        position: 'relative',
-        zIndex: 1,
-        pointerEvents: 'auto',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -146,6 +112,6 @@ export default function Menu({ onStartBattle, onStartPvE, onCancelSearch, isSear
           </div>
         )}
       </div>
-    </div>
+    </BackgroundLayout>
   );
 }

@@ -1,3 +1,13 @@
+/* Full-viewport height: 100dvh with 100vh fallback for BackgroundLayout */
+.bl-root {
+  height: 100vh;
+  height: 100dvh;
+}
+.bl-content {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
 html,
 body {
   margin: 0;
