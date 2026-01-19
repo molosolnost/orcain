@@ -6,7 +6,7 @@ import Login from './screens/Login';
 import Menu from './screens/Menu';
 import Battle from './screens/Battle';
 import Onboarding from './screens/Onboarding';
-import { setupViewportListeners } from './utils/viewport';
+import { initAppViewport } from './lib/appViewport';
 import './App.css';
 
 type Screen = 'login' | 'menu' | 'battle' | 'onboarding';
@@ -66,9 +66,10 @@ function DebugOverlay({
       <div>currentScreen: {currentScreen}</div>
       <div>bootState: {bootState}</div>
       <div>
-        vh: {typeof window !== 'undefined' ? window.innerHeight : '—'} / tg:{' '}
-        {typeof window !== 'undefined' ? String((window as any).Telegram?.WebApp?.viewportHeight ?? 'n/a') : '—'} / app:{' '}
-        {typeof document !== 'undefined' ? getComputedStyle(document.documentElement).getPropertyValue('--app-height') || '—' : '—'}
+        inner: {typeof window !== 'undefined' ? window.innerHeight : '—'} | vv:{' '}
+        {typeof window !== 'undefined' ? String((window as any).visualViewport?.height ?? 'n/a') : '—'} | tg:{' '}
+        {typeof window !== 'undefined' ? String((window as any).Telegram?.WebApp?.viewportHeight ?? 'n/a') : '—'} | app:{' '}
+        {typeof document !== 'undefined' ? getComputedStyle(document.documentElement).getPropertyValue('--app-height').trim() || '—' : '—'}
       </div>
     </div>
   );
@@ -95,9 +96,9 @@ function App() {
   const [authStatus, setAuthStatus] = useState<number | null>(null);
   const [telegramAuthError, setTelegramAuthError] = useState<string | null>(null);
 
-  // Viewport: --app-height from Telegram or innerHeight, resize + viewportChanged
+  // Viewport: --app-height from tg/visualViewport/innerHeight, resize + viewportChanged
   useEffect(() => {
-    return setupViewportListeners();
+    return initAppViewport();
   }, []);
 
   // Инициализация: проверяем Telegram Mini App или читаем authToken из localStorage

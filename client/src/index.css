@@ -5,30 +5,39 @@
 }
 
 html,
+body,
+#root {
+  height: 100%;
+}
+
+html,
 body {
   margin: 0;
   padding: 0;
-  height: 100%;
   overscroll-behavior: none;
 }
 
 body {
-  min-height: var(--app-height);
   overflow: hidden;
 }
 
 #root {
-  height: var(--app-height);
-  min-height: var(--app-height);
+  min-height: var(--app-height, 100vh);
   overflow: hidden;
 }
 
-/* BackgroundLayout: fullscreen uses --app-height */
+/* Full-screen containers: fixed height from --app-height to prevent Android jerk */
+.app-screen {
+  height: var(--app-height, 100vh);
+  width: 100%;
+  overflow: hidden;
+}
+
 .bl-root {
-  height: var(--app-height);
+  height: var(--app-height, 100vh);
 }
 .bl-content {
-  min-height: var(--app-height);
+  min-height: var(--app-height, 100vh);
 }
 
 /* Защита от pinch-zoom только на html/body */

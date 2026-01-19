@@ -15,13 +15,11 @@ export default function BackgroundLayout({
 }: BackgroundLayoutProps) {
   return (
     <div
-      className="bl-root"
+      className="app-screen bl-root"
       style={{
         position: 'fixed',
         inset: 0,
-        width: '100vw',
-        height: 'var(--app-height)',
-        overflow: 'hidden'
+        width: '100vw'
       }}
     >
       {/* Background: full-bleed, NO opacity (keeps original tones) */}

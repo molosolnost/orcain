@@ -1,10 +1,10 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { setAppHeight } from './utils/viewport'
+import { applyAppHeight } from './lib/appViewport'
 import './index.css'
 import App from './App.tsx'
 
-setAppHeight()
+applyAppHeight()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

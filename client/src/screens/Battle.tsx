@@ -68,6 +68,11 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
 
   const DEBUG_MATCH = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
 
+  // Стабилизация при входе в Battle: scroll в 0, нет дерганья
+  useEffect(() => {
+    try { window.scrollTo(0, 0); } catch (_) {}
+  }, []);
+
   // Блокировка scroll на body/html при монтировании Battle
   useEffect(() => {
     const html = document.documentElement;
@@ -915,22 +920,23 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
   };
 
   return (
-    <div style={{ 
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      height: 'var(--app-height)',
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden',
-      paddingTop: 'env(safe-area-inset-top, 0)',
-      paddingBottom: 'env(safe-area-inset-bottom, 0)',
-      backgroundColor: '#242424',
-      color: 'rgba(255, 255, 255, 0.87)',
-      zIndex: 1
-    }}>
+    <div
+      className="app-screen"
+      style={{ 
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        paddingTop: 'env(safe-area-inset-top, 0)',
+        paddingBottom: 'env(safe-area-inset-bottom, 0)',
+        backgroundColor: '#242424',
+        color: 'rgba(255, 255, 255, 0.87)',
+        zIndex: 1
+      }}
+    >
       {/* Compact Top Bar - 1 строка максимум */}
       <div style={{ 
         flexShrink: 0,
