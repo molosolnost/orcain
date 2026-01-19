@@ -20,6 +20,7 @@ export default function BackgroundLayout({
         position: 'fixed',
         inset: 0,
         width: '100vw',
+        height: 'var(--app-height)',
         overflow: 'hidden'
       }}
     >

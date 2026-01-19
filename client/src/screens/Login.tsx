@@ -47,7 +47,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       flexDirection: 'column', 
       alignItems: 'center', 
       justifyContent: 'center',
-      height: '100vh',
+      height: 'var(--app-height)',
       gap: '20px'
     }}>
       <h1 style={{ fontSize: '48px', margin: 0 }}>ORCAIN</h1>

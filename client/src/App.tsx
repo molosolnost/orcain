@@ -6,6 +6,7 @@ import Login from './screens/Login';
 import Menu from './screens/Menu';
 import Battle from './screens/Battle';
 import Onboarding from './screens/Onboarding';
+import { setupViewportListeners } from './utils/viewport';
 import './App.css';
 
 type Screen = 'login' | 'menu' | 'battle' | 'onboarding';
@@ -64,6 +65,11 @@ function DebugOverlay({
       <div>nickname: {nickname || '<empty>'}</div>
       <div>currentScreen: {currentScreen}</div>
       <div>bootState: {bootState}</div>
+      <div>
+        vh: {typeof window !== 'undefined' ? window.innerHeight : '—'} / tg:{' '}
+        {typeof window !== 'undefined' ? String((window as any).Telegram?.WebApp?.viewportHeight ?? 'n/a') : '—'} / app:{' '}
+        {typeof document !== 'undefined' ? getComputedStyle(document.documentElement).getPropertyValue('--app-height') || '—' : '—'}
+      </div>
     </div>
   );
 }
@@ -88,6 +94,11 @@ function App() {
   const [authRequest, setAuthRequest] = useState<string>('idle');
   const [authStatus, setAuthStatus] = useState<number | null>(null);
   const [telegramAuthError, setTelegramAuthError] = useState<string | null>(null);
+
+  // Viewport: --app-height from Telegram or innerHeight, resize + viewportChanged
+  useEffect(() => {
+    return setupViewportListeners();
+  }, []);
 
   // Инициализация: проверяем Telegram Mini App или читаем authToken из localStorage
   useEffect(() => {
@@ -445,7 +456,7 @@ function App() {
   if (bootState === 'checking' || bootState === 'telegram_auth') {
     return (
       <>
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'var(--app-height)' }}>
           Authenticating...
         </div>
         <DebugOverlay
@@ -467,7 +478,7 @@ function App() {
   if (bootState === 'error' && hasTelegramWebApp && initDataLen > 0 && !authToken) {
     return (
       <>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: '12px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 'var(--app-height)', gap: '12px' }}>
           <div>Telegram authentication failed.</div>
           <div style={{ fontSize: '12px', color: '#888' }}>
             {telegramAuthError || 'Please retry from Telegram.'}

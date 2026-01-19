@@ -1,19 +1,34 @@
-/* Full-viewport height: 100dvh with 100vh fallback for BackgroundLayout */
-.bl-root {
-  height: 100vh;
-  height: 100dvh;
-}
-.bl-content {
-  min-height: 100vh;
-  min-height: 100dvh;
+/* Single source of truth for height: prevents Android/Telegram viewport jump */
+:root {
+  --app-height: 100vh;
+  --app-width: 100vw;
 }
 
 html,
 body {
   margin: 0;
   padding: 0;
+  height: 100%;
   overscroll-behavior: none;
-  /* Убираем глобальный touch-action: none, чтобы разрешить скролл */
+}
+
+body {
+  min-height: var(--app-height);
+  overflow: hidden;
+}
+
+#root {
+  height: var(--app-height);
+  min-height: var(--app-height);
+  overflow: hidden;
+}
+
+/* BackgroundLayout: fullscreen uses --app-height */
+.bl-root {
+  height: var(--app-height);
+}
+.bl-content {
+  min-height: var(--app-height);
 }
 
 /* Защита от pinch-zoom только на html/body */
@@ -65,7 +80,7 @@ body {
   display: flex;
   place-items: center;
   min-width: 320px;
-  min-height: 100vh;
+  min-height: var(--app-height);
 }
 
 body.dragging {

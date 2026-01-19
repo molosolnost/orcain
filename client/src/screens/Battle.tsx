@@ -921,7 +921,7 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
       left: 0,
       right: 0,
       bottom: 0,
-      height: '100dvh',
+      height: 'var(--app-height)',
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
