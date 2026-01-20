@@ -40,16 +40,13 @@ function chargePvpStart(accountId, match) {
 }
 
 /**
- * Settle PvP pot: pay winner or burn. PvE is always skip.
+ * Settle PvP pot: pay winner or burn. PvP-only; callers must not invoke for PvE.
  * @param {object} match - { mode, pot, id }
  * @param {string} reason - 'normal' | 'timeout' | 'disconnect'
  * @param {string|null} winnerAccountId - null for both-afk (burn)
  */
 function settleMatchPayout(match, reason, winnerAccountId) {
-  if (match.mode === 'PVE') {
-    console.log(`[ECON_SETTLE] matchId=${match.id} reason=${reason} action=skip (PVE)`);
-    return;
-  }
+  if (match.mode === 'PVE') return;
   if (match.pot < 0) {
     console.log(`[ECON_GUARD_FAIL] matchId=${match.id} pot=${match.pot} (negative, skip)`);
     return;

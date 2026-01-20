@@ -815,7 +815,7 @@ function endMatchBothAfk(match) {
   const p1Hp = p1Data ? p1Data.hp : START_HP;
   const p2Hp = p2Data ? p2Data.hp : START_HP;
   
-  economy.settleMatchPayout(match, 'timeout', null);
+  if (match.mode === 'PVP') economy.settleMatchPayout(match, 'timeout', null);
 
   // Получаем токены по accountId для отправки
   const acc1AccountId = getAccountIdBySessionId(match.sessions[0]);
@@ -1536,7 +1536,7 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
   log(`[FORFEIT] match=${match.id} loser=${loserSessionId} winner=${winnerSessionId} reason=${reason}`);
 
   const winnerAccountId = getAccountIdBySessionId(winnerSessionId);
-  economy.settleMatchPayout(match, reason || 'normal', winnerAccountId === BOT_ACCOUNT_ID ? null : winnerAccountId);
+  if (match.mode === 'PVP') economy.settleMatchPayout(match, reason || 'normal', winnerAccountId === BOT_ACCOUNT_ID ? null : winnerAccountId);
 
   logMatchEnd(match, reason, winnerSessionId, loserSessionId);
   
@@ -1545,7 +1545,7 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
   const acc2AccountId = getAccountIdBySessionId(match.sessions[1]);
   const acc1Tokens = acc1AccountId ? db.getTokens(acc1AccountId) : START_TOKENS;
   const acc2Tokens = acc2AccountId ? db.getTokens(acc2AccountId) : START_TOKENS;
-  log(`[TOKENS] end winner=${winnerSessionId} acc1tokens=${acc1Tokens} acc2tokens=${acc2Tokens}`);
+  if (match.mode === 'PVP') log(`[TOKENS] end winner=${winnerSessionId} acc1tokens=${acc1Tokens} acc2tokens=${acc2Tokens}`);
 
   // Получаем nickname для обоих игроков
   const acc1Nickname = acc1AccountId ? (db.getNickname(acc1AccountId) || null) : null;
@@ -1670,7 +1670,7 @@ function endMatch(match, reason = 'normal') {
   }
 
   const winnerAccountId = getAccountIdBySessionId(winnerSessionId);
-  economy.settleMatchPayout(match, reason || 'normal', winnerAccountId === BOT_ACCOUNT_ID ? null : winnerAccountId);
+  if (match.mode === 'PVP') economy.settleMatchPayout(match, reason || 'normal', winnerAccountId === BOT_ACCOUNT_ID ? null : winnerAccountId);
 
   logMatchEnd(match, reason, winnerSessionId, loserSessionId);
   
@@ -1679,7 +1679,7 @@ function endMatch(match, reason = 'normal') {
   const acc2AccountId = getAccountIdBySessionId(match.sessions[1]);
   const acc1Tokens = acc1AccountId ? db.getTokens(acc1AccountId) : START_TOKENS;
   const acc2Tokens = acc2AccountId ? db.getTokens(acc2AccountId) : START_TOKENS;
-  log(`[TOKENS] end winner=${winnerSessionId} acc1tokens=${acc1Tokens} acc2tokens=${acc2Tokens}`);
+  if (match.mode === 'PVP') log(`[TOKENS] end winner=${winnerSessionId} acc1tokens=${acc1Tokens} acc2tokens=${acc2Tokens}`);
 
   // Получаем nickname для обоих игроков
   const acc1Nickname = acc1AccountId ? (db.getNickname(acc1AccountId) || null) : null;

@@ -29,6 +29,8 @@ async function run(port, logBuffer) {
       common.waitForEvent(s, 'match_end', 3000).then(() => 'match')
     ]);
     if (re === 'match') { gotMatchEnd = true; break; }
+    // Brief yield so match_end (sent after round_end) can arrive and be buffered before we look
+    await common.delay(30);
     const next = await Promise.race([
       common.waitForEventBuffered(s, 'prep_start', { timeoutMs: 4000 }).then(() => 'prep'),
       common.waitForEventBuffered(s, 'match_end', { timeoutMs: 4000 }).then(() => 'match')
