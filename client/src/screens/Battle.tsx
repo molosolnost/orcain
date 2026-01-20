@@ -9,6 +9,7 @@ type BattleState = 'prep' | 'playing' | 'ended';
 interface BattleProps {
   onBackToMenu: () => void;
   onPlayAgain?: () => void;
+  onBattleMounted?: () => void;
   matchMode?: 'pvp' | 'pve' | null;
   tokens: number | null;
   matchEndPayload: MatchEndPayload | null;
@@ -16,7 +17,7 @@ interface BattleProps {
   currentMatchId: string | null;
 }
 
-export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, matchEndPayload, lastPrepStart, currentMatchId }: BattleProps) {
+export default function Battle({ onBackToMenu, onPlayAgain, onBattleMounted, matchMode, tokens, matchEndPayload, lastPrepStart, currentMatchId }: BattleProps) {
   const [state, setState] = useState<BattleState>('prep');
   const [yourHp, setYourHp] = useState(10);
   const [oppHp, setOppHp] = useState(10);
@@ -72,6 +73,10 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
   const battleMountTsRef = useRef<number | null>(null);
   const firstPrepLoggedRef = useRef(false);
   const firstStepRevealLoggedRef = useRef(false);
+
+  useEffect(() => {
+    onBattleMounted?.();
+  }, []);
 
   // Lock viewport height до первого кадра, чтобы убрать рывок на Android (resize не меняет --app-height в бою).
   // scrollTo(0,0) removed: it can cause a visible jump on Android WebView; overflow:hidden and root height already prevent scroll.

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { socketManager } from './net/socket';
 import { getAuthToken, getSessionId, clearAuth, getAccountId } from './net/ids';
 import type { MatchEndPayload, PrepStartPayload } from './net/types';
@@ -6,6 +6,7 @@ import Login from './screens/Login';
 import Menu from './screens/Menu';
 import Battle from './screens/Battle';
 import Onboarding from './screens/Onboarding';
+import TransitionShield from './components/TransitionShield';
 import { initAppViewport, lockAppHeightFor, getIsAppHeightLocked } from './lib/appViewport';
 import { applyTelegramUi } from './lib/telegramUi';
 import './App.css';
@@ -89,7 +90,36 @@ function App() {
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [lastPrepStart, setLastPrepStart] = useState<PrepStartPayload | null>(null);
   const [matchMode, setMatchMode] = useState<'pvp' | 'pve' | null>(null); // Track PvP vs PvE
-  
+  const [isTransitionShieldOn, setTransitionShieldOn] = useState(false);
+
+  const transitionStartedAtRef = useRef<number>(0);
+  const lastMatchIdRef = useRef<string | null>(null);
+  const safetyTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const turnOffShield = useCallback((reason: string) => {
+    if (safetyTimeoutIdRef.current) {
+      clearTimeout(safetyTimeoutIdRef.current);
+      safetyTimeoutIdRef.current = null;
+    }
+    setTransitionShieldOn(false);
+    if (DEBUG_MODE) {
+      const elapsed = Date.now() - transitionStartedAtRef.current;
+      console.log(`[SHIELD] off reason=${reason} elapsed=${elapsed}`);
+    }
+  }, []);
+
+  function startBattleTransitionShield(reason: 'start_pvp' | 'start_pve') {
+    setTransitionShieldOn(true);
+    transitionStartedAtRef.current = Date.now();
+    lastMatchIdRef.current = null;
+    if (safetyTimeoutIdRef.current) {
+      clearTimeout(safetyTimeoutIdRef.current);
+      safetyTimeoutIdRef.current = null;
+    }
+    safetyTimeoutIdRef.current = setTimeout(() => turnOffShield('timeout'), 1200);
+    if (DEBUG_MODE) console.log(`[SHIELD] on reason=${reason}`);
+  }
+
   // Boot state machine
   const [bootState, setBootState] = useState<BootState>('checking');
   const [hasTelegramWebApp, setHasTelegramWebApp] = useState(false);
@@ -328,6 +358,7 @@ function App() {
 
     socketManager.onMatchFound((payload) => {
       if (payload.matchId) {
+        lastMatchIdRef.current = payload.matchId;
         setCurrentMatchId(payload.matchId);
       }
       // Infer matchMode from pot (PvE has pot=0)
@@ -347,6 +378,7 @@ function App() {
     });
 
     socketManager.onPrepStart((payload: PrepStartPayload) => {
+      turnOffShield('prep_start');
       // DEBUG: логируем получение prep_start
       if (DEBUG_MODE) {
         console.log(`[PREP_START_RECEIVED] round=${payload.roundIndex} deadlineTs=${payload.deadlineTs} yourNickname=${payload.yourNickname || '<null>'} oppNickname=${payload.oppNickname || '<null>'} currentScreen=${screen} currentMatchId=${currentMatchId}`);
@@ -393,7 +425,7 @@ function App() {
     });
 
     // Сокет должен жить всю сессию вкладки, не отключаем при cleanup
-  }, [authToken, currentMatchId, nickname, screen]);
+  }, [authToken, currentMatchId, nickname, screen, turnOffShield]);
 
   const handleLoginSuccess = ({ authToken: token, tokens: initialTokens }: { authToken: string; tokens: number }) => {
     setAuthToken(token);
@@ -408,18 +440,18 @@ function App() {
   };
 
   const handleStartBattle = () => {
-    lockAppHeightFor(600); // freeze --app-height during transition to reduce Android TG jump
+    startBattleTransitionShield('start_pvp');
+    lockAppHeightFor(600);
     setMatchMode('pvp');
     setIsSearching(true);
     socketManager.queueJoin();
   };
 
   const handleStartPvE = () => {
-    lockAppHeightFor(600); // freeze --app-height during transition to reduce Android TG jump
+    startBattleTransitionShield('start_pve');
+    lockAppHeightFor(600);
     setMatchMode('pve');
-    // PvE is immediate - no queue, no tokens
     socketManager.pveStart();
-    // match_found will be sent, which will switch to battle screen
   };
 
   const handleCancelSearch = () => {
@@ -591,6 +623,7 @@ function App() {
           <Battle 
             onBackToMenu={handleBackToMenu}
             onPlayAgain={handlePlayAgain}
+            onBattleMounted={() => turnOffShield('battle_mounted')}
             matchMode={matchMode}
             tokens={tokens}
             matchEndPayload={matchEndPayload}
@@ -610,6 +643,7 @@ function App() {
         currentScreen={currentScreenForDebug}
         bootState={bootState}
       />
+      <TransitionShield visible={isTransitionShieldOn} />
     </>
   );
 }
