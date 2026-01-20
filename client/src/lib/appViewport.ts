@@ -104,7 +104,9 @@ export function lockAppHeightFor(ms: number): () => void {
   };
 }
 
-export function initAppViewport(): () => void {
+export function initAppViewport(opts?: { skip?: boolean }): () => void {
+  if (opts?.skip) return () => {};
+
   applyAppHeight();
   try {
     (window as any).Telegram?.WebApp?.expand?.();
