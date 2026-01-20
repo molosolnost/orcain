@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { lockAppHeight, unlockAppHeight } from '../lib/appViewport';
 import { socketManager } from '../net/socket';
 import type { CardId, PrepStartPayload, StepRevealPayload, MatchEndPayload } from '../net/types';
 import { cardIdToType } from '../cards';
@@ -68,9 +69,11 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
 
   const DEBUG_MATCH = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
 
-  // Стабилизация при входе в Battle: scroll в 0, нет дерганья
-  useEffect(() => {
+  // Lock viewport height до первого кадра, чтобы убрать рывок на Android (resize не меняет --app-height в бою)
+  useLayoutEffect(() => {
+    lockAppHeight('battle_mount');
     try { window.scrollTo(0, 0); } catch (_) {}
+    return () => { unlockAppHeight('battle_unmount'); };
   }, []);
 
   // Блокировка scroll на body/html при монтировании Battle

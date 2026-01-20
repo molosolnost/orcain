@@ -2,11 +2,24 @@
  * Single source of truth for app height to prevent Android/Telegram WebView
  * viewport jump and layout shift. Uses Telegram.viewportHeight, then
  * visualViewport.height, then innerHeight. Updates --app-height on :root.
+ *
+ * LOCK: during Battle we lock --app-height to avoid resize-driven jumps;
+ * resize/viewportChanged still call applyAppHeight() but it uses lockedHeight.
  */
 
 const DEBUG =
   typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).get('debug') === '1';
+
+const THROTTLE_MS = 120;
+
+let locked = false;
+let lockedHeight: number | null = null;
+
+function applyAppHeightWithValue(value: number): void {
+  if (typeof document === 'undefined' || !document.documentElement) return;
+  document.documentElement.style.setProperty('--app-height', `${value}px`);
+}
 
 export function computeAppHeight(): number {
   if (typeof window === 'undefined') return 0;
@@ -21,14 +34,38 @@ export function computeAppHeight(): number {
 
 export function applyAppHeight(): void {
   if (typeof document === 'undefined' || !document.documentElement) return;
+  if (locked && lockedHeight !== null) {
+    applyAppHeightWithValue(lockedHeight);
+    if (DEBUG) console.log('[VIEWPORT] locked, skip recompute');
+    return;
+  }
   const inner = typeof window !== 'undefined' ? window.innerHeight : 0;
   const vv = (window as any).visualViewport?.height;
   const tg = (window as any).Telegram?.WebApp?.viewportHeight;
   const set = computeAppHeight();
-  document.documentElement.style.setProperty('--app-height', `${set}px`);
+  applyAppHeightWithValue(set);
   if (DEBUG) {
     console.log(`[VIEWPORT] inner=${inner} vv=${vv ?? 'n/a'} tg=${tg ?? 'n/a'} set=${set}`);
   }
+}
+
+export function lockAppHeight(reason?: string): void {
+  locked = true;
+  lockedHeight = computeAppHeight();
+  applyAppHeightWithValue(lockedHeight);
+  if (DEBUG) console.log('[VIEWPORT_LOCK]', { reason, lockedHeight });
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => {
+      if (lockedHeight !== null) applyAppHeightWithValue(lockedHeight);
+    });
+  }
+}
+
+export function unlockAppHeight(reason?: string): void {
+  locked = false;
+  lockedHeight = null;
+  applyAppHeight();
+  if (DEBUG) console.log('[VIEWPORT_UNLOCK]', { reason });
 }
 
 export function initAppViewport(): () => void {
@@ -37,7 +74,22 @@ export function initAppViewport(): () => void {
     (window as any).Telegram?.WebApp?.expand?.();
   } catch (_) {}
 
-  const onResize = () => applyAppHeight();
+  let lastApply = 0;
+  let scheduled: ReturnType<typeof setTimeout> | null = null;
+  const onResize = () => {
+    const now = Date.now();
+    if (now - lastApply >= THROTTLE_MS) {
+      lastApply = now;
+      applyAppHeight();
+    } else if (!scheduled) {
+      scheduled = setTimeout(() => {
+        scheduled = null;
+        lastApply = Date.now();
+        applyAppHeight();
+      }, THROTTLE_MS - (now - lastApply));
+    }
+  };
+
   window.addEventListener('resize', onResize);
   const vv = (window as any).visualViewport;
   if (vv && typeof vv.addEventListener === 'function') {
@@ -50,6 +102,7 @@ export function initAppViewport(): () => void {
   }
 
   return () => {
+    if (scheduled) clearTimeout(scheduled);
     window.removeEventListener('resize', onResize);
     if (vv && typeof vv.removeEventListener === 'function') {
       vv.removeEventListener('resize', onResize);
