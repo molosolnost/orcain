@@ -1355,12 +1355,6 @@ function startPrepPhase(match) {
   // Сбрасываем hadDraftThisRound для нового раунда
   match.hadDraftThisRound.set(match.sessions[0], false);
   match.hadDraftThisRound.set(match.sessions[1], false);
-  
-  // PvE: Submit bot draft immediately after prep starts
-  if (match.mode === 'PVE') {
-    // Bot always submits draft (never AFK)
-    submitBotDraft(match);
-  }
 
   const deadlineTs = Date.now() + PREP_MS;
   match.prepDeadline = deadlineTs;
@@ -1376,8 +1370,9 @@ function startPrepPhase(match) {
   // Get hands from match
   const p1Hand = match.hands.get(match.sessions[0]) || [];
   const p2Hand = match.hands.get(match.sessions[1]) || [];
-  
-  // Отправляем prep_start
+
+  // INVARIANT: match_found → prep_start → (steps) → match_end. Emit prep_start BEFORE
+  // submitBotDraft/prepTimer so no path can reach match_end without at least one prep_start.
   emitToBoth(match, 'prep_start', (socketId) => {
     const sessionId = getSessionIdBySocket(socketId);
     const accountId = getAccountIdBySessionId(sessionId);
@@ -1413,6 +1408,11 @@ function startPrepPhase(match) {
       };
     }
   });
+
+  // PvE: Submit bot draft after prep_start (never before; prep_start must always be emitted first)
+  if (match.mode === 'PVE') {
+    submitBotDraft(match);
+  }
 
   // Таймер: при истечении для каждого НЕ confirmed генерируем случайную раскладку и ставим confirmed=true
   // ВАЖНО: этот таймер ВСЕГДА срабатывает и запускает playRound, никаких условий не должно блокировать

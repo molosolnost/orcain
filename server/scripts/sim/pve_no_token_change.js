@@ -22,9 +22,11 @@ async function run(port, logBuffer) {
     s.emit('layout_confirm', { layout: [...layout] });
     await common.waitForEvent(s, 'confirm_ok', 2000);
     for (let i = 0; i < 3; i++) await common.waitForEvent(s, 'step_reveal', 3000);
+    // Use waitForEvent for match_end so we don't consume from buffer when 'round' wins;
+    // match_end must remain in buffer for the 'next' race (prep_start vs match_end).
     const re = await Promise.race([
       common.waitForEvent(s, 'round_end', 3000).then(() => 'round'),
-      common.waitForEventBuffered(s, 'match_end', { timeoutMs: 3000 }).then(() => 'match')
+      common.waitForEvent(s, 'match_end', 3000).then(() => 'match')
     ]);
     if (re === 'match') { gotMatchEnd = true; break; }
     const next = await Promise.race([
