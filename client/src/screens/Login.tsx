@@ -48,7 +48,8 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       alignItems: 'center', 
       justifyContent: 'center',
       height: 'var(--app-height)',
-      gap: '20px'
+      gap: '20px',
+      backgroundColor: '#111'
     }}>
       <h1 style={{ fontSize: '48px', margin: 0 }}>ORCAIN</h1>
       <button 

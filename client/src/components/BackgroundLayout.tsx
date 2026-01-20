@@ -19,7 +19,8 @@ export default function BackgroundLayout({
       style={{
         position: 'fixed',
         inset: 0,
-        width: '100vw'
+        width: '100vw',
+        backgroundColor: '#111'
       }}
     >
       {/* Background: full-bleed, NO opacity (keeps original tones) */}

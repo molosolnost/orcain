@@ -6,7 +6,8 @@ import Login from './screens/Login';
 import Menu from './screens/Menu';
 import Battle from './screens/Battle';
 import Onboarding from './screens/Onboarding';
-import { initAppViewport } from './lib/appViewport';
+import { initAppViewport, lockAppHeightFor, getIsAppHeightLocked } from './lib/appViewport';
+import { applyTelegramUi } from './lib/telegramUi';
 import './App.css';
 
 type Screen = 'login' | 'menu' | 'battle' | 'onboarding';
@@ -71,6 +72,7 @@ function DebugOverlay({
         {typeof window !== 'undefined' ? String((window as any).Telegram?.WebApp?.viewportHeight ?? 'n/a') : '—'} | app:{' '}
         {typeof document !== 'undefined' ? getComputedStyle(document.documentElement).getPropertyValue('--app-height').trim() || '—' : '—'}
       </div>
+      <div>appHeightLocked: {String(getIsAppHeightLocked())} | --app-height: {typeof document !== 'undefined' ? getComputedStyle(document.documentElement).getPropertyValue('--app-height').trim() || '—' : '—'}</div>
     </div>
   );
 }
@@ -99,6 +101,11 @@ function App() {
   // Viewport: --app-height from tg/visualViewport/innerHeight, resize + viewportChanged
   useEffect(() => {
     return initAppViewport();
+  }, []);
+
+  // Telegram WebApp: dark background/header to prevent native white flash (once on mount)
+  useEffect(() => {
+    applyTelegramUi();
   }, []);
 
   // Инициализация: проверяем Telegram Mini App или читаем authToken из localStorage
@@ -401,12 +408,14 @@ function App() {
   };
 
   const handleStartBattle = () => {
+    lockAppHeightFor(600); // freeze --app-height during transition to reduce Android TG jump
     setMatchMode('pvp');
     setIsSearching(true);
     socketManager.queueJoin();
   };
 
   const handleStartPvE = () => {
+    lockAppHeightFor(600); // freeze --app-height during transition to reduce Android TG jump
     setMatchMode('pve');
     // PvE is immediate - no queue, no tokens
     socketManager.pveStart();
@@ -457,7 +466,7 @@ function App() {
   if (bootState === 'checking' || bootState === 'telegram_auth') {
     return (
       <>
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'var(--app-height)' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'var(--app-height)', backgroundColor: '#111' }}>
           Authenticating...
         </div>
         <DebugOverlay
@@ -479,7 +488,7 @@ function App() {
   if (bootState === 'error' && hasTelegramWebApp && initDataLen > 0 && !authToken) {
     return (
       <>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 'var(--app-height)', gap: '12px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 'var(--app-height)', gap: '12px', backgroundColor: '#111' }}>
           <div>Telegram authentication failed.</div>
           <div style={{ fontSize: '12px', color: '#888' }}>
             {telegramAuthError || 'Please retry from Telegram.'}
@@ -548,7 +557,7 @@ function App() {
   if (!connected && authToken) {
     return (
       <>
-        <div>Connecting...</div>
+        <div style={{ backgroundColor: '#111', height: 'var(--app-height)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Connecting...</div>
         <DebugOverlay
           hasTelegram={hasTelegramWebApp}
           initDataLen={initDataLen}

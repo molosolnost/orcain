@@ -68,11 +68,29 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
   const prevOppHpRef = useRef<number>(10);
 
   const DEBUG_MATCH = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
+  const androidTg = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent) && !!(window as any).Telegram?.WebApp;
+  const battleMountTsRef = useRef<number | null>(null);
+  const firstPrepLoggedRef = useRef(false);
+  const firstStepRevealLoggedRef = useRef(false);
 
-  // Lock viewport height до первого кадра, чтобы убрать рывок на Android (resize не меняет --app-height в бою)
+  // Lock viewport height до первого кадра, чтобы убрать рывок на Android (resize не меняет --app-height в бою).
+  // scrollTo(0,0) removed: it can cause a visible jump on Android WebView; overflow:hidden and root height already prevent scroll.
   useLayoutEffect(() => {
     lockAppHeight('battle_mount');
-    try { window.scrollTo(0, 0); } catch (_) {}
+    const ts = Date.now();
+    battleMountTsRef.current = ts;
+    if (DEBUG_MATCH) {
+      const tg = (window as any).Telegram?.WebApp;
+      console.log(`[BATTLE_DBG] first render/mount`, { ts, inner: window.innerHeight, vv: (window as any).visualViewport?.height, tg: tg?.viewportHeight, app: getComputedStyle(document.documentElement).getPropertyValue('--app-height').trim() });
+      const b = (window as any).__battleDebug = (window as any).__battleDebug || {};
+      b.battleMountMs = b.screenToBattleTs != null ? ts - b.screenToBattleTs : 0;
+      requestAnimationFrame(() => {
+        if (battleMountTsRef.current != null) {
+          const b2 = (window as any).__battleDebug;
+          if (b2) b2.firstPaintMs = Date.now() - battleMountTsRef.current!;
+        }
+      });
+    }
     return () => { unlockAppHeight('battle_unmount'); };
   }, []);
 
@@ -202,6 +220,13 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
       console.log(`[BATTLE_PREP_START] applying round=${lastPrepStart.roundIndex} deadlineTs=${lastPrepStart.deadlineTs} yourNickname=${lastPrepStart.yourNickname || '<null>'} oppNickname=${lastPrepStart.oppNickname || '<null>'} isNewRound=${isNewRound}`);
     }
     
+    // DEBUG: first prep_start applied → firstPrepMs (only once)
+    if (DEBUG_MODE && !firstPrepLoggedRef.current && battleMountTsRef.current != null) {
+      firstPrepLoggedRef.current = true;
+      const b = (window as any).__battleDebug;
+      if (b) b.firstPrepMs = Date.now() - battleMountTsRef.current;
+    }
+
     // КРИТИЧНО: устанавливаем все данные немедленно, включая R1
     setRoundIndex(lastPrepStart.roundIndex);
     setPhase('PREP');
@@ -291,6 +316,11 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
     });
 
     socketManager.onStepReveal((payload: StepRevealPayload) => {
+      if (DEBUG_MATCH && !firstStepRevealLoggedRef.current) {
+        firstStepRevealLoggedRef.current = true;
+        const tg = (window as any).Telegram?.WebApp;
+        console.log(`[BATTLE_DBG] first step_reveal`, { step: payload.stepIndex, inner: window.innerHeight, vv: (window as any).visualViewport?.height, tg: tg?.viewportHeight, app: getComputedStyle(document.documentElement).getPropertyValue('--app-height').trim() });
+      }
       // CRITICAL: Cancel any pending draft on phase change (PREP -> REVEAL)
       // DO NOT flush draft in REVEAL - server will use last draft from PREP
       if (draftDebounceRef.current) {
@@ -922,6 +952,9 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
     );
   };
 
+  // Android TG: composited layer to avoid repaint flash (reduces battle start flicker)
+  const androidComposite = androidTg ? { transform: 'translateZ(0)', willChange: 'transform, opacity' as const, backfaceVisibility: 'hidden' as const, contain: 'paint' as const } : {};
+
   return (
     <div
       className="app-screen"
@@ -935,9 +968,10 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
         flexDirection: 'column',
         paddingTop: 'env(safe-area-inset-top, 0)',
         paddingBottom: 'env(safe-area-inset-bottom, 0)',
-        backgroundColor: '#242424',
+        backgroundColor: '#111',
         color: 'rgba(255, 255, 255, 0.87)',
-        zIndex: 1
+        zIndex: 1,
+        ...androidComposite
       }}
     >
       {/* Compact Top Bar - 1 строка максимум */}

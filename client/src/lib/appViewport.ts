@@ -13,7 +13,9 @@ const DEBUG =
 
 const THROTTLE_MS = 120;
 
-let locked = false;
+type LockOwner = 'transition' | 'battle';
+
+let lockedBy: LockOwner | null = null;
 let lockedHeight: number | null = null;
 
 function applyAppHeightWithValue(value: number): void {
@@ -32,25 +34,29 @@ export function computeAppHeight(): number {
   return Math.round(window.innerHeight);
 }
 
+export function getIsAppHeightLocked(): boolean {
+  return lockedBy != null;
+}
+
 export function applyAppHeight(): void {
   if (typeof document === 'undefined' || !document.documentElement) return;
-  if (locked && lockedHeight !== null) {
-    applyAppHeightWithValue(lockedHeight);
-    if (DEBUG) console.log('[VIEWPORT] locked, skip recompute');
-    return;
-  }
   const inner = typeof window !== 'undefined' ? window.innerHeight : 0;
   const vv = (window as any).visualViewport?.height;
   const tg = (window as any).Telegram?.WebApp?.viewportHeight;
+  if (lockedBy != null && lockedHeight !== null) {
+    applyAppHeightWithValue(lockedHeight);
+    if (DEBUG) console.log(`[VIEWPORT] inner=${inner} vv=${vv ?? 'n/a'} tg=${tg ?? 'n/a'} app=${lockedHeight} locked=true`);
+    return;
+  }
   const set = computeAppHeight();
   applyAppHeightWithValue(set);
   if (DEBUG) {
-    console.log(`[VIEWPORT] inner=${inner} vv=${vv ?? 'n/a'} tg=${tg ?? 'n/a'} set=${set}`);
+    console.log(`[VIEWPORT] inner=${inner} vv=${vv ?? 'n/a'} tg=${tg ?? 'n/a'} app=${set} locked=false`);
   }
 }
 
 export function lockAppHeight(reason?: string): void {
-  locked = true;
+  lockedBy = 'battle';
   lockedHeight = computeAppHeight();
   applyAppHeightWithValue(lockedHeight);
   if (DEBUG) console.log('[VIEWPORT_LOCK]', { reason, lockedHeight });
@@ -62,10 +68,40 @@ export function lockAppHeight(reason?: string): void {
 }
 
 export function unlockAppHeight(reason?: string): void {
-  locked = false;
+  if (lockedBy !== 'battle') return;
+  lockedBy = null;
   lockedHeight = null;
   applyAppHeight();
   if (DEBUG) console.log('[VIEWPORT_UNLOCK]', { reason });
+}
+
+/**
+ * Freeze --app-height for ms during Menu→Battle transition to reduce viewportChanged-induced jump.
+ * Returns a cancel function. Battle’s lockAppHeight will take over when it mounts; the timer
+ * only clears if we are still the owner (lockedBy==='transition').
+ */
+export function lockAppHeightFor(ms: number): () => void {
+  lockedBy = 'transition';
+  lockedHeight = computeAppHeight();
+  applyAppHeightWithValue(lockedHeight);
+  if (DEBUG) console.log('[VIEWPORT_LOCK]', { reason: 'transition', ms, lockedHeight });
+  const id = setTimeout(() => {
+    if (lockedBy === 'transition') {
+      lockedBy = null;
+      lockedHeight = null;
+      applyAppHeight();
+      if (DEBUG) console.log('[VIEWPORT_UNLOCK]', { reason: 'transition_timeout' });
+    }
+  }, ms);
+  return () => {
+    clearTimeout(id);
+    if (lockedBy === 'transition') {
+      lockedBy = null;
+      lockedHeight = null;
+      applyAppHeight();
+      if (DEBUG) console.log('[VIEWPORT_UNLOCK]', { reason: 'transition_cancel' });
+    }
+  };
 }
 
 export function initAppViewport(): () => void {

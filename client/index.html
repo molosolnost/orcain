@@ -2,6 +2,8 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Earliest style: prevent white flash before index.css loads (Android TG WebView) -->
+    <style>html,body,#root{background:#111;background-color:#111;height:100%;}</style>
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta
       name="viewport"
