@@ -4,7 +4,8 @@ interface TransitionShieldProps {
 
 /**
  * Full-screen #111 overlay to hide Menu→Battle transition flicker on Android TG WebView.
- * When visible becomes false, opacity 1→0 over 160ms; always in DOM so transition runs.
+ * When visible: opacity 1, pointer-events auto; else opacity 0, pointer-events none.
+ * Transition 120ms. z-index 9999 so it sits above .app-screen.
  */
 export default function TransitionShield({ visible }: TransitionShieldProps) {
   return (
@@ -12,10 +13,10 @@ export default function TransitionShield({ visible }: TransitionShieldProps) {
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 99999,
+        zIndex: 9999,
         background: '#111',
         opacity: visible ? 1 : 0,
-        transition: 'opacity 160ms ease-out',
+        transition: 'opacity 120ms ease',
         pointerEvents: visible ? 'auto' : 'none',
       }}
       aria-hidden="true"

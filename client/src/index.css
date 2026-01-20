@@ -37,6 +37,8 @@ body {
   height: var(--app-height, 100vh);
   overflow: hidden;
   background: #111;
+  will-change: opacity;
+  transform: translateZ(0);
 }
 .app-screen.hidden {
   opacity: 0;

@@ -9,7 +9,10 @@ import Onboarding from './screens/Onboarding';
 import TransitionShield from './components/TransitionShield';
 import { initAppViewport, lockAppHeightFor, getIsAppHeightLocked } from './lib/appViewport';
 import { applyTelegramUi } from './lib/telegramUi';
+import { startViewportStabilizer, isAndroidTg, getViewportHeights } from './lib/viewportStabilizer';
 import './App.css';
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 type Screen = 'login' | 'menu' | 'battle' | 'onboarding';
 type BootState = 'checking' | 'telegram_auth' | 'ready' | 'error';
@@ -94,17 +97,16 @@ function App() {
 
   const transitionStartedAtRef = useRef<number>(0);
   const lastMatchIdRef = useRef<string | null>(null);
-  const safetyTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const battleHasPrepStartRef = useRef(false);
+  const battleEntryIdRef = useRef(0);
 
-  const turnOffShield = useCallback((reason: string) => {
-    if (safetyTimeoutIdRef.current) {
-      clearTimeout(safetyTimeoutIdRef.current);
-      safetyTimeoutIdRef.current = null;
-    }
+  const turnOffShield = useCallback((reason: string, extra?: { stableMs?: number; heights?: { inner: number; vv: number; tg: number; app: string } }) => {
     setTransitionShieldOn(false);
     if (DEBUG_MODE) {
       const elapsed = Date.now() - transitionStartedAtRef.current;
-      console.log(`[SHIELD] off reason=${reason} elapsed=${elapsed}`);
+      const st = extra?.stableMs != null ? ` stableMs=${extra.stableMs}` : '';
+      const h = extra?.heights ? ` heights: inner=${extra.heights.inner} vv=${extra.heights.vv} tg=${extra.heights.tg} app=${extra.heights.app}` : ` elapsed=${elapsed}`;
+      console.log(`[SHIELD] off reason=${reason}${st}${h}`);
     }
   }, []);
 
@@ -112,12 +114,37 @@ function App() {
     setTransitionShieldOn(true);
     transitionStartedAtRef.current = Date.now();
     lastMatchIdRef.current = null;
-    if (safetyTimeoutIdRef.current) {
-      clearTimeout(safetyTimeoutIdRef.current);
-      safetyTimeoutIdRef.current = null;
+    battleHasPrepStartRef.current = false;
+    battleEntryIdRef.current += 1;
+    const entryId = battleEntryIdRef.current;
+
+    if (DEBUG_MODE) {
+      const h = getViewportHeights();
+      console.log(`[SHIELD] on reason=${reason} inner=${h.inner} vv=${h.vv} tg=${h.tg} app=${h.app}`);
     }
-    safetyTimeoutIdRef.current = setTimeout(() => turnOffShield('timeout'), 1200);
-    if (DEBUG_MODE) console.log(`[SHIELD] on reason=${reason}`);
+
+    if (!isAndroidTg) {
+      setTimeout(() => turnOffShield('short'), 80);
+      return;
+    }
+
+    const stableP = startViewportStabilizer({ timeoutMs: 1200 });
+    const battleReadyP = new Promise<void>((resolve) => {
+      const t0 = Date.now();
+      const id = setInterval(() => {
+        if (battleHasPrepStartRef.current || Date.now() - t0 >= 300) {
+          clearInterval(id);
+          resolve();
+        }
+      }, 50);
+    });
+    const min120 = sleep(120);
+
+    Promise.all([stableP, battleReadyP, min120]).then(() => {
+      if (battleEntryIdRef.current !== entryId) return;
+      const h = getViewportHeights();
+      turnOffShield('stable+prep', { stableMs: Date.now() - transitionStartedAtRef.current, heights: h });
+    });
   }
 
   // Boot state machine
@@ -357,6 +384,7 @@ function App() {
     });
 
     socketManager.onMatchFound((payload) => {
+      battleHasPrepStartRef.current = false;
       if (payload.matchId) {
         lastMatchIdRef.current = payload.matchId;
         setCurrentMatchId(payload.matchId);
@@ -378,7 +406,7 @@ function App() {
     });
 
     socketManager.onPrepStart((payload: PrepStartPayload) => {
-      turnOffShield('prep_start');
+      battleHasPrepStartRef.current = true;
       // DEBUG: логируем получение prep_start
       if (DEBUG_MODE) {
         console.log(`[PREP_START_RECEIVED] round=${payload.roundIndex} deadlineTs=${payload.deadlineTs} yourNickname=${payload.yourNickname || '<null>'} oppNickname=${payload.oppNickname || '<null>'} currentScreen=${screen} currentMatchId=${currentMatchId}`);
@@ -425,7 +453,7 @@ function App() {
     });
 
     // Сокет должен жить всю сессию вкладки, не отключаем при cleanup
-  }, [authToken, currentMatchId, nickname, screen, turnOffShield]);
+  }, [authToken, currentMatchId, nickname, screen]);
 
   const handleLoginSuccess = ({ authToken: token, tokens: initialTokens }: { authToken: string; tokens: number }) => {
     setAuthToken(token);
@@ -459,6 +487,7 @@ function App() {
   };
 
   const handleBackToMenu = () => {
+    battleHasPrepStartRef.current = false;
     setMatchMode(null);
     setMatchEndPayload(null);
     setLastPrepStart(null);
@@ -603,7 +632,7 @@ function App() {
         <Battle
           onBackToMenu={handleBackToMenu}
           onPlayAgain={handlePlayAgain}
-          onBattleMounted={() => turnOffShield('battle_mounted')}
+          onBattleMounted={undefined}
           isVisible={screen === 'battle'}
           matchMode={matchMode}
           tokens={tokens}
