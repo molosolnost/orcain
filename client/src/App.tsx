@@ -561,32 +561,8 @@ function App() {
     );
   }
 
-  // 4. Onboarding - если nickname пустой
-  if (screen === 'onboarding') {
-    // Если authToken отсутствует, не показываем Onboarding
-    if (!authToken) {
-      return null;
-    }
-    return (
-      <>
-        <Onboarding authToken={authToken} onNicknameSet={handleNicknameSet} />
-        <DebugOverlay
-          hasTelegram={hasTelegramWebApp}
-          initDataLen={initDataLen}
-          authRequest={authRequest}
-          authStatus={authStatus}
-          gotAccountId={gotAccountId}
-          storedAuthToken={storedAuthToken}
-          nickname={nickname}
-          currentScreen={currentScreenForDebug}
-          bootState={bootState}
-        />
-      </>
-    );
-  }
-
-  // 5. Connecting...
-  if (!connected && authToken) {
+  // 4. Connecting (skip when onboarding: show Onboarding instead)
+  if (!connected && authToken && screen !== 'onboarding') {
     return (
       <>
         <div style={{ backgroundColor: '#111', height: 'var(--app-height)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Connecting...</div>
@@ -605,32 +581,36 @@ function App() {
     );
   }
 
-  // 6. Main screens
+  // 5. Main screens: Onboarding, Menu, Battle always mounted; switch via .visible/.hidden (no unmount → no Android TG flicker)
+  if (!authToken) return null;
+
   return (
     <>
-      <div>
-        {screen === 'menu' && (
-          <Menu 
-            onStartBattle={handleStartBattle}
-            onStartPvE={handleStartPvE}
-            onCancelSearch={handleCancelSearch}
-            isSearching={isSearching}
-            tokens={tokens}
-            nickname={nickname}
-          />
-        )}
-        {screen === 'battle' && (
-          <Battle 
-            onBackToMenu={handleBackToMenu}
-            onPlayAgain={handlePlayAgain}
-            onBattleMounted={() => turnOffShield('battle_mounted')}
-            matchMode={matchMode}
-            tokens={tokens}
-            matchEndPayload={matchEndPayload}
-            lastPrepStart={lastPrepStart}
-            currentMatchId={currentMatchId}
-          />
-        )}
+      <div className={`app-screen fade ${screen === 'onboarding' ? 'visible' : 'hidden'}`}>
+        <Onboarding authToken={authToken} onNicknameSet={handleNicknameSet} />
+      </div>
+      <div className={`app-screen fade ${screen === 'menu' ? 'visible' : 'hidden'}`}>
+        <Menu
+          onStartBattle={handleStartBattle}
+          onStartPvE={handleStartPvE}
+          onCancelSearch={handleCancelSearch}
+          isSearching={isSearching}
+          tokens={tokens}
+          nickname={nickname}
+        />
+      </div>
+      <div className={`app-screen fade ${screen === 'battle' ? 'visible' : 'hidden'}`}>
+        <Battle
+          onBackToMenu={handleBackToMenu}
+          onPlayAgain={handlePlayAgain}
+          onBattleMounted={() => turnOffShield('battle_mounted')}
+          isVisible={screen === 'battle'}
+          matchMode={matchMode}
+          tokens={tokens}
+          matchEndPayload={matchEndPayload}
+          lastPrepStart={lastPrepStart}
+          currentMatchId={currentMatchId}
+        />
       </div>
       <DebugOverlay
         hasTelegram={hasTelegramWebApp}

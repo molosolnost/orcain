@@ -15,11 +15,12 @@ export default function BackgroundLayout({
 }: BackgroundLayoutProps) {
   return (
     <div
-      className="app-screen bl-root"
+      className="bl-root"
       style={{
-        position: 'fixed',
+        position: 'absolute',
         inset: 0,
-        width: '100vw',
+        width: '100%',
+        height: '100%',
         backgroundColor: '#111'
       }}
     >

@@ -206,6 +206,9 @@ All 9 tests pass:
 - ✅ No draft in REVEAL
 - ✅ No `[INVARIANT_FAIL]` errors
 
+### Android: no flicker on battle start
+On Android in Telegram WebView: start PvP and PvE several times; Menu→Battle transition must not show white/gray flash or layout jerk (screens stay mounted; we switch via opacity/visibility).
+
 ---
 
 **Last Updated**: 2026-01-17

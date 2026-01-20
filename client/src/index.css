@@ -29,11 +29,27 @@ body {
   overflow: hidden;
 }
 
-/* Full-screen containers: fixed height from --app-height to prevent Android jerk */
+/* Screen wrapper: one fixed root per screen; visibility/opacity switch, no unmount (reduces Android TG flicker) */
 .app-screen {
-  height: var(--app-height, 100vh);
+  position: fixed;
+  inset: 0;
   width: 100%;
+  height: var(--app-height, 100vh);
   overflow: hidden;
+  background: #111;
+}
+.app-screen.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.app-screen.visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+.app-screen.fade {
+  transition: opacity 140ms ease;
 }
 
 .bl-root {

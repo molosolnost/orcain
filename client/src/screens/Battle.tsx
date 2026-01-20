@@ -10,6 +10,7 @@ interface BattleProps {
   onBackToMenu: () => void;
   onPlayAgain?: () => void;
   onBattleMounted?: () => void;
+  isVisible?: boolean;
   matchMode?: 'pvp' | 'pve' | null;
   tokens: number | null;
   matchEndPayload: MatchEndPayload | null;
@@ -17,7 +18,7 @@ interface BattleProps {
   currentMatchId: string | null;
 }
 
-export default function Battle({ onBackToMenu, onPlayAgain, onBattleMounted, matchMode, tokens, matchEndPayload, lastPrepStart, currentMatchId }: BattleProps) {
+export default function Battle({ onBackToMenu, onPlayAgain, onBattleMounted, isVisible = true, matchMode, tokens, matchEndPayload, lastPrepStart, currentMatchId }: BattleProps) {
   const [state, setState] = useState<BattleState>('prep');
   const [yourHp, setYourHp] = useState(10);
   const [oppHp, setOppHp] = useState(10);
@@ -78,15 +79,22 @@ export default function Battle({ onBackToMenu, onPlayAgain, onBattleMounted, mat
     onBattleMounted?.();
   }, []);
 
-  // Lock viewport height до первого кадра, чтобы убрать рывок на Android (resize не меняет --app-height в бою).
-  // scrollTo(0,0) removed: it can cause a visible jump on Android WebView; overflow:hidden and root height already prevent scroll.
+  // Lock viewport + battle-mode only when visible (screens stay mounted; we switch via .visible/.hidden)
   useLayoutEffect(() => {
+    if (!isVisible) {
+      unlockAppHeight('battle_hidden');
+      document.documentElement.classList.remove('battle-mode');
+      document.body.classList.remove('battle-mode');
+      return;
+    }
     lockAppHeight('battle_mount');
+    document.documentElement.classList.add('battle-mode');
+    document.body.classList.add('battle-mode');
     const ts = Date.now();
     battleMountTsRef.current = ts;
     if (DEBUG_MATCH) {
       const tg = (window as any).Telegram?.WebApp;
-      console.log(`[BATTLE_DBG] first render/mount`, { ts, inner: window.innerHeight, vv: (window as any).visualViewport?.height, tg: tg?.viewportHeight, app: getComputedStyle(document.documentElement).getPropertyValue('--app-height').trim() });
+      console.log(`[BATTLE_DBG] visible`, { ts, inner: window.innerHeight, vv: (window as any).visualViewport?.height, tg: tg?.viewportHeight });
       const b = (window as any).__battleDebug = (window as any).__battleDebug || {};
       b.battleMountMs = b.screenToBattleTs != null ? ts - b.screenToBattleTs : 0;
       requestAnimationFrame(() => {
@@ -96,61 +104,32 @@ export default function Battle({ onBackToMenu, onPlayAgain, onBattleMounted, mat
         }
       });
     }
-    return () => { unlockAppHeight('battle_unmount'); };
-  }, []);
-
-  // Блокировка scroll на body/html при монтировании Battle
-  useEffect(() => {
-    const html = document.documentElement;
-    const body = document.body;
-    
-    // Добавляем класс для блокировки scroll
-    html.classList.add('battle-mode');
-    body.classList.add('battle-mode');
-    
-    // Применяем стили напрямую для надежности
-    const originalHtmlOverflow = html.style.overflow;
-    const originalHtmlPosition = html.style.position;
-    const originalHtmlWidth = html.style.width;
-    const originalHtmlHeight = html.style.height;
-    const originalHtmlTouchAction = html.style.touchAction;
-    
-    const originalBodyOverflow = body.style.overflow;
-    const originalBodyPosition = body.style.position;
-    const originalBodyWidth = body.style.width;
-    const originalBodyHeight = body.style.height;
-    const originalBodyTouchAction = body.style.touchAction;
-    
-    html.style.overflow = 'hidden';
-    html.style.position = 'fixed';
-    html.style.width = '100%';
-    html.style.height = '100%';
-    html.style.touchAction = 'none';
-    
-    body.style.overflow = 'hidden';
-    body.style.position = 'fixed';
-    body.style.width = '100%';
-    body.style.height = '100%';
-    body.style.touchAction = 'none';
-    
     return () => {
-      // Восстанавливаем оригинальные стили
-      html.classList.remove('battle-mode');
-      body.classList.remove('battle-mode');
-      
-      html.style.overflow = originalHtmlOverflow;
-      html.style.position = originalHtmlPosition;
-      html.style.width = originalHtmlWidth;
-      html.style.height = originalHtmlHeight;
-      html.style.touchAction = originalHtmlTouchAction;
-      
-      body.style.overflow = originalBodyOverflow;
-      body.style.position = originalBodyPosition;
-      body.style.width = originalBodyWidth;
-      body.style.height = originalBodyHeight;
-      body.style.touchAction = originalBodyTouchAction;
+      unlockAppHeight('battle_unmount');
+      document.documentElement.classList.remove('battle-mode');
+      document.body.classList.remove('battle-mode');
     };
-  }, []);
+  }, [isVisible]);
+
+  // When becoming hidden: clear transient UI so it does not pop on next show
+  useEffect(() => {
+    if (!isVisible) {
+      setDraftToast(null);
+      setSlotOccupiedToast(null);
+      setRoundBanner(null);
+      setHpFlash(null);
+      setSlotPopAnimation(null);
+      setConfirmButtonPressed(false);
+      if (draftToastTimeoutRef.current) {
+        clearTimeout(draftToastTimeoutRef.current);
+        draftToastTimeoutRef.current = null;
+      }
+      if (slotOccupiedToastTimeoutRef.current) {
+        clearTimeout(slotOccupiedToastTimeoutRef.current);
+        slotOccupiedToastTimeoutRef.current = null;
+      }
+    }
+  }, [isVisible]);
 
   // Sync currentMatchIdRef with prop
   useEffect(() => {
@@ -962,20 +941,16 @@ export default function Battle({ onBackToMenu, onPlayAgain, onBattleMounted, mat
 
   return (
     <div
-      className="app-screen"
       style={{ 
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
+        position: 'absolute',
+        inset: 0,
         display: 'flex',
         flexDirection: 'column',
         paddingTop: 'env(safe-area-inset-top, 0)',
         paddingBottom: 'env(safe-area-inset-bottom, 0)',
         backgroundColor: '#111',
         color: 'rgba(255, 255, 255, 0.87)',
-        zIndex: 1,
+        overflow: 'hidden',
         ...androidComposite
       }}
     >
