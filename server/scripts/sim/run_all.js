@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Runs all sim scenarios (A–H).
- * Starts server with TEST_MODE=1, TEST_PREP_MS=300, TEST_STEP_MS=50.
+ * Runs all sim scenarios (A–M).
+ * Starts server with TEST_MODE=1. Timings: CI uses TEST_PREP_MS=900, TEST_STEP_MS=150;
+ * locally TEST_PREP_MS=300, TEST_STEP_MS=50.
  * Usage: node server/scripts/sim/run_all.js
  */
 const common = require('./common');
@@ -21,6 +22,10 @@ const pveNoTokenChange = require('./pve_no_token_change');
 const PORT = 3010;
 let _logBuffer = [];
 
+const isCI = process.env.CI === 'true' || process.env.CI === '1';
+const TEST_PREP_MS = isCI ? '900' : '300';
+const TEST_STEP_MS = isCI ? '150' : '50';
+
 function runScenario(label, fn) {
   return fn().catch((e) => {
     throw new Error(`[sim] Scenario ${label} failed: ${e.message}`);
@@ -31,8 +36,8 @@ async function main() {
   const { startServer, stopServer, waitForServerReady, assertNoInvariantFail, delay } = common;
   const { proc, logBuffer } = startServer({
     PORT: String(PORT),
-    TEST_PREP_MS: '300',
-    TEST_STEP_MS: '50'
+    TEST_PREP_MS,
+    TEST_STEP_MS
   });
   _logBuffer = logBuffer;
 

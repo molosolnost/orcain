@@ -13,16 +13,17 @@ npm run test:sim
 ```
 
 - **test:smoke**: client `npm run build`, `node -c server/index.js`, `node -c server/cards.js`
-- **test:sim**: runs test:smoke, then `server/scripts/sim/run_all.js` (A–K, M). Server: `TEST_MODE=1`, `TEST_PREP_MS=300`, `TEST_STEP_MS=50`. (L pvp_normal_payout exists but is not in run_all; I–K,M cover economy.)
+- **test:sim**: runs test:smoke, then `server/scripts/sim/run_all.js` (A–K, M). Server: `TEST_MODE=1`. Timings: **CI** (`CI=true`) uses `TEST_PREP_MS=900`, `TEST_STEP_MS=150`; locally `TEST_PREP_MS=300`, `TEST_STEP_MS=50`. (L pvp_normal_payout exists but is not in run_all; I–K,M cover economy.)
 
 ## Env (sim only, server)
 
 | Env | Default in sim | Effect |
 |-----|----------------|--------|
 | `TEST_MODE` | `1` | Enables test timings (only when `1` or `true`) |
-| `TEST_PREP_MS` | `300` | PREP phase length in ms (prod: 20000) |
-| `TEST_STEP_MS` | `50` | Delay between reveal steps (prod: 900) |
+| `TEST_PREP_MS` | `300` (CI: `900`) | PREP phase length in ms (prod: 20000) |
+| `TEST_STEP_MS` | `50` (CI: `150`) | Delay between reveal steps (prod: 900) |
 | `PORT` | `3010` | Server port for sim |
+| `CI` | — | When `true`/`1`, run_all uses slower PREP/STEP and sims use longer timeouts |
 
 Prod timings are unchanged when `TEST_MODE` is unset.
 
@@ -30,7 +31,8 @@ Prod timings are unchanged when `TEST_MODE` is unset.
 
 ### A) pvp_basic — both confirm 3 cards
 
-- Two clients: queue_join, prep_start, both layout_confirm 3 cards.
+- Two clients: attachEventBuffer (match_found, prep_start, confirm_ok, error_msg, step_reveal, round_end, match_end), queue_join, prep_start, both layout_confirm 3 cards.
+- After layout_confirm, waits for **confirm_ok OR error_msg OR match_end** (race). On error_msg: fails with `[sim] confirm rejected: <code> <message>`. On match_end before confirm: fails with dump.
 - Asserts: step_reveal x3, round_end, matchId, yourHp, no `[INVARIANT_FAIL]`.
 
 ### B) pvp_partial_play — 1 card, no confirm (Partial Play)

@@ -169,6 +169,9 @@ async function waitForEventBuffered(socket, eventName, opts = {}) {
     last: buf.last ? buf.last[e] : undefined
   }));
   console.error('[sim] Seen events summary:', JSON.stringify(seen, null, 2));
+  if (buf.last && buf.last['error_msg']) {
+    console.error('[sim] last error_msg:', JSON.stringify(buf.last['error_msg']));
+  }
   throw new Error(`Timeout waiting for ${eventName}. Seen: ${JSON.stringify(seen)}`);
 }
 
