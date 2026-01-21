@@ -1373,41 +1373,43 @@ function startPrepPhase(match) {
 
   // INVARIANT: match_found → prep_start → (steps) → match_end. Emit prep_start BEFORE
   // submitBotDraft/prepTimer so no path can reach match_end without at least one prep_start.
+  // PvE round 1 is also emitted in pve_start before startPrepPhase; we emit again here so
+  // the client is guaranteed to get at least one (duplicate for r1 is acceptable).
   emitToBoth(match, 'prep_start', (socketId) => {
-    const sessionId = getSessionIdBySocket(socketId);
-    const accountId = getAccountIdBySessionId(sessionId);
-    const playerTokens = accountId ? (db.getTokens(accountId) !== null ? db.getTokens(accountId) : START_TOKENS) : START_TOKENS;
+      const sessionId = getSessionIdBySocket(socketId);
+      const accountId = getAccountIdBySessionId(sessionId);
+      const playerTokens = accountId ? (db.getTokens(accountId) !== null ? db.getTokens(accountId) : START_TOKENS) : START_TOKENS;
 
-    if (sessionId === match.sessions[0]) {
-      return {
-        matchId: match.id,
-        roundIndex: match.roundIndex,
-        suddenDeath: match.suddenDeath,
-        deadlineTs: deadlineTs,
-        yourHp: p1Data.hp,
-        oppHp: p2Data.hp,
-        pot: match.pot,
-        yourTokens: playerTokens,
-        yourHand: p1Hand, // CardId[4] - source of truth (replaces legacy 'cards')
-        yourNickname: p1Nickname,
-        oppNickname: p2Nickname
-      };
-    } else {
-      return {
-        matchId: match.id,
-        roundIndex: match.roundIndex,
-        suddenDeath: match.suddenDeath,
-        deadlineTs: deadlineTs,
-        yourHp: p2Data.hp,
-        oppHp: p1Data.hp,
-        pot: match.pot,
-        yourTokens: playerTokens,
-        yourHand: p2Hand, // CardId[4] - source of truth (replaces legacy 'cards')
-        yourNickname: p2Nickname,
-        oppNickname: p1Nickname
-      };
-    }
-  });
+      if (sessionId === match.sessions[0]) {
+        return {
+          matchId: match.id,
+          roundIndex: match.roundIndex,
+          suddenDeath: match.suddenDeath,
+          deadlineTs: deadlineTs,
+          yourHp: p1Data.hp,
+          oppHp: p2Data.hp,
+          pot: match.pot,
+          yourTokens: playerTokens,
+          yourHand: p1Hand, // CardId[4] - source of truth (replaces legacy 'cards')
+          yourNickname: p1Nickname,
+          oppNickname: p2Nickname
+        };
+      } else {
+        return {
+          matchId: match.id,
+          roundIndex: match.roundIndex,
+          suddenDeath: match.suddenDeath,
+          deadlineTs: deadlineTs,
+          yourHp: p2Data.hp,
+          oppHp: p1Data.hp,
+          pot: match.pot,
+          yourTokens: playerTokens,
+          yourHand: p2Hand, // CardId[4] - source of truth (replaces legacy 'cards')
+          yourNickname: p2Nickname,
+          oppNickname: p1Nickname
+        };
+      }
+    });
 
   // PvE: Submit bot draft after prep_start (never before; prep_start must always be emitted first)
   if (match.mode === 'PVE') {
@@ -2077,8 +2079,25 @@ io.on('connection', (socket) => {
         oppNickname: BOT_NICKNAME,
         yourHand: playerHand
       });
-      
-      // Start first round
+
+      // PvE INVARIANT: prep_start MUST be emitted after match_found and BEFORE any match_end.
+      // Emit first prep_start here so it is never skipped (e.g. if startPrepPhase threw before its emit).
+      const firstPrepDeadline = Date.now() + PREP_MS;
+      socket.emit('prep_start', {
+        matchId: match.id,
+        roundIndex: 1,
+        suddenDeath: false,
+        deadlineTs: firstPrepDeadline,
+        yourHp: playerData.hp,
+        oppHp: botData.hp,
+        pot: match.pot,
+        yourTokens: playerTokens,
+        yourHand: playerHand,
+        yourNickname: playerNickname,
+        oppNickname: BOT_NICKNAME
+      });
+
+      // Start first round (startPrepPhase will also emit prep_start, set prepDeadline, prepTimer, submitBotDraft)
       startPrepPhase(match);
     } catch (error) {
       console.error(`[PVE_START_ERROR] sessionId=${sessionId} error=${error.message}`);
