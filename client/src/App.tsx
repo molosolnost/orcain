@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { socketManager } from './net/socket';
 import { getAuthToken, getSessionId, clearAuth, getAccountId } from './net/ids';
 import type { MatchEndPayload, PrepStartPayload } from './net/types';
@@ -6,23 +6,13 @@ import Login from './screens/Login';
 import Menu from './screens/Menu';
 import Battle from './screens/Battle';
 import Onboarding from './screens/Onboarding';
-import TransitionShield from './components/TransitionShield';
-import { initAppViewport, lockAppHeightFor, getIsAppHeightLocked } from './lib/appViewport';
-import { applyTelegramUi } from './lib/telegramUi';
-import { isAndroidTg, getViewportHeights } from './lib/viewportStabilizer';
 import './App.css';
-
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 type Screen = 'login' | 'menu' | 'battle' | 'onboarding';
 type BootState = 'checking' | 'telegram_auth' | 'ready' | 'error';
 
 const BUILD_ID = import.meta.env.VITE_BUILD_ID || `dev-${Date.now()}`;
 const DEBUG_MODE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
-const Q = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-const debugNoFade = DEBUG_MODE && Q?.get('no_fade') === '1';
-const debugNoShield = DEBUG_MODE && Q?.get('no_shield') === '1';
-const debugNoAppHeight = DEBUG_MODE && Q?.get('no_appheight') === '1';
 
 function DebugOverlay({ 
   hasTelegram, 
@@ -33,9 +23,7 @@ function DebugOverlay({
   storedAuthToken, 
   nickname, 
   currentScreen,
-  bootState,
-  shield,
-  lastBattleGate,
+  bootState 
 }: {
   hasTelegram: boolean;
   initDataLen: number;
@@ -46,8 +34,6 @@ function DebugOverlay({
   nickname: string | null;
   currentScreen: Screen | 'loading' | 'error';
   bootState: BootState;
-  shield?: 'on' | 'off';
-  lastBattleGate?: string | null;
 }) {
   if (!DEBUG_MODE) return null;
 
@@ -78,14 +64,6 @@ function DebugOverlay({
       <div>nickname: {nickname || '<empty>'}</div>
       <div>currentScreen: {currentScreen}</div>
       <div>bootState: {bootState}</div>
-      <div>
-        inner: {typeof window !== 'undefined' ? window.innerHeight : '—'} | vv:{' '}
-        {typeof window !== 'undefined' ? String((window as any).visualViewport?.height ?? 'n/a') : '—'} | tg:{' '}
-        {typeof window !== 'undefined' ? String((window as any).Telegram?.WebApp?.viewportHeight ?? 'n/a') : '—'} | app:{' '}
-        {typeof document !== 'undefined' ? getComputedStyle(document.documentElement).getPropertyValue('--app-height').trim() || '—' : '—'}
-      </div>
-      <div>appHeightLocked: {String(getIsAppHeightLocked())} | --app-height: {typeof document !== 'undefined' ? getComputedStyle(document.documentElement).getPropertyValue('--app-height').trim() || '—' : '—'}</div>
-      <div>shield: {shield ?? '—'} | lastBattleGate: {lastBattleGate ?? '—'}</div>
     </div>
   );
 }
@@ -102,74 +80,7 @@ function App() {
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [lastPrepStart, setLastPrepStart] = useState<PrepStartPayload | null>(null);
   const [matchMode, setMatchMode] = useState<'pvp' | 'pve' | null>(null); // Track PvP vs PvE
-  const [isTransitionShieldOn, setTransitionShieldOn] = useState(false);
-  const [battleReadyForShow, setBattleReadyForShow] = useState(false);
-  const [lastBattleGate, setLastBattleGate] = useState<string | null>(null);
-
-  const transitionStartedAtRef = useRef<number>(0);
-  const lastMatchIdRef = useRef<string | null>(null);
-  const battleHasPrepStartRef = useRef(false);
-  const battleMatchFoundRef = useRef(false);
-  const battleEntryIdRef = useRef(0);
-
-  const turnOffShield = useCallback((reason: string, extra?: { stableMs?: number; heights?: { inner: number; vv: number; tg: number; app: string }; lastBattleGate?: string }) => {
-    setTransitionShieldOn(false);
-    setLastBattleGate(extra?.lastBattleGate ?? reason);
-    if (DEBUG_MODE) {
-      const elapsed = Date.now() - transitionStartedAtRef.current;
-      const st = extra?.stableMs != null ? ` stableMs=${extra.stableMs}` : '';
-      const h = extra?.heights ? ` heights: inner=${extra.heights.inner} vv=${extra.heights.vv} tg=${extra.heights.tg} app=${extra.heights.app}` : ` elapsed=${elapsed}`;
-      console.log(`[SHIELD] off reason=${reason}${st}${h}`);
-    }
-  }, []);
-
-  function startBattleTransitionShield(reason: 'start_pvp' | 'start_pve') {
-    battleMatchFoundRef.current = false;
-    setBattleReadyForShow(false);
-    lastMatchIdRef.current = null;
-    battleHasPrepStartRef.current = false;
-    battleEntryIdRef.current += 1;
-    const entryId = battleEntryIdRef.current;
-
-    if (debugNoShield) return;
-
-    setTransitionShieldOn(true);
-    transitionStartedAtRef.current = Date.now();
-
-    if (DEBUG_MODE) {
-      const h = getViewportHeights();
-      console.log(`[SHIELD] on reason=${reason} inner=${h.inner} vv=${h.vv} tg=${h.tg} app=${h.app}`);
-    }
-
-    if (!isAndroidTg) {
-      setTimeout(() => turnOffShield('short', { lastBattleGate: 'short' }), 80);
-      return;
-    }
-
-    const min120 = sleep(120);
-    const battleReadyP = new Promise<void>((resolve) => {
-      const t0 = Date.now();
-      const id = setInterval(() => {
-        if (battleMatchFoundRef.current || battleHasPrepStartRef.current || Date.now() - t0 >= 300) {
-          clearInterval(id);
-          resolve();
-        }
-      }, 50);
-    });
-
-    const chain = Promise.all([battleReadyP, min120]).then(async () => {
-      await new Promise<void>((r) => { requestAnimationFrame(() => requestAnimationFrame(() => r())); });
-      await sleep(400);
-    });
-
-    Promise.race([chain.then(() => 'ok'), sleep(1500).then(() => 'timeout')]).then((winner) => {
-      if (battleEntryIdRef.current !== entryId) return;
-      const gate = winner === 'timeout' ? 'timeout' : 'prep+raf2+400ms';
-      const h = getViewportHeights();
-      turnOffShield(gate, { stableMs: Date.now() - transitionStartedAtRef.current, heights: h, lastBattleGate: gate });
-    });
-  }
-
+  
   // Boot state machine
   const [bootState, setBootState] = useState<BootState>('checking');
   const [hasTelegramWebApp, setHasTelegramWebApp] = useState(false);
@@ -177,16 +88,6 @@ function App() {
   const [authRequest, setAuthRequest] = useState<string>('idle');
   const [authStatus, setAuthStatus] = useState<number | null>(null);
   const [telegramAuthError, setTelegramAuthError] = useState<string | null>(null);
-
-  // Viewport: --app-height from tg/visualViewport/innerHeight, resize + viewportChanged (skip when ?debug=1&no_appheight=1)
-  useEffect(() => {
-    return initAppViewport({ skip: debugNoAppHeight });
-  }, []);
-
-  // Telegram WebApp: dark background/header to prevent native white flash (once on mount)
-  useEffect(() => {
-    applyTelegramUi();
-  }, []);
 
   // Инициализация: проверяем Telegram Mini App или читаем authToken из localStorage
   useEffect(() => {
@@ -375,9 +276,6 @@ function App() {
         setConnected(false);
         setTokens(null);
         setIsSearching(false);
-      } else if (payload.code === 'not_enough_tokens') {
-        setIsSearching(false);
-        alert(payload.message || 'Недостаточно токенов для PvP боя');
       } else if (isSearching) {
         setIsSearching(false);
         alert(payload.message);
@@ -407,11 +305,7 @@ function App() {
     });
 
     socketManager.onMatchFound((payload) => {
-      battleHasPrepStartRef.current = false;
-      battleMatchFoundRef.current = true;
-      setBattleReadyForShow(true);
       if (payload.matchId) {
-        lastMatchIdRef.current = payload.matchId;
         setCurrentMatchId(payload.matchId);
       }
       // Infer matchMode from pot (PvE has pot=0)
@@ -431,8 +325,6 @@ function App() {
     });
 
     socketManager.onPrepStart((payload: PrepStartPayload) => {
-      battleHasPrepStartRef.current = true;
-      setBattleReadyForShow(true);
       // DEBUG: логируем получение prep_start
       if (DEBUG_MODE) {
         console.log(`[PREP_START_RECEIVED] round=${payload.roundIndex} deadlineTs=${payload.deadlineTs} yourNickname=${payload.yourNickname || '<null>'} oppNickname=${payload.oppNickname || '<null>'} currentScreen=${screen} currentMatchId=${currentMatchId}`);
@@ -494,18 +386,16 @@ function App() {
   };
 
   const handleStartBattle = () => {
-    startBattleTransitionShield('start_pvp');
-    lockAppHeightFor(600);
     setMatchMode('pvp');
     setIsSearching(true);
     socketManager.queueJoin();
   };
 
   const handleStartPvE = () => {
-    startBattleTransitionShield('start_pve');
-    lockAppHeightFor(600);
     setMatchMode('pve');
+    // PvE is immediate - no queue, no tokens
     socketManager.pveStart();
+    // match_found will be sent, which will switch to battle screen
   };
 
   const handleCancelSearch = () => {
@@ -513,8 +403,6 @@ function App() {
   };
 
   const handleBackToMenu = () => {
-    battleHasPrepStartRef.current = false;
-    setBattleReadyForShow(false);
     setMatchMode(null);
     setMatchEndPayload(null);
     setLastPrepStart(null);
@@ -554,7 +442,7 @@ function App() {
   if (bootState === 'checking' || bootState === 'telegram_auth') {
     return (
       <>
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'var(--app-height)', backgroundColor: '#111' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
           Authenticating...
         </div>
         <DebugOverlay
@@ -567,8 +455,6 @@ function App() {
           nickname={nickname}
           currentScreen={currentScreenForDebug}
           bootState={bootState}
-          shield={isTransitionShieldOn ? 'on' : 'off'}
-          lastBattleGate={lastBattleGate}
         />
       </>
     );
@@ -578,7 +464,7 @@ function App() {
   if (bootState === 'error' && hasTelegramWebApp && initDataLen > 0 && !authToken) {
     return (
       <>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 'var(--app-height)', gap: '12px', backgroundColor: '#111' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: '12px' }}>
           <div>Telegram authentication failed.</div>
           <div style={{ fontSize: '12px', color: '#888' }}>
             {telegramAuthError || 'Please retry from Telegram.'}
@@ -594,8 +480,6 @@ function App() {
           nickname={nickname}
           currentScreen={currentScreenForDebug}
           bootState={bootState}
-          shield={isTransitionShieldOn ? 'on' : 'off'}
-          lastBattleGate={lastBattleGate}
         />
       </>
     );
@@ -616,18 +500,20 @@ function App() {
           nickname={nickname}
           currentScreen={currentScreenForDebug}
           bootState={bootState}
-          shield={isTransitionShieldOn ? 'on' : 'off'}
-          lastBattleGate={lastBattleGate}
         />
       </>
     );
   }
 
-  // 4. Connecting (skip when onboarding: show Onboarding instead)
-  if (!connected && authToken && screen !== 'onboarding') {
+  // 4. Onboarding - если nickname пустой
+  if (screen === 'onboarding') {
+    // Если authToken отсутствует, не показываем Onboarding
+    if (!authToken) {
+      return null;
+    }
     return (
       <>
-        <div style={{ backgroundColor: '#111', height: 'var(--app-height)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Connecting...</div>
+        <Onboarding authToken={authToken} onNicknameSet={handleNicknameSet} />
         <DebugOverlay
           hasTelegram={hasTelegramWebApp}
           initDataLen={initDataLen}
@@ -638,43 +524,81 @@ function App() {
           nickname={nickname}
           currentScreen={currentScreenForDebug}
           bootState={bootState}
-          shield={isTransitionShieldOn ? 'on' : 'off'}
-          lastBattleGate={lastBattleGate}
         />
       </>
     );
   }
 
-  // 5. Main screens: Onboarding, Menu, Battle always mounted; switch via .visible/.hidden (no unmount → no Android TG flicker)
-  if (!authToken) return null;
+  // 5. Connecting...
+  if (!connected && authToken) {
+    return (
+      <>
+        <div>Connecting...</div>
+        <DebugOverlay
+          hasTelegram={hasTelegramWebApp}
+          initDataLen={initDataLen}
+          authRequest={authRequest}
+          authStatus={authStatus}
+          gotAccountId={gotAccountId}
+          storedAuthToken={storedAuthToken}
+          nickname={nickname}
+          currentScreen={currentScreenForDebug}
+          bootState={bootState}
+        />
+      </>
+    );
+  }
 
+  // 6. Main screens: один неизменяемый root, смена внутреннего контента без mount при переходе Menu→Battle
+  const battleActive = isSearching || matchMode === 'pve' || screen === 'battle';
   return (
     <>
-      <div className={`app-screen ${!(isAndroidTg || debugNoFade) ? 'fade' : ''} ${screen === 'onboarding' ? 'visible' : 'hidden'}`}>
-        <Onboarding authToken={authToken} onNicknameSet={handleNicknameSet} />
-      </div>
-      <div className={`app-screen ${!(isAndroidTg || debugNoFade) ? 'fade' : ''} ${screen === 'menu' ? 'visible' : 'hidden'}`}>
-        <Menu
-          onStartBattle={handleStartBattle}
-          onStartPvE={handleStartPvE}
-          onCancelSearch={handleCancelSearch}
-          isSearching={isSearching}
-          tokens={tokens}
-          nickname={nickname}
-        />
-      </div>
-      <div className={`app-screen ${!(isAndroidTg || debugNoFade) ? 'fade' : ''} ${screen === 'battle' && (!isAndroidTg || battleReadyForShow) ? 'visible' : 'hidden'}`}>
-        <Battle
-          onBackToMenu={handleBackToMenu}
-          onPlayAgain={handlePlayAgain}
-          onBattleMounted={undefined}
-          isVisible={screen === 'battle' && (!isAndroidTg || battleReadyForShow)}
-          matchMode={matchMode}
-          tokens={tokens}
-          matchEndPayload={matchEndPayload}
-          lastPrepStart={lastPrepStart}
-          currentMatchId={currentMatchId}
-        />
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            display: screen === 'menu' ? 'block' : 'none',
+            position: 'absolute',
+            inset: 0,
+            overflow: 'hidden',
+          }}
+        >
+          <Menu
+            onStartBattle={handleStartBattle}
+            onStartPvE={handleStartPvE}
+            onCancelSearch={handleCancelSearch}
+            isSearching={isSearching}
+            tokens={tokens}
+            nickname={nickname}
+          />
+        </div>
+        {battleActive && (
+          <div
+            style={{
+              display: screen === 'battle' ? 'block' : 'none',
+              position: 'absolute',
+              inset: 0,
+              overflow: 'hidden',
+            }}
+          >
+            <Battle
+              onBackToMenu={handleBackToMenu}
+              onPlayAgain={handlePlayAgain}
+              matchMode={matchMode}
+              tokens={tokens}
+              matchEndPayload={matchEndPayload}
+              lastPrepStart={lastPrepStart}
+              currentMatchId={currentMatchId}
+            />
+          </div>
+        )}
       </div>
       <DebugOverlay
         hasTelegram={hasTelegramWebApp}
@@ -686,10 +610,7 @@ function App() {
         nickname={nickname}
         currentScreen={currentScreenForDebug}
         bootState={bootState}
-        shield={isTransitionShieldOn ? 'on' : 'off'}
-        lastBattleGate={lastBattleGate}
       />
-      <TransitionShield visible={isTransitionShieldOn} />
     </>
   );
 }

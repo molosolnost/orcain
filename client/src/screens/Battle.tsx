@@ -1,5 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
-import { lockAppHeight, unlockAppHeight } from '../lib/appViewport';
+import { useState, useEffect, useRef } from 'react';
 import { socketManager } from '../net/socket';
 import type { CardId, PrepStartPayload, StepRevealPayload, MatchEndPayload } from '../net/types';
 import { cardIdToType } from '../cards';
@@ -9,8 +8,6 @@ type BattleState = 'prep' | 'playing' | 'ended';
 interface BattleProps {
   onBackToMenu: () => void;
   onPlayAgain?: () => void;
-  onBattleMounted?: () => void;
-  isVisible?: boolean;
   matchMode?: 'pvp' | 'pve' | null;
   tokens: number | null;
   matchEndPayload: MatchEndPayload | null;
@@ -18,7 +15,7 @@ interface BattleProps {
   currentMatchId: string | null;
 }
 
-export default function Battle({ onBackToMenu, onPlayAgain, onBattleMounted, isVisible = true, matchMode, tokens, matchEndPayload, lastPrepStart, currentMatchId }: BattleProps) {
+export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, matchEndPayload, lastPrepStart, currentMatchId }: BattleProps) {
   const [state, setState] = useState<BattleState>('prep');
   const [yourHp, setYourHp] = useState(10);
   const [oppHp, setOppHp] = useState(10);
@@ -70,66 +67,6 @@ export default function Battle({ onBackToMenu, onPlayAgain, onBattleMounted, isV
   const prevOppHpRef = useRef<number>(10);
 
   const DEBUG_MATCH = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
-  const androidTg = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent) && !!(window as any).Telegram?.WebApp;
-  const battleMountTsRef = useRef<number | null>(null);
-  const firstPrepLoggedRef = useRef(false);
-  const firstStepRevealLoggedRef = useRef(false);
-
-  useEffect(() => {
-    onBattleMounted?.();
-  }, []);
-
-  // Lock viewport + battle-mode only when visible (screens stay mounted; we switch via .visible/.hidden)
-  useLayoutEffect(() => {
-    if (!isVisible) {
-      unlockAppHeight('battle_hidden');
-      document.documentElement.classList.remove('battle-mode');
-      document.body.classList.remove('battle-mode');
-      return;
-    }
-    lockAppHeight('battle_mount');
-    document.documentElement.classList.add('battle-mode');
-    document.body.classList.add('battle-mode');
-    const ts = Date.now();
-    battleMountTsRef.current = ts;
-    if (DEBUG_MATCH) {
-      const tg = (window as any).Telegram?.WebApp;
-      console.log(`[BATTLE_DBG] visible`, { ts, inner: window.innerHeight, vv: (window as any).visualViewport?.height, tg: tg?.viewportHeight });
-      const b = (window as any).__battleDebug = (window as any).__battleDebug || {};
-      b.battleMountMs = b.screenToBattleTs != null ? ts - b.screenToBattleTs : 0;
-      requestAnimationFrame(() => {
-        if (battleMountTsRef.current != null) {
-          const b2 = (window as any).__battleDebug;
-          if (b2) b2.firstPaintMs = Date.now() - battleMountTsRef.current!;
-        }
-      });
-    }
-    return () => {
-      unlockAppHeight('battle_unmount');
-      document.documentElement.classList.remove('battle-mode');
-      document.body.classList.remove('battle-mode');
-    };
-  }, [isVisible]);
-
-  // When becoming hidden: clear transient UI so it does not pop on next show
-  useEffect(() => {
-    if (!isVisible) {
-      setDraftToast(null);
-      setSlotOccupiedToast(null);
-      setRoundBanner(null);
-      setHpFlash(null);
-      setSlotPopAnimation(null);
-      setConfirmButtonPressed(false);
-      if (draftToastTimeoutRef.current) {
-        clearTimeout(draftToastTimeoutRef.current);
-        draftToastTimeoutRef.current = null;
-      }
-      if (slotOccupiedToastTimeoutRef.current) {
-        clearTimeout(slotOccupiedToastTimeoutRef.current);
-        slotOccupiedToastTimeoutRef.current = null;
-      }
-    }
-  }, [isVisible]);
 
   // Sync currentMatchIdRef with prop
   useEffect(() => {
@@ -204,13 +141,6 @@ export default function Battle({ onBackToMenu, onPlayAgain, onBattleMounted, isV
       console.log(`[BATTLE_PREP_START] applying round=${lastPrepStart.roundIndex} deadlineTs=${lastPrepStart.deadlineTs} yourNickname=${lastPrepStart.yourNickname || '<null>'} oppNickname=${lastPrepStart.oppNickname || '<null>'} isNewRound=${isNewRound}`);
     }
     
-    // DEBUG: first prep_start applied → firstPrepMs (only once)
-    if (DEBUG_MODE && !firstPrepLoggedRef.current && battleMountTsRef.current != null) {
-      firstPrepLoggedRef.current = true;
-      const b = (window as any).__battleDebug;
-      if (b) b.firstPrepMs = Date.now() - battleMountTsRef.current;
-    }
-
     // КРИТИЧНО: устанавливаем все данные немедленно, включая R1
     setRoundIndex(lastPrepStart.roundIndex);
     setPhase('PREP');
@@ -300,11 +230,6 @@ export default function Battle({ onBackToMenu, onPlayAgain, onBattleMounted, isV
     });
 
     socketManager.onStepReveal((payload: StepRevealPayload) => {
-      if (DEBUG_MATCH && !firstStepRevealLoggedRef.current) {
-        firstStepRevealLoggedRef.current = true;
-        const tg = (window as any).Telegram?.WebApp;
-        console.log(`[BATTLE_DBG] first step_reveal`, { step: payload.stepIndex, inner: window.innerHeight, vv: (window as any).visualViewport?.height, tg: tg?.viewportHeight, app: getComputedStyle(document.documentElement).getPropertyValue('--app-height').trim() });
-      }
       // CRITICAL: Cancel any pending draft on phase change (PREP -> REVEAL)
       // DO NOT flush draft in REVEAL - server will use last draft from PREP
       if (draftDebounceRef.current) {
@@ -936,24 +861,75 @@ export default function Battle({ onBackToMenu, onPlayAgain, onBattleMounted, isV
     );
   };
 
-  // Android TG: composited layer to avoid repaint flash (reduces battle start flicker)
-  const androidComposite = androidTg ? { transform: 'translateZ(0)', willChange: 'transform, opacity' as const, backfaceVisibility: 'hidden' as const, contain: 'paint' as const } : {};
+  // BattleShell: статичная оболочка до prep_start. Не меняет размеры DOM, без карт и тяжёлого layout.
+  // Рендер игрового поля — только после prep_start, без анимаций при первом появлении.
+  if (!lastPrepStart) {
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          contain: 'layout paint size style',
+          isolation: 'isolate',
+          transform: 'translateZ(0)',
+          backgroundColor: '#242424',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {matchEndPayload ? (
+          <div style={{ textAlign: 'center', padding: 24 }}>
+            <p style={{ marginBottom: 16, color: 'rgba(255,255,255,0.9)' }}>
+              {matchEndPayload.winner === 'YOU' ? 'Победа' : 'Поражение'}
+            </p>
+            <button
+              onClick={onBackToMenu}
+              style={{
+                padding: '12px 24px',
+                fontSize: 16,
+                cursor: 'pointer',
+                backgroundColor: 'rgba(255,255,255,0.1)',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: 8,
+              }}
+            >
+              Back to Menu
+            </button>
+          </div>
+        ) : (
+          <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>Подготовка боя…</span>
+        )}
+      </div>
+    );
+  }
 
   return (
-    <div
-      style={{ 
-        position: 'absolute',
-        inset: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        paddingTop: 'env(safe-area-inset-top, 0)',
-        paddingBottom: 'env(safe-area-inset-bottom, 0)',
-        backgroundColor: '#111',
-        color: 'rgba(255, 255, 255, 0.87)',
-        overflow: 'hidden',
-        ...androidComposite
-      }}
-    >
+    <div style={{ 
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      width: '100%',
+      height: '100%',
+      contain: 'layout paint size style',
+      isolation: 'isolate',
+      transform: 'translateZ(0)',
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+      paddingTop: 'env(safe-area-inset-top, 0)',
+      paddingBottom: 'env(safe-area-inset-bottom, 0)',
+      backgroundColor: '#242424',
+      color: 'rgba(255, 255, 255, 0.87)',
+      zIndex: 1
+    }}>
       {/* Compact Top Bar - 1 строка максимум */}
       <div style={{ 
         flexShrink: 0,
