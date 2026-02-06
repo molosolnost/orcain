@@ -413,6 +413,7 @@ function App() {
   };
 
   const handleStartBattle = () => {
+    if (!connected) return;
     startBattleTransition();
     setTutorialMode(false);
     setMatchMode('pvp');
@@ -421,6 +422,7 @@ function App() {
   };
 
   const handleStartPvE = () => {
+    if (!connected) return;
     startBattleTransition();
     setTutorialMode(false);
     setMatchMode('pve');
@@ -602,27 +604,7 @@ function App() {
     );
   }
 
-  // 5. Connecting...
-  if (!connected && authToken) {
-    return (
-      <>
-        <div>Connecting...</div>
-        <DebugOverlay
-          hasTelegram={hasTelegramWebApp}
-          initDataLen={initDataLen}
-          authRequest={authRequest}
-          authStatus={authStatus}
-          gotAccountId={gotAccountId}
-          storedAuthToken={storedAuthToken}
-          nickname={nickname}
-          currentScreen={currentScreenForDebug}
-          bootState={bootState}
-        />
-      </>
-    );
-  }
-
-  // 6. Main screens: один неизменяемый root, смена внутреннего контента без mount при переходе Menu→Battle
+  // 5. Main screens: один неизменяемый root, смена внутреннего контента без mount при переходе Menu→Battle
   const battleActive = tutorialMode || isSearching || matchMode === 'pve' || screen === 'battle';
   return (
     <>
@@ -651,6 +633,7 @@ function App() {
             isSearching={isSearching}
             tokens={tokens}
             nickname={nickname}
+            connected={connected}
             tutorialCompleted={tutorialCompleted}
           />
         </div>

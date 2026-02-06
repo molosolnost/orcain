@@ -15,6 +15,7 @@ interface MenuProps {
   isSearching: boolean;
   tokens: number | null;
   nickname: string | null;
+  connected: boolean;
   tutorialCompleted: boolean;
 }
 
@@ -26,10 +27,12 @@ export default function Menu({
   isSearching,
   tokens,
   nickname,
+  connected,
   tutorialCompleted
 }: MenuProps) {
   // Кнопка Start Battle disabled если tokens !== null && tokens < 1
-  const hasEnoughTokens = tokens !== null && tokens >= 1;
+  const hasEnoughTokens = connected && tokens !== null && tokens >= 1;
+  const canStartPvE = connected;
   const isCompact = typeof window !== 'undefined' ? window.innerHeight < 740 : false;
 
   // Debug mode: adjust overlay opacity
@@ -102,6 +105,11 @@ export default function Menu({
             Welcome, <strong>{nickname}</strong>
           </div>
         )}
+        {!connected && (
+          <div style={{ fontSize: '13px', color: '#ffcc80', textAlign: 'center', maxWidth: '330px', lineHeight: 1.35 }}>
+            Connecting to server... PvP/PvE buttons will unlock automatically after connection.
+          </div>
+        )}
         <div style={{ fontSize: 'clamp(18px, 5vw, 22px)', fontWeight: 700 }}>Tokens: {tokens === null ? '—' : tokens}</div>
         
         {isSearching ? (
@@ -143,20 +151,22 @@ export default function Menu({
             </button>
             <button 
               onClick={onStartPvE}
+              disabled={!canStartPvE}
               style={{
                 padding: '14px 24px',
                 fontSize: 'clamp(16px, 4.4vw, 18px)',
-                cursor: 'pointer',
+                cursor: canStartPvE ? 'pointer' : 'not-allowed',
                 backgroundColor: '#4caf50',
                 color: '#fff',
                 border: 'none',
                 borderRadius: '10px',
                 width: 'min(300px, 84vw)',
                 minHeight: '48px',
-                fontWeight: 700
+                fontWeight: 700,
+                opacity: canStartPvE ? 1 : 0.55
               }}
             >
-              Start PvE Training
+              {canStartPvE ? 'Start PvE Training' : 'Waiting for connection'}
             </button>
             <button
               onClick={onStartTutorial}

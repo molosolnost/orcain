@@ -57,3 +57,14 @@ Original prompt: Добавь в игру интерактивное обуче�
 - Fixed mobile overlap on tutorial confirm step: tutorial panel now moves to top when current step is `confirm`.
 - Added bounded panel height with internal scroll to prevent blocking actionable controls on small/long mobile viewports.
 - Verified with `npm run build --prefix client`.
+
+## Hotfix: Black screen in menu entry
+- Removed hard blocking `!connected && authToken` full-screen gate in App (this could look like black screen when socket handshake stalls).
+- Menu now renders even while socket is reconnecting.
+- Added explicit connection status text in menu.
+- PvP/PvE start buttons are disabled until socket is connected; tutorial button stays available.
+- Added guards in `handleStartBattle` and `handleStartPvE` to prevent queue actions while disconnected.
+
+## Validation
+- `npm run build --prefix client` passed.
+- `npm run test:ui-regression` passed.
