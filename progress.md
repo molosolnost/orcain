@@ -83,3 +83,18 @@ Original prompt: Добавь в игру интерактивное обуче�
   - `npm run build --prefix client` passed,
   - `npm run test:ui-regression` passed,
   - manual screenshot check for mobile menu layout passed.
+
+## Hotfix: PvP black screen after "В бой"
+- Root cause: `TransitionShield` was started too early (at `queue_join`) and could stay visible while user remained in menu queue state, creating a black-screen effect.
+- Fix:
+  - Start transition shield only on actual match transition (`onMatchFound`) instead of `handleStartBattle`.
+  - Stop transition shield on queue cancel/queue leave/error/unauthorized/back-to-menu.
+  - Added a failsafe effect: if shield remains visible outside battle/tutorial, auto-hide after timeout.
+- This reduces regression risk by centralizing shield lifecycle to real screen transitions and adding recovery fallback.
+
+## Validation
+- `npm run build --prefix client` passed.
+- `npm run test:ui-regression` passed.
+- Added targeted Playwright check for PvP start flow on mobile viewport:
+  - after tapping PvP button, `Searching opponent…` is visible,
+  - transition shield is not blocking viewport.

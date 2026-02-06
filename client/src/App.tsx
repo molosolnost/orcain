@@ -116,6 +116,14 @@ function App() {
     transitionUnlockRef.current = lockAppHeightFor(1500);
   };
 
+  const stopBattleTransition = () => {
+    setTransitionShieldVisible(false);
+    if (transitionUnlockRef.current) {
+      transitionUnlockRef.current();
+      transitionUnlockRef.current = null;
+    }
+  };
+
   // Инициализация: проверяем Telegram Mini App или читаем authToken из localStorage
   useEffect(() => {
     setBootState('checking');
@@ -303,8 +311,10 @@ function App() {
         setConnected(false);
         setTokens(null);
         setIsSearching(false);
+        stopBattleTransition();
       } else if (isSearching) {
         setIsSearching(false);
+        stopBattleTransition();
         alert(payload.message);
       }
     });
@@ -329,9 +339,11 @@ function App() {
         return;
       }
       setIsSearching(false);
+      stopBattleTransition();
     });
 
     socketManager.onMatchFound((payload) => {
+      startBattleTransition();
       if (payload.matchId) {
         setCurrentMatchId(payload.matchId);
       }
@@ -414,7 +426,6 @@ function App() {
 
   const handleStartBattle = () => {
     if (!connected) return;
-    startBattleTransition();
     setTutorialMode(false);
     setMatchMode('pvp');
     setIsSearching(true);
@@ -423,7 +434,6 @@ function App() {
 
   const handleStartPvE = () => {
     if (!connected) return;
-    startBattleTransition();
     setTutorialMode(false);
     setMatchMode('pve');
     // PvE is immediate - no queue, no tokens
@@ -444,14 +454,11 @@ function App() {
 
   const handleCancelSearch = () => {
     socketManager.queueLeave();
+    stopBattleTransition();
   };
 
   const handleBackToMenu = () => {
-    if (transitionUnlockRef.current) {
-      transitionUnlockRef.current();
-      transitionUnlockRef.current = null;
-    }
-    setTransitionShieldVisible(false);
+    stopBattleTransition();
     setMatchMode(null);
     setTutorialMode(false);
     setMatchEndPayload(null);
@@ -461,7 +468,6 @@ function App() {
   };
 
   const handlePlayAgain = () => {
-    startBattleTransition();
     setMatchEndPayload(null);
     setLastPrepStart(null);
     setCurrentMatchId(null);
@@ -502,15 +508,24 @@ function App() {
       if (!cancelled) {
         setTransitionShieldVisible(false);
       }
-      if (transitionUnlockRef.current) {
-        transitionUnlockRef.current();
-        transitionUnlockRef.current = null;
-      }
+      stopBattleTransition();
     })();
     return () => {
       cancelled = true;
     };
   }, [screen, lastPrepStart]);
+
+  // Failsafe: if transition shield is visible outside battle, auto-hide it.
+  useEffect(() => {
+    if (!transitionShieldVisible) return;
+    if (screen === 'battle' || tutorialMode) return;
+    const timer = window.setTimeout(() => {
+      stopBattleTransition();
+    }, 900);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [transitionShieldVisible, screen, tutorialMode]);
 
   // Render logic
   // 1. Показываем loading во время проверки или Telegram auth
