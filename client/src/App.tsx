@@ -16,6 +16,7 @@ type BootState = 'checking' | 'telegram_auth' | 'ready' | 'error';
 
 const BUILD_ID = import.meta.env.VITE_BUILD_ID || `dev-${Date.now()}`;
 const DEBUG_MODE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
+const TUTORIAL_COMPLETED_KEY = 'orcain_tutorial_completed_v1';
 
 function DebugOverlay({ 
   hasTelegram, 
@@ -83,6 +84,11 @@ function App() {
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [lastPrepStart, setLastPrepStart] = useState<PrepStartPayload | null>(null);
   const [matchMode, setMatchMode] = useState<'pvp' | 'pve' | null>(null); // Track PvP vs PvE
+  const [tutorialMode, setTutorialMode] = useState(false);
+  const [tutorialCompleted, setTutorialCompleted] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem(TUTORIAL_COMPLETED_KEY) === '1';
+  });
   const [transitionShieldVisible, setTransitionShieldVisible] = useState(false);
   const transitionUnlockRef = useRef<(() => void) | null>(null);
   
@@ -408,6 +414,7 @@ function App() {
 
   const handleStartBattle = () => {
     startBattleTransition();
+    setTutorialMode(false);
     setMatchMode('pvp');
     setIsSearching(true);
     socketManager.queueJoin();
@@ -415,10 +422,18 @@ function App() {
 
   const handleStartPvE = () => {
     startBattleTransition();
+    setTutorialMode(false);
     setMatchMode('pve');
     // PvE is immediate - no queue, no tokens
     socketManager.pveStart();
     // match_found will be sent, which will switch to battle screen
+  };
+
+  const handleStartTutorial = () => {
+    startBattleTransition();
+    setTutorialMode(true);
+    setMatchMode('pve');
+    socketManager.pveStart();
   };
 
   const handleCancelSearch = () => {
@@ -432,6 +447,7 @@ function App() {
     }
     setTransitionShieldVisible(false);
     setMatchMode(null);
+    setTutorialMode(false);
     setMatchEndPayload(null);
     setLastPrepStart(null);
     setCurrentMatchId(null);
@@ -448,6 +464,12 @@ function App() {
     } else if (matchMode === 'pvp') {
       handleStartBattle();
     }
+  };
+
+  const handleTutorialComplete = () => {
+    localStorage.setItem(TUTORIAL_COMPLETED_KEY, '1');
+    setTutorialCompleted(true);
+    setTutorialMode(false);
   };
 
   // Debug info
@@ -620,10 +642,12 @@ function App() {
           <Menu
             onStartBattle={handleStartBattle}
             onStartPvE={handleStartPvE}
+            onStartTutorial={handleStartTutorial}
             onCancelSearch={handleCancelSearch}
             isSearching={isSearching}
             tokens={tokens}
             nickname={nickname}
+            tutorialCompleted={tutorialCompleted}
           />
         </div>
         {battleActive && (
@@ -638,7 +662,9 @@ function App() {
             <Battle
               onBackToMenu={handleBackToMenu}
               onPlayAgain={handlePlayAgain}
+              onTutorialComplete={handleTutorialComplete}
               matchMode={matchMode}
+              tutorialMode={tutorialMode}
               tokens={tokens}
               matchEndPayload={matchEndPayload}
               lastPrepStart={lastPrepStart}

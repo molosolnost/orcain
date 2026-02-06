@@ -5,18 +5,106 @@ import { cardIdToType } from '../cards';
 import { lockAppHeight, unlockAppHeight } from '../lib/appViewport';
 
 type BattleState = 'prep' | 'playing' | 'ended';
+type TutorialStepId =
+  | 'intro'
+  | 'cards'
+  | 'first_card'
+  | 'fill_slots'
+  | 'confirm'
+  | 'reveal'
+  | 'pvp_tactics'
+  | 'finish';
+
+interface TutorialStepConfig {
+  id: TutorialStepId;
+  title: string;
+  body: string;
+  action: string;
+  autoAdvance: boolean;
+}
+
+const TUTORIAL_STEPS: TutorialStepConfig[] = [
+  {
+    id: 'intro',
+    title: 'Шаг 1/8: Что происходит в бою',
+    body: 'Раунд всегда идёт по схеме PREP -> REVEAL. В PREP у тебя есть таймер на выбор 3 карт. В REVEAL карты вскрываются по одной, а HP меняется по результатам.',
+    action: 'Нажми «Дальше», чтобы перейти к картам.',
+    autoAdvance: false
+  },
+  {
+    id: 'cards',
+    title: 'Шаг 2/8: Как работают карты',
+    body: 'Attack наносит 2 урона. Defense блокирует Attack. Heal даёт +1 HP. Counter отражает Attack обратно в соперника. Эти 4 карты и есть база всей тактики.',
+    action: 'Нажми «Дальше», чтобы начать свой первый ход.',
+    autoAdvance: false
+  },
+  {
+    id: 'first_card',
+    title: 'Шаг 3/8: Положи первую карту',
+    body: 'Перетащи любую карту из руки в один из 3 слотов. Это и есть draft хода: сервер видит расклад и ждёт подтверждения.',
+    action: 'Положи 1 карту в любой слот.',
+    autoAdvance: true
+  },
+  {
+    id: 'fill_slots',
+    title: 'Шаг 4/8: Заполни все слоты',
+    body: 'В каждый раунд нужно выставить ровно 3 карты. Порядок важен: они вскрываются слева направо, шаг за шагом.',
+    action: 'Заполни 3/3 слота.',
+    autoAdvance: true
+  },
+  {
+    id: 'confirm',
+    title: 'Шаг 5/8: Подтверди ход',
+    body: 'После Confirm расклад фиксируется. До подтверждения можно переставлять карты, чтобы подстроить порядок под предполагаемый ответ соперника.',
+    action: 'Нажми кнопку Confirm.',
+    autoAdvance: true
+  },
+  {
+    id: 'reveal',
+    title: 'Шаг 6/8: Читай вскрытие',
+    body: 'Смотри, какая карта открылась у соперника и как изменилась HP-панель. Это основной источник информации для следующего раунда.',
+    action: 'Дождись первого шага REVEAL.',
+    autoAdvance: true
+  },
+  {
+    id: 'pvp_tactics',
+    title: 'Шаг 7/8: Мини-тактики против реальных игроков',
+    body: 'Не повторяй один и тот же порядок. Если соперник часто открывает Attack в начале, ставь Defense/Counter в первом слоте. Если видишь осторожную игру, наказывай Attack. Heal лучше прятать в шаг, где по тебе реже бьют.',
+    action: 'Нажми «Дальше», чтобы завершить обучение.',
+    autoAdvance: false
+  },
+  {
+    id: 'finish',
+    title: 'Шаг 8/8: Готов к PvP',
+    body: 'Ты разобрал базовый цикл матча, карты и чтение вскрытий. Теперь можно идти в Start Battle и отрабатывать предсказание реальных соперников.',
+    action: 'Нажми «Завершить обучение» и вернись в меню.',
+    autoAdvance: false
+  }
+];
 
 interface BattleProps {
   onBackToMenu: () => void;
   onPlayAgain?: () => void;
+  onTutorialComplete?: () => void;
   matchMode?: 'pvp' | 'pve' | null;
+  tutorialMode?: boolean;
   tokens: number | null;
   matchEndPayload: MatchEndPayload | null;
   lastPrepStart: PrepStartPayload | null;
   currentMatchId: string | null;
 }
 
-export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, matchEndPayload, lastPrepStart, currentMatchId }: BattleProps) {
+export default function Battle({
+  onBackToMenu,
+  onPlayAgain,
+  onTutorialComplete,
+  matchMode,
+  tutorialMode,
+  tokens,
+  matchEndPayload,
+  lastPrepStart,
+  currentMatchId
+}: BattleProps) {
   const [state, setState] = useState<BattleState>('prep');
   const [yourHp, setYourHp] = useState(10);
   const [oppHp, setOppHp] = useState(10);
@@ -68,12 +156,19 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
   const [roundBanner, setRoundBanner] = useState<string | null>(null); // "Round X - PREP" / "Round X complete"
   const [revealAnimations, setRevealAnimations] = useState<Set<number>>(new Set()); // stepIndexes that should animate
   const [confirmButtonPressed, setConfirmButtonPressed] = useState(false);
+  const [tutorialStepIndex, setTutorialStepIndex] = useState(0);
+  const [tutorialDismissed, setTutorialDismissed] = useState(false);
   const prevYourHpRef = useRef<number>(10);
   const prevOppHpRef = useRef<number>(10);
 
   const DEBUG_MATCH = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
   const isCompactHeight = viewportHeight < 740;
   const isUltraCompactHeight = viewportHeight < 680;
+  const selectedSlotsCount = slots.filter(c => c !== null).length;
+  const tutorialEnabled = Boolean(tutorialMode) && !tutorialDismissed;
+  const currentTutorialStep = tutorialEnabled ? TUTORIAL_STEPS[Math.min(tutorialStepIndex, TUTORIAL_STEPS.length - 1)] : null;
+  const tutorialHandUnlocked = !tutorialEnabled || tutorialStepIndex >= 2;
+  const tutorialConfirmUnlocked = !tutorialEnabled || tutorialStepIndex >= 4;
 
   // Sync currentMatchIdRef with prop
   useEffect(() => {
@@ -381,7 +476,37 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
     };
   }, [phase, deadlineTs, roundIndex]);
 
-  const canInteract = state === 'prep' && !confirmed;
+  useEffect(() => {
+    if (!tutorialMode) {
+      setTutorialStepIndex(0);
+      setTutorialDismissed(false);
+      return;
+    }
+    setTutorialStepIndex(0);
+    setTutorialDismissed(false);
+  }, [tutorialMode, currentMatchId]);
+
+  useEffect(() => {
+    if (!tutorialEnabled || !currentTutorialStep || !currentTutorialStep.autoAdvance) return;
+
+    if (currentTutorialStep.id === 'first_card' && selectedSlotsCount >= 1) {
+      setTutorialStepIndex(prev => Math.min(prev + 1, TUTORIAL_STEPS.length - 1));
+      return;
+    }
+    if (currentTutorialStep.id === 'fill_slots' && selectedSlotsCount === 3) {
+      setTutorialStepIndex(prev => Math.min(prev + 1, TUTORIAL_STEPS.length - 1));
+      return;
+    }
+    if (currentTutorialStep.id === 'confirm' && confirmed) {
+      setTutorialStepIndex(prev => Math.min(prev + 1, TUTORIAL_STEPS.length - 1));
+      return;
+    }
+    if (currentTutorialStep.id === 'reveal' && phase === 'REVEAL' && currentStepIndex !== null) {
+      setTutorialStepIndex(prev => Math.min(prev + 1, TUTORIAL_STEPS.length - 1));
+    }
+  }, [tutorialEnabled, currentTutorialStep, selectedSlotsCount, confirmed, phase, currentStepIndex]);
+
+  const canInteract = state === 'prep' && !confirmed && tutorialHandUnlocked;
 
   useEffect(() => {
     if (dragState) {
@@ -739,6 +864,7 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
 
   const handleConfirm = () => {
     if (confirmed) return;
+    if (!tutorialConfirmUnlocked) return;
     const layout = slots.filter((card): card is CardId => card !== null);
     if (layout.length !== 3) return;
     
@@ -777,6 +903,7 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
     }
 
     if (matchMode !== 'pve') return;
+    if (tutorialEnabled) return;
     if (state !== 'prep' || confirmed || phase !== 'PREP') return;
     if (slots.filter((c) => c !== null).length !== 3) return;
 
@@ -787,7 +914,18 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
       handleConfirm();
       autoConfirmTimeoutRef.current = null;
     }, 120);
-  }, [matchMode, state, confirmed, phase, slots]);
+  }, [matchMode, tutorialEnabled, state, confirmed, phase, slots]);
+
+  const advanceTutorialManually = () => {
+    if (!tutorialEnabled || !currentTutorialStep || currentTutorialStep.autoAdvance) return;
+    if (currentTutorialStep.id === 'finish') return;
+    setTutorialStepIndex(prev => Math.min(prev + 1, TUTORIAL_STEPS.length - 1));
+  };
+
+  const handleFinishTutorial = () => {
+    onTutorialComplete?.();
+    onBackToMenu();
+  };
 
 
   // Функция для получения цвета карты (принимает CardId, конвертирует в CardType для UI)
@@ -909,6 +1047,22 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
     );
   };
 
+  const tutorialHighlight = (active: boolean) =>
+    active
+      ? {
+          boxShadow: '0 0 0 2px rgba(255, 193, 7, 0.9), 0 0 14px rgba(255, 193, 7, 0.35)',
+          borderRadius: '10px'
+        }
+      : {};
+
+  const tutorialHighlights = {
+    topBar: tutorialEnabled && (currentTutorialStep?.id === 'intro' || currentTutorialStep?.id === 'cards'),
+    slots: tutorialEnabled && (currentTutorialStep?.id === 'first_card' || currentTutorialStep?.id === 'fill_slots'),
+    confirm: tutorialEnabled && currentTutorialStep?.id === 'confirm',
+    reveal: tutorialEnabled && currentTutorialStep?.id === 'reveal',
+    hand: tutorialEnabled && currentTutorialStep?.id === 'first_card'
+  };
+
   // BattleShell: статичная оболочка до prep_start. Не меняет размеры DOM, без карт и тяжёлого layout.
   // Рендер игрового поля — только после prep_start, без анимаций при первом появлении.
   if (!lastPrepStart) {
@@ -991,7 +1145,8 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
         justifyContent: 'space-between',
         fontSize: isCompactHeight ? '9px' : '10px',
         lineHeight: '1.3',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+        ...tutorialHighlight(tutorialHighlights.topBar)
       }}>
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 'bold' }}>R{roundIndex}{suddenDeath ? ' SD' : ''}</span>
@@ -1049,7 +1204,8 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
         display: 'flex',
         gap: isCompactHeight ? '4px' : '6px',
         justifyContent: 'center',
-        alignItems: 'center'
+        alignItems: 'center',
+        ...tutorialHighlight(tutorialHighlights.reveal)
       }}>
         <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
           {[0, 1, 2].map((index) => {
@@ -1102,7 +1258,7 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
           fontWeight: 'bold',
           color: '#fff'
         }}>
-          Выбрано: {slots.filter(c => c !== null).length}/3
+          Выбрано: {selectedSlotsCount}/3
         </div>
       )}
 
@@ -1113,7 +1269,8 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
         display: 'flex',
         gap: isCompactHeight ? '6px' : '8px',
         justifyContent: 'center',
-        alignItems: 'center'
+        alignItems: 'center',
+        ...tutorialHighlight(tutorialHighlights.slots)
       }}>
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
           {slots.map((card, index) => {
@@ -1241,7 +1398,8 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
         justifyContent: 'center',
         minHeight: 0,
         overflow: 'hidden',
-        paddingTop: isCompactHeight ? '4px' : '8px'
+        paddingTop: isCompactHeight ? '4px' : '8px',
+        ...tutorialHighlight(tutorialHighlights.hand)
       }}>
         {state === 'prep' && !confirmed && (
           <div style={{ 
@@ -1257,8 +1415,9 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
             {yourHand.map((cardId) => {
               const inSlot = slots.includes(cardId);
               const isDraggingCard = dragState?.card === cardId;
-              const slotsCount = slots.filter(c => c !== null).length;
-              const isBlocked = slotsCount === 3 && !inSlot; // Block if all slots full and card not in slot
+              const slotsCount = selectedSlotsCount;
+              const tutorialLocked = tutorialEnabled && !tutorialHandUnlocked;
+              const isBlocked = tutorialLocked || (slotsCount === 3 && !inSlot); // Block if tutorial still gated or slots full
               const cardElement = renderCard(cardId, 'HAND');
 
               return (
@@ -1300,15 +1459,22 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
             ? `8px 10px calc(8px + env(safe-area-inset-bottom, 0px)) 10px`
             : `12px 12px calc(12px + env(safe-area-inset-bottom, 0px)) 12px`,
           textAlign: 'center',
-          borderTop: '1px solid rgba(255, 255, 255, 0.1)'
+          borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+          ...tutorialHighlight(tutorialHighlights.confirm)
         }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
             {(() => {
-              const slotsCount = slots.filter(c => c !== null).length;
+              const slotsCount = selectedSlotsCount;
               if (slotsCount < 3) {
                 return (
                   <div style={{ fontSize: '11px', color: '#999', opacity: 0.7 }}>
                     Положи ещё {3 - slotsCount} карт{3 - slotsCount !== 1 ? 'ы' : 'у'}, чтобы подтвердить ход
+                  </div>
+                );
+              } else if (tutorialEnabled && !tutorialConfirmUnlocked) {
+                return (
+                  <div style={{ fontSize: '11px', color: '#ffcc80', opacity: 0.95 }}>
+                    Сначала прочитай подсказку обучения, потом Confirm
                   </div>
                 );
               } else {
@@ -1321,22 +1487,22 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
             })()}
             <button
               onClick={handleConfirm}
-              disabled={slots.filter(c => c !== null).length !== 3}
+              disabled={selectedSlotsCount !== 3 || !tutorialConfirmUnlocked}
               style={{
                 padding: '14px 32px',
                 fontSize: '16px',
                 fontWeight: 'bold',
-                cursor: slots.filter(c => c !== null).length === 3 ? 'pointer' : 'not-allowed',
+                cursor: selectedSlotsCount === 3 && tutorialConfirmUnlocked ? 'pointer' : 'not-allowed',
                 minWidth: '140px',
                 minHeight: '48px',
                 borderRadius: '8px',
                 border: 'none',
-                backgroundColor: slots.filter(c => c !== null).length === 3 ? '#4caf50' : '#666',
+                backgroundColor: selectedSlotsCount === 3 && tutorialConfirmUnlocked ? '#4caf50' : '#666',
                 color: '#fff',
                 transition: 'background-color 0.2s, transform 0.1s ease, opacity 0.1s ease, box-shadow 0.2s ease',
                 transform: confirmButtonPressed ? 'scale(0.95)' : 'scale(1)',
                 opacity: confirmButtonPressed ? 0.8 : 1,
-                boxShadow: slots.filter(c => c !== null).length === 3 
+                boxShadow: selectedSlotsCount === 3 && tutorialConfirmUnlocked
                   ? '0 0 12px rgba(76, 175, 80, 0.4)' 
                   : 'none'
               }}
@@ -1517,6 +1683,123 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
           </div>
         );
       })()}
+
+      {currentTutorialStep && (
+        <div
+          style={{
+            position: 'fixed',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: 'flex',
+            justifyContent: 'center',
+            padding: isCompactHeight
+              ? '8px 10px calc(14px + env(safe-area-inset-bottom, 0px)) 10px'
+              : '12px 14px calc(18px + env(safe-area-inset-bottom, 0px)) 14px',
+            zIndex: 10020,
+            pointerEvents: 'none'
+          }}
+        >
+          <div
+            style={{
+              width: 'min(680px, 100%)',
+              backgroundColor: 'rgba(10, 10, 10, 0.94)',
+              border: '1px solid rgba(255, 193, 7, 0.7)',
+              borderRadius: '12px',
+              boxShadow: '0 10px 24px rgba(0, 0, 0, 0.45)',
+              padding: isCompactHeight ? '10px 12px' : '12px 14px',
+              pointerEvents: 'auto'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
+              <strong style={{ fontSize: isCompactHeight ? '13px' : '14px', color: '#ffe082' }}>
+                {currentTutorialStep.title}
+              </strong>
+              <span style={{ fontSize: '11px', color: '#bbb' }}>
+                {tutorialStepIndex + 1}/{TUTORIAL_STEPS.length}
+              </span>
+            </div>
+            <div style={{ marginTop: '8px', fontSize: isCompactHeight ? '12px' : '13px', lineHeight: 1.45, color: '#f1f1f1' }}>
+              {currentTutorialStep.body}
+            </div>
+            {currentTutorialStep.id === 'cards' && (
+              <div style={{ marginTop: '8px', fontSize: '12px', color: '#d7d7d7', lineHeight: 1.45 }}>
+                <div>Attack &gt; Heal/empty.</div>
+                <div>Defense блокирует Attack без ответного урона.</div>
+                <div>Counter наказывает предсказуемый Attack.</div>
+              </div>
+            )}
+            <div style={{ marginTop: '8px', fontSize: '12px', color: '#ffecb3' }}>
+              {currentTutorialStep.action}
+            </div>
+            <div style={{ marginTop: '10px', display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setTutorialDismissed(true)}
+                style={{
+                  border: '1px solid rgba(255,255,255,0.25)',
+                  backgroundColor: 'rgba(255,255,255,0.06)',
+                  color: '#e0e0e0',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  fontSize: '12px',
+                  cursor: 'pointer'
+                }}
+              >
+                Пропустить
+              </button>
+              {currentTutorialStep.id === 'finish' ? (
+                <button
+                  onClick={handleFinishTutorial}
+                  style={{
+                    border: 'none',
+                    backgroundColor: '#ff9800',
+                    color: '#fff',
+                    borderRadius: '8px',
+                    padding: '8px 14px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Завершить обучение
+                </button>
+              ) : currentTutorialStep.autoAdvance ? (
+                <button
+                  disabled
+                  style={{
+                    border: 'none',
+                    backgroundColor: '#555',
+                    color: '#ddd',
+                    borderRadius: '8px',
+                    padding: '8px 14px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'not-allowed'
+                  }}
+                >
+                  Выполни шаг
+                </button>
+              ) : (
+                <button
+                  onClick={advanceTutorialManually}
+                  style={{
+                    border: 'none',
+                    backgroundColor: '#4caf50',
+                    color: '#fff',
+                    borderRadius: '8px',
+                    padding: '8px 14px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Дальше
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* UX: Slot occupied toast (only in PREP phase) */}
       {slotOccupiedToast && phase === 'PREP' && (

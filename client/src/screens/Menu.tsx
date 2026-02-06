@@ -10,13 +10,24 @@ const showBuildBadge = isDebug || buildMode === 'dev';
 interface MenuProps {
   onStartBattle: () => void;
   onStartPvE: () => void;
+  onStartTutorial: () => void;
   onCancelSearch: () => void;
   isSearching: boolean;
   tokens: number | null;
   nickname: string | null;
+  tutorialCompleted: boolean;
 }
 
-export default function Menu({ onStartBattle, onStartPvE, onCancelSearch, isSearching, tokens, nickname }: MenuProps) {
+export default function Menu({
+  onStartBattle,
+  onStartPvE,
+  onStartTutorial,
+  onCancelSearch,
+  isSearching,
+  tokens,
+  nickname,
+  tutorialCompleted
+}: MenuProps) {
   // Кнопка Start Battle disabled если tokens !== null && tokens < 1
   const hasEnoughTokens = tokens !== null && tokens >= 1;
   const isCompact = typeof window !== 'undefined' ? window.innerHeight < 740 : false;
@@ -147,6 +158,26 @@ export default function Menu({ onStartBattle, onStartPvE, onCancelSearch, isSear
             >
               Start PvE Training
             </button>
+            <button
+              onClick={onStartTutorial}
+              style={{
+                padding: '14px 24px',
+                fontSize: 'clamp(16px, 4.4vw, 18px)',
+                cursor: 'pointer',
+                backgroundColor: tutorialCompleted ? '#607d8b' : '#ff9800',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '10px',
+                width: 'min(300px, 84vw)',
+                minHeight: '48px',
+                fontWeight: 700
+              }}
+            >
+              {tutorialCompleted ? 'Repeat Interactive Tutorial' : 'Interactive Tutorial (Recommended)'}
+            </button>
+            <div style={{ fontSize: '12px', color: '#ddd', textAlign: 'center', maxWidth: '320px', lineHeight: 1.4 }}>
+              Learn cards, phase flow, and basic PvP tactics step by step in a guided match.
+            </div>
           </>
         )}
         {showBuildBadge && (
