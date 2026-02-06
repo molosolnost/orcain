@@ -2246,14 +2246,35 @@ io.on('connection', (socket) => {
     // Проверяем, можно ли начать раунд
     const oppSessionId = getOpponentSessionId(match, sessionId);
     const oppData = oppSessionId ? getPlayerData(oppSessionId) : null;
+
+    // PvP: стартуем сразу только когда оба confirmed.
     if (oppData && oppData.confirmed) {
-      // Оба подтвердили раньше таймера, начинаем раунд сразу
       // Защита от таймера после confirm: обязательно clearTimeout + set prepTimer=null
       if (match.prepTimer) {
         clearTimeout(match.prepTimer);
         match.prepTimer = null;
       }
       startPlay(match);
+      return;
+    }
+
+    // PvE: стартуем сразу после confirm игрока (бот не подтверждает ранний старт).
+    // ВАЖНО: сначала finalizeRound (как в timeout-пути), чтобы layout бота был финализирован.
+    if (match.mode === 'PVE') {
+      if (match.prepTimer) {
+        clearTimeout(match.prepTimer);
+        match.prepTimer = null;
+      }
+
+      const matchEnded = finalizeRound(match);
+      if (matchEnded) {
+        log(`[PVE_EARLY_START] match=${match.id} ended in finalizeRound`);
+        return;
+      }
+
+      if (match.state === 'prep') {
+        startPlay(match);
+      }
     }
   });
 
