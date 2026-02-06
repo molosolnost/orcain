@@ -1,11 +1,14 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { socketManager } from './net/socket';
 import { getAuthToken, getSessionId, clearAuth, getAccountId } from './net/ids';
 import type { MatchEndPayload, PrepStartPayload } from './net/types';
+import { initAppViewport, lockAppHeightFor } from './lib/appViewport';
+import { startViewportStabilizer } from './lib/viewportStabilizer';
 import Login from './screens/Login';
 import Menu from './screens/Menu';
 import Battle from './screens/Battle';
 import Onboarding from './screens/Onboarding';
+import TransitionShield from './components/TransitionShield';
 import './App.css';
 
 type Screen = 'login' | 'menu' | 'battle' | 'onboarding';
@@ -80,6 +83,8 @@ function App() {
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [lastPrepStart, setLastPrepStart] = useState<PrepStartPayload | null>(null);
   const [matchMode, setMatchMode] = useState<'pvp' | 'pve' | null>(null); // Track PvP vs PvE
+  const [transitionShieldVisible, setTransitionShieldVisible] = useState(false);
+  const transitionUnlockRef = useRef<(() => void) | null>(null);
   
   // Boot state machine
   const [bootState, setBootState] = useState<BootState>('checking');
@@ -88,6 +93,22 @@ function App() {
   const [authRequest, setAuthRequest] = useState<string>('idle');
   const [authStatus, setAuthStatus] = useState<number | null>(null);
   const [telegramAuthError, setTelegramAuthError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const cleanupViewport = initAppViewport();
+    return () => {
+      cleanupViewport();
+    };
+  }, []);
+
+  const startBattleTransition = () => {
+    setTransitionShieldVisible(true);
+    if (transitionUnlockRef.current) {
+      transitionUnlockRef.current();
+      transitionUnlockRef.current = null;
+    }
+    transitionUnlockRef.current = lockAppHeightFor(1500);
+  };
 
   // Инициализация: проверяем Telegram Mini App или читаем authToken из localStorage
   useEffect(() => {
@@ -386,12 +407,14 @@ function App() {
   };
 
   const handleStartBattle = () => {
+    startBattleTransition();
     setMatchMode('pvp');
     setIsSearching(true);
     socketManager.queueJoin();
   };
 
   const handleStartPvE = () => {
+    startBattleTransition();
     setMatchMode('pve');
     // PvE is immediate - no queue, no tokens
     socketManager.pveStart();
@@ -403,6 +426,11 @@ function App() {
   };
 
   const handleBackToMenu = () => {
+    if (transitionUnlockRef.current) {
+      transitionUnlockRef.current();
+      transitionUnlockRef.current = null;
+    }
+    setTransitionShieldVisible(false);
     setMatchMode(null);
     setMatchEndPayload(null);
     setLastPrepStart(null);
@@ -411,6 +439,7 @@ function App() {
   };
 
   const handlePlayAgain = () => {
+    startBattleTransition();
     setMatchEndPayload(null);
     setLastPrepStart(null);
     setCurrentMatchId(null);
@@ -436,6 +465,24 @@ function App() {
     if (bootState === 'error' && !authToken) return 'error';
     return screen;
   }, [bootState, screen, authToken]);
+
+  useEffect(() => {
+    if (screen !== 'battle') return;
+    let cancelled = false;
+    (async () => {
+      await startViewportStabilizer({ timeoutMs: 1500 });
+      if (!cancelled) {
+        setTransitionShieldVisible(false);
+      }
+      if (transitionUnlockRef.current) {
+        transitionUnlockRef.current();
+        transitionUnlockRef.current = null;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [screen, lastPrepStart]);
 
   // Render logic
   // 1. Показываем loading во время проверки или Telegram auth
@@ -600,6 +647,7 @@ function App() {
           </div>
         )}
       </div>
+      <TransitionShield visible={transitionShieldVisible} />
       <DebugOverlay
         hasTelegram={hasTelegramWebApp}
         initDataLen={initDataLen}

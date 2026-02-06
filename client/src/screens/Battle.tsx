@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { socketManager } from '../net/socket';
 import type { CardId, PrepStartPayload, StepRevealPayload, MatchEndPayload } from '../net/types';
 import { cardIdToType } from '../cards';
+import { lockAppHeight, unlockAppHeight } from '../lib/appViewport';
 
 type BattleState = 'prep' | 'playing' | 'ended';
 
@@ -72,6 +73,13 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
   useEffect(() => {
     currentMatchIdRef.current = currentMatchId;
   }, [currentMatchId]);
+
+  useEffect(() => {
+    lockAppHeight('battle_mount');
+    return () => {
+      unlockAppHeight('battle_unmount');
+    };
+  }, []);
 
   useEffect(() => {
     if (matchEndPayload) {
