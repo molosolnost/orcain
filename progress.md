@@ -114,3 +114,25 @@ Original prompt: Добавь в игру интерактивное обуче�
 - `npm run build --prefix client` passed.
 - `npm run test:ui-regression` passed.
 - Added startup smoke check: loader appears at startup and app proceeds to login/menu afterward.
+
+## Update: Orc-themed hand-drawn visual overhaul
+- Added procedural asset generation script: `client/scripts/generate_orc_assets.mjs`.
+- Generated full themed pack in `client/src/assets/orc-theme/`:
+  - backgrounds: menu + battle,
+  - card art: attack/defense/heal/counter + back + empty slot,
+  - buttons: PvP/PvE/Tutorial/Confirm/Cancel/Secondary,
+  - decorative ornaments (top/bottom).
+- Menu UI migrated to generated assets:
+  - new illustrated background and decorative ornaments,
+  - all main action buttons are image-based (PvP/PvE/Tutorial/Cancel).
+- Battle UI migrated to generated assets:
+  - arena background + ornaments,
+  - all cards render from themed art instead of emoji/text cards,
+  - confirm and key overlay buttons switched to themed button textures,
+  - match-end and tutorial panel buttons updated to same style family.
+- App preload list updated to include key new themed assets.
+- Onboarding background switched to the new themed menu background.
+
+## Validation (orc visual pass)
+- `npm run build --prefix client` passed.
+- `npm run test:ui-regression` passed (iphone-se, pixel-7, ipad-mini, desktop-1366).

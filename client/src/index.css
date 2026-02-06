@@ -22,6 +22,8 @@ body {
 
 body {
   overflow: hidden;
+  font-family: 'Trebuchet MS', 'Comic Sans MS', 'Marker Felt', 'Segoe UI', sans-serif;
+  color: #f3f6ec;
 }
 
 #root {

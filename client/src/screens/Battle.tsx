@@ -1,8 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
 import { socketManager } from '../net/socket';
 import type { CardId, PrepStartPayload, StepRevealPayload, MatchEndPayload } from '../net/types';
-import { cardIdToType } from '../cards';
 import { lockAppHeight, unlockAppHeight } from '../lib/appViewport';
+import battleBgImage from '../assets/orc-theme/battle_bg.svg';
+import cardAttackImage from '../assets/orc-theme/card_attack.svg';
+import cardDefenseImage from '../assets/orc-theme/card_defense.svg';
+import cardHealImage from '../assets/orc-theme/card_heal.svg';
+import cardCounterImage from '../assets/orc-theme/card_counter.svg';
+import cardBackImage from '../assets/orc-theme/card_back.svg';
+import cardSlotImage from '../assets/orc-theme/card_slot.svg';
+import confirmButtonImage from '../assets/orc-theme/btn_confirm.svg';
+import secondaryButtonImage from '../assets/orc-theme/btn_secondary.svg';
+import cancelButtonImage from '../assets/orc-theme/btn_cancel.svg';
+import topOrnamentImage from '../assets/orc-theme/ornament_top.svg';
+import bottomOrnamentImage from '../assets/orc-theme/ornament_bottom.svg';
 
 type BattleState = 'prep' | 'playing' | 'ended';
 type TutorialStepId =
@@ -117,6 +128,13 @@ const CARD_LABELS: Record<CardId, string> = {
   defense: 'Defense',
   heal: 'Heal',
   counter: 'Counter'
+};
+
+const CARD_ART: Record<CardId, string> = {
+  attack: cardAttackImage,
+  defense: cardDefenseImage,
+  heal: cardHealImage,
+  counter: cardCounterImage
 };
 
 const TUTORIAL_PLAYER_LAYOUT: CardId[] = ['attack', 'defense', 'heal'];
@@ -1157,33 +1175,8 @@ export default function Battle({
     onBackToMenu();
   };
 
-
-  // Функция для получения цвета карты (принимает CardId, конвертирует в CardType для UI)
-  const getCardColor = (cardId: CardId | null) => {
-    if (!cardId) {
-      return { bg: '#f5f5f5', border: '#333', text: '#000', icon: '' };
-    }
-    // Convert CardId to CardType for display
-    const cardType = cardIdToType(cardId);
-    switch (cardType) {
-      case 'ATTACK':
-        return { bg: '#ffebee', border: '#f44336', text: '#c62828', icon: '⚔' };
-      case 'DEFENSE':
-        return { bg: '#e3f2fd', border: '#2196f3', text: '#1565c0', icon: '🛡' };
-      case 'HEAL':
-        return { bg: '#e8f5e9', border: '#4caf50', text: '#2e7d32', icon: '💚' };
-      case 'COUNTER':
-        return { bg: '#f3e5f5', border: '#9c27b0', text: '#6a1b9a', icon: '🟣' };
-      default:
-        return { bg: '#f5f5f5', border: '#333', text: '#000', icon: '' };
-    }
-  };
-
-  // Общий компонент/функция renderCard (принимает CardId, конвертирует для отображения)
+  // Shared card renderer: uses generated orc-themed images
   const renderCard = (cardId: CardId | null, mode: 'HAND' | 'SLOT' | 'BACK' | 'REVEAL', slotIndex?: number) => {
-    // Calculate card size based on mode - hand cards need to be smaller to fit 4 in a row
-    // Hand: 4 cards, padding 24px (12px*2), gaps 12px (4px*3) = (100vw - 24px - 12px) / 4
-    // Slots: 3 cards, padding 24px, gaps 12px (6px*2) = (100vw - 24px - 12px) / 3
     const isHand = mode === 'HAND';
     const cardWidth = isHand
       ? (isCompactHeight
@@ -1195,83 +1188,90 @@ export default function Battle({
     
     if (mode === 'BACK') {
       return (
-        <div
+        <img
+          src={cardBackImage}
+          alt="Card back"
+          draggable={false}
           style={{
             width: cardWidth,
             aspectRatio: '3 / 4',
-            border: '2px solid #333',
             borderRadius: '8px',
-            backgroundColor: '#1a1a1a',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
             boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-            color: '#fff',
-            fontSize: 'clamp(20px, 4vw, 28px)',
-            fontWeight: 'bold',
-            flexShrink: 0
+            flexShrink: 0,
+            objectFit: 'cover',
+            userSelect: 'none',
+            pointerEvents: 'none'
           }}
-        >
-          ?
-        </div>
+        />
       );
     }
 
     if (!cardId) {
       if (mode === 'SLOT') {
         return (
-          <div
+          <img
+            src={cardSlotImage}
+            alt="Drop slot"
+            draggable={false}
             style={{
               width: cardWidth,
               aspectRatio: '3 / 4',
-              border: '2px dashed #999',
               borderRadius: '8px',
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#999',
-              fontSize: 'clamp(8px, 1.5vw, 10px)',
-              textAlign: 'center',
-              padding: '4px',
-              flexShrink: 0
+              flexShrink: 0,
+              objectFit: 'cover',
+              userSelect: 'none',
+              pointerEvents: 'none'
             }}
-          >
-            Drop
-          </div>
+          />
         );
       }
       return null;
     }
 
-    const colors = getCardColor(cardId);
-    // Convert CardId to CardType for display
-    const cardType = cardId ? cardIdToType(cardId) : null;
-    const cardName = cardType || '';
+    const cardImage = CARD_ART[cardId];
 
     return (
       <div
         style={{
           width: cardWidth,
           aspectRatio: '3 / 4',
-          border: `2px solid ${colors.border}`,
           borderRadius: '8px',
-          backgroundColor: colors.bg,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
           boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
-          color: colors.text,
-          padding: 'clamp(4px, 1vw, 6px)',
-          textAlign: 'center',
-          flexShrink: 0
+          flexShrink: 0,
+          position: 'relative',
+          overflow: 'hidden'
         }}
       >
-        <div style={{ fontSize: 'clamp(16px, 3vw, 20px)', marginBottom: '2px' }}>{colors.icon}</div>
-        <div style={{ fontSize: 'clamp(8px, 1.5vw, 10px)', fontWeight: 'bold', lineHeight: '1.1' }}>{cardName}</div>
+        <img
+          src={cardImage}
+          alt={CARD_LABELS[cardId]}
+          draggable={false}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            userSelect: 'none',
+            pointerEvents: 'none'
+          }}
+        />
         {mode === 'SLOT' && slotIndex !== undefined && (
-          <div style={{ fontSize: 'clamp(7px, 1.2vw, 9px)', marginTop: '2px', color: '#666' }}>S{slotIndex + 1}</div>
+          <div
+            style={{
+              position: 'absolute',
+              right: '4px',
+              bottom: '4px',
+              minWidth: '18px',
+              padding: '2px 4px',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(15, 20, 12, 0.72)',
+              color: '#e5f4d7',
+              fontSize: 'clamp(7px, 1.2vw, 9px)',
+              fontWeight: 700,
+              textAlign: 'center'
+            }}
+          >
+            S{slotIndex + 1}
+          </div>
         )}
       </div>
     );
@@ -1338,10 +1338,16 @@ export default function Battle({
                 padding: '12px 24px',
                 fontSize: 16,
                 cursor: 'pointer',
-                backgroundColor: 'rgba(255,255,255,0.1)',
-                color: '#fff',
-                border: '1px solid rgba(255,255,255,0.2)',
+                backgroundImage: `url(${secondaryButtonImage})`,
+                backgroundSize: '100% 100%',
+                backgroundPosition: 'center',
+                backgroundRepeat: 'no-repeat',
+                color: '#1f271b',
+                border: 'none',
                 borderRadius: 8,
+                minHeight: '56px',
+                minWidth: '180px',
+                fontWeight: 700,
               }}
             >
               Back to Menu
@@ -1373,10 +1379,60 @@ export default function Battle({
       paddingBottom: 'env(safe-area-inset-bottom, 0)',
       paddingLeft: 'env(safe-area-inset-left, 0)',
       paddingRight: 'env(safe-area-inset-right, 0)',
-      backgroundColor: '#242424',
+      backgroundColor: '#182417',
       color: 'rgba(255, 255, 255, 0.87)',
       zIndex: 1
     }}>
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          backgroundImage: `url(${battleBgImage})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          opacity: 1,
+          pointerEvents: 'none',
+          zIndex: 0
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'linear-gradient(180deg, rgba(8, 12, 8, 0.28) 0%, rgba(6, 10, 6, 0.44) 100%)',
+          pointerEvents: 'none',
+          zIndex: 0
+        }}
+      />
+      <img
+        src={topOrnamentImage}
+        alt=""
+        style={{
+          position: 'absolute',
+          top: 'max(4px, calc(env(safe-area-inset-top, 0px) + 2px))',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: 'min(96vw, 980px)',
+          opacity: 0.9,
+          pointerEvents: 'none',
+          zIndex: 0
+        }}
+      />
+      <img
+        src={bottomOrnamentImage}
+        alt=""
+        style={{
+          position: 'absolute',
+          bottom: 'max(4px, calc(env(safe-area-inset-bottom, 0px) + 2px))',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: 'min(96vw, 980px)',
+          opacity: 0.8,
+          pointerEvents: 'none',
+          zIndex: 0
+        }}
+      />
+
       {/* Compact Top Bar - 1 строка максимум */}
       <div style={{ 
         flexShrink: 0,
@@ -1388,7 +1444,10 @@ export default function Battle({
         justifyContent: 'space-between',
         fontSize: isCompactHeight ? '9px' : '10px',
         lineHeight: '1.3',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+        borderBottom: '1px solid rgba(0, 0, 0, 0.25)',
+        backgroundColor: 'rgba(22, 31, 19, 0.58)',
+        backdropFilter: 'blur(1px)',
+        zIndex: 1,
         ...tutorialHighlight(tutorialHighlights.topBar)
       }}>
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1732,25 +1791,37 @@ export default function Battle({
               onClick={handleConfirm}
               disabled={selectedSlotsCount !== 3 || !tutorialConfirmUnlocked}
               style={{
-                padding: '14px 32px',
-                fontSize: '16px',
-                fontWeight: 'bold',
+                padding: 0,
                 cursor: selectedSlotsCount === 3 && tutorialConfirmUnlocked ? 'pointer' : 'not-allowed',
-                minWidth: '140px',
-                minHeight: '48px',
-                borderRadius: '8px',
+                width: 'min(340px, 90vw)',
+                minHeight: '82px',
+                borderRadius: '12px',
                 border: 'none',
-                backgroundColor: selectedSlotsCount === 3 && tutorialConfirmUnlocked ? '#4caf50' : '#666',
+                backgroundColor: 'transparent',
                 color: '#fff',
-                transition: 'background-color 0.2s, transform 0.1s ease, opacity 0.1s ease, box-shadow 0.2s ease',
+                transition: 'transform 0.1s ease, opacity 0.1s ease, box-shadow 0.2s ease, filter 0.2s ease',
                 transform: confirmButtonPressed ? 'scale(0.95)' : 'scale(1)',
                 opacity: confirmButtonPressed ? 0.8 : 1,
                 boxShadow: selectedSlotsCount === 3 && tutorialConfirmUnlocked
-                  ? '0 0 12px rgba(76, 175, 80, 0.4)' 
-                  : 'none'
+                  ? '0 0 14px rgba(126, 207, 108, 0.45)' 
+                  : '0 3px 8px rgba(0,0,0,0.2)',
+                filter: selectedSlotsCount === 3 && tutorialConfirmUnlocked ? 'none' : 'grayscale(0.5) brightness(0.7)',
+                overflow: 'hidden'
               }}
             >
-              Confirm
+              <img
+                src={confirmButtonImage}
+                alt="Confirm"
+                draggable={false}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                  pointerEvents: 'none',
+                  userSelect: 'none',
+                  display: 'block'
+                }}
+              />
             </button>
           </div>
         </div>
@@ -1893,12 +1964,16 @@ export default function Battle({
                       fontSize: 'clamp(14px, 4vw, 16px)',
                       fontWeight: 'bold',
                       cursor: 'pointer',
-                      backgroundColor: '#4caf50',
-                      color: '#fff',
+                      backgroundImage: `url(${confirmButtonImage})`,
+                      backgroundSize: '100% 100%',
+                      backgroundPosition: 'center',
+                      backgroundRepeat: 'no-repeat',
+                      color: '#10210f',
                       border: 'none',
-                      borderRadius: '8px',
+                      borderRadius: '10px',
                       transition: 'opacity 0.2s, transform 0.1s',
-                      minHeight: '48px'
+                      minHeight: '58px',
+                      textShadow: '0 1px 0 rgba(255,255,255,0.5)'
                     }}
                   >
                     Сыграть ещё
@@ -1911,12 +1986,16 @@ export default function Battle({
                     fontSize: 'clamp(14px, 4vw, 16px)',
                     fontWeight: 'bold',
                     cursor: 'pointer',
-                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                    color: '#fff',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
-                    borderRadius: '8px',
+                    backgroundImage: `url(${secondaryButtonImage})`,
+                    backgroundSize: '100% 100%',
+                    backgroundPosition: 'center',
+                    backgroundRepeat: 'no-repeat',
+                    color: '#1f271b',
+                    border: 'none',
+                    borderRadius: '10px',
                     transition: 'opacity 0.2s, transform 0.1s',
-                    minHeight: '48px'
+                    minHeight: '58px',
+                    textShadow: '0 1px 0 rgba(255,255,255,0.4)'
                   }}
                 >
                   Back to Menu
@@ -1986,13 +2065,19 @@ export default function Battle({
               <button
                 onClick={handleSkipTutorial}
                 style={{
-                  border: '1px solid rgba(255,255,255,0.25)',
-                  backgroundColor: 'rgba(255,255,255,0.06)',
-                  color: '#e0e0e0',
+                  border: 'none',
+                  backgroundImage: `url(${cancelButtonImage})`,
+                  backgroundSize: '100% 100%',
+                  backgroundPosition: 'center',
+                  backgroundRepeat: 'no-repeat',
+                  color: '#2b1511',
                   borderRadius: '8px',
-                  padding: '8px 12px',
+                  padding: '8px 16px',
                   fontSize: '12px',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  minWidth: '106px',
+                  minHeight: '42px',
+                  fontWeight: 700
                 }}
               >
                 Пропустить
@@ -2002,13 +2087,17 @@ export default function Battle({
                   onClick={handleFinishTutorial}
                   style={{
                     border: 'none',
-                    backgroundColor: '#ff9800',
-                    color: '#fff',
+                    backgroundImage: `url(${confirmButtonImage})`,
+                    backgroundSize: '100% 100%',
+                    backgroundPosition: 'center',
+                    backgroundRepeat: 'no-repeat',
+                    color: '#10210f',
                     borderRadius: '8px',
-                    padding: '8px 14px',
+                    padding: '8px 16px',
                     fontSize: '12px',
                     fontWeight: 700,
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    minHeight: '42px'
                   }}
                 >
                   Завершить обучение
@@ -2018,13 +2107,17 @@ export default function Battle({
                   onClick={runTutorialRevealStep}
                   style={{
                     border: 'none',
-                    backgroundColor: '#4caf50',
-                    color: '#fff',
+                    backgroundImage: `url(${confirmButtonImage})`,
+                    backgroundSize: '100% 100%',
+                    backgroundPosition: 'center',
+                    backgroundRepeat: 'no-repeat',
+                    color: '#10210f',
                     borderRadius: '8px',
-                    padding: '8px 14px',
+                    padding: '8px 16px',
                     fontSize: '12px',
                     fontWeight: 700,
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    minHeight: '42px'
                   }}
                 >
                   Показать шаг
@@ -2034,13 +2127,18 @@ export default function Battle({
                   disabled
                   style={{
                     border: 'none',
-                    backgroundColor: '#555',
-                    color: '#ddd',
+                    backgroundImage: `url(${secondaryButtonImage})`,
+                    backgroundSize: '100% 100%',
+                    backgroundPosition: 'center',
+                    backgroundRepeat: 'no-repeat',
+                    color: '#444',
                     borderRadius: '8px',
-                    padding: '8px 14px',
+                    padding: '8px 16px',
                     fontSize: '12px',
                     fontWeight: 700,
-                    cursor: 'not-allowed'
+                    cursor: 'not-allowed',
+                    minHeight: '42px',
+                    filter: 'grayscale(0.6) brightness(0.8)'
                   }}
                 >
                   Выполни шаг
@@ -2050,13 +2148,17 @@ export default function Battle({
                   onClick={advanceTutorialManually}
                   style={{
                     border: 'none',
-                    backgroundColor: '#4caf50',
-                    color: '#fff',
+                    backgroundImage: `url(${confirmButtonImage})`,
+                    backgroundSize: '100% 100%',
+                    backgroundPosition: 'center',
+                    backgroundRepeat: 'no-repeat',
+                    color: '#10210f',
                     borderRadius: '8px',
-                    padding: '8px 14px',
+                    padding: '8px 16px',
                     fontSize: '12px',
                     fontWeight: 700,
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    minHeight: '42px'
                   }}
                 >
                   Дальше

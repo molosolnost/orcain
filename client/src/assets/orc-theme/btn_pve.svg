@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="300" viewBox="0 0 1180 300" fill="none">
+
+
+  <rect x="22" y="22" width="1136" height="256" rx="36" fill="#86d0ff" stroke="#111" stroke-width="10"/>
+  <path d="M66 44 L1112 44" stroke="rgba(255,255,255,0.45)" stroke-width="7" stroke-linecap="round"/>
+  <path d="M82 256 L1096 256" stroke="rgba(0,0,0,0.25)" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="140" cy="150" r="78" fill="#9fe586" stroke="#111" stroke-width="8"/>
+  <text x="140" y="166" text-anchor="middle" font-size="78" font-family="'Comic Sans MS', 'Trebuchet MS', sans-serif" fill="#111" font-weight="700">🛡</text>
+  <text x="590" y="148" text-anchor="middle" font-size="84" font-family="'Comic Sans MS', 'Trebuchet MS', sans-serif" fill="#111" font-weight="700">PVE</text>
+  <text x="590" y="214" text-anchor="middle" font-size="40" font-family="'Trebuchet MS', sans-serif" fill="#1f3118" font-weight="700">Training</text>
+
+</svg>

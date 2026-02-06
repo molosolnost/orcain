@@ -1,7 +1,12 @@
 import { useState } from "react";
 import orcainLogo from "../assets/orcain_logo.webp";
-import menuBg from "../assets/menu_bg.webp";
-import pvpButtonImage from "../assets/pvp_button.webp";
+import menuBg from "../assets/orc-theme/menu_bg.svg";
+import pvpButtonImage from "../assets/orc-theme/btn_pvp.svg";
+import pveButtonImage from "../assets/orc-theme/btn_pve.svg";
+import tutorialButtonImage from "../assets/orc-theme/btn_tutorial.svg";
+import cancelButtonImage from "../assets/orc-theme/btn_cancel.svg";
+import ornamentTopImage from "../assets/orc-theme/ornament_top.svg";
+import ornamentBottomImage from "../assets/orc-theme/ornament_bottom.svg";
 
 // Build version badge: mode + sha
 const buildMode: 'dev' | 'prod' = import.meta.env.PROD ? 'prod' : 'dev';
@@ -40,8 +45,8 @@ export default function Menu({
   const isCompact = typeof window !== 'undefined' ? window.innerHeight < 740 : false;
 
   // Debug mode: adjust overlay opacity
-  const overlayOpacity = isDebug ? 0.55 : 0.45;
-  const bgOpacity = isDebug ? 0.3 : 0.5;
+  const overlayOpacity = isDebug ? 0.52 : 0.38;
+  const bgOpacity = isDebug ? 0.85 : 1;
 
   return (
     <div style={{ 
@@ -73,14 +78,44 @@ export default function Menu({
       <div style={{
         position: 'absolute',
         inset: 0,
-        backgroundColor: `rgba(0, 0, 0, ${overlayOpacity})`,
+        background: `linear-gradient(180deg, rgba(10, 14, 10, ${overlayOpacity - 0.05}) 0%, rgba(6, 10, 8, ${overlayOpacity + 0.04}) 100%)`,
         pointerEvents: 'none'
       }} />
+
+      <img
+        src={ornamentTopImage}
+        alt=""
+        style={{
+          position: 'absolute',
+          top: 'max(8px, calc(env(safe-area-inset-top, 0px) + 2px))',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: 'min(94vw, 620px)',
+          opacity: 0.9,
+          pointerEvents: 'none',
+          zIndex: 1
+        }}
+      />
+
+      <img
+        src={ornamentBottomImage}
+        alt=""
+        style={{
+          position: 'absolute',
+          bottom: 'max(8px, calc(env(safe-area-inset-bottom, 0px) + 2px))',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: 'min(94vw, 620px)',
+          opacity: 0.9,
+          pointerEvents: 'none',
+          zIndex: 1
+        }}
+      />
       
       {/* Content layer */}
       <div style={{
         position: 'relative',
-        zIndex: 1,
+        zIndex: 2,
         pointerEvents: 'auto',
         display: 'flex',
         flexDirection: 'column',
@@ -88,9 +123,9 @@ export default function Menu({
         justifyContent: 'center',
         gap: isCompact ? '14px' : '18px',
         width: '100%',
-        maxWidth: '480px',
+        maxWidth: '520px',
         boxSizing: 'border-box',
-        padding: `max(16px, env(safe-area-inset-top, 0px)) 20px max(16px, env(safe-area-inset-bottom, 0px))`
+        padding: `max(44px, calc(env(safe-area-inset-top, 0px) + 38px)) 20px max(44px, calc(env(safe-area-inset-bottom, 0px) + 38px))`
       }}>
         <img
           src={orcainLogo}
@@ -122,16 +157,30 @@ export default function Menu({
             <button 
               onClick={onCancelSearch}
               style={{
-                padding: '14px 24px',
-                fontSize: 'clamp(16px, 4.4vw, 18px)',
                 cursor: 'pointer',
-                width: 'min(300px, 84vw)',
-                minHeight: '48px',
-                borderRadius: '10px',
-                border: 'none'
+                width: 'min(360px, 90vw)',
+                minHeight: isCompact ? '84px' : '94px',
+                borderRadius: '14px',
+                border: 'none',
+                backgroundColor: 'transparent',
+                padding: 0,
+                overflow: 'hidden',
+                boxShadow: '0 8px 22px rgba(0,0,0,0.34)'
               }}
             >
-              Cancel
+              <img
+                src={cancelButtonImage}
+                alt="Cancel"
+                draggable={false}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                  pointerEvents: 'none',
+                  userSelect: 'none',
+                  display: 'block'
+                }}
+              />
             </button>
           </>
         ) : (
@@ -149,7 +198,7 @@ export default function Menu({
               style={{
                 padding: 0,
                 cursor: hasEnoughTokens ? 'pointer' : 'not-allowed',
-                width: 'min(330px, 88vw)',
+                width: 'min(390px, 94vw)',
                 minHeight: isCompact ? '84px' : '94px',
                 borderRadius: '14px',
                 border: 'none',
@@ -201,37 +250,62 @@ export default function Menu({
               onClick={onStartPvE}
               disabled={!canStartPvE}
               style={{
-                padding: '14px 24px',
-                fontSize: 'clamp(16px, 4.4vw, 18px)',
                 cursor: canStartPvE ? 'pointer' : 'not-allowed',
-                backgroundColor: '#4caf50',
-                color: '#fff',
+                backgroundColor: 'transparent',
                 border: 'none',
-                borderRadius: '10px',
-                width: 'min(300px, 84vw)',
-                minHeight: '48px',
+                borderRadius: '14px',
+                width: 'min(390px, 94vw)',
+                minHeight: isCompact ? '84px' : '94px',
                 fontWeight: 700,
-                opacity: canStartPvE ? 1 : 0.55
+                opacity: canStartPvE ? 1 : 0.55,
+                padding: 0,
+                overflow: 'hidden',
+                boxShadow: canStartPvE ? '0 8px 22px rgba(0,0,0,0.34)' : '0 5px 12px rgba(0,0,0,0.22)'
               }}
             >
-              {canStartPvE ? 'Start PvE Training' : 'Waiting for connection'}
+              <img
+                src={pveButtonImage}
+                alt={canStartPvE ? 'Start PvE Training' : 'Waiting for connection'}
+                draggable={false}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                  pointerEvents: 'none',
+                  userSelect: 'none',
+                  display: 'block'
+                }}
+              />
             </button>
             <button
               onClick={onStartTutorial}
               style={{
-                padding: '14px 24px',
-                fontSize: 'clamp(16px, 4.4vw, 18px)',
                 cursor: 'pointer',
-                backgroundColor: tutorialCompleted ? '#607d8b' : '#ff9800',
-                color: '#fff',
+                backgroundColor: 'transparent',
                 border: 'none',
-                borderRadius: '10px',
-                width: 'min(300px, 84vw)',
-                minHeight: '48px',
-                fontWeight: 700
+                borderRadius: '14px',
+                width: 'min(390px, 94vw)',
+                minHeight: isCompact ? '84px' : '94px',
+                fontWeight: 700,
+                padding: 0,
+                overflow: 'hidden',
+                boxShadow: '0 8px 22px rgba(0,0,0,0.34)',
+                filter: tutorialCompleted ? 'saturate(0.75) brightness(0.96)' : 'none'
               }}
             >
-              {tutorialCompleted ? 'Repeat Interactive Tutorial' : 'Interactive Tutorial (Recommended)'}
+              <img
+                src={tutorialButtonImage}
+                alt={tutorialCompleted ? 'Repeat Interactive Tutorial' : 'Interactive Tutorial (Recommended)'}
+                draggable={false}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                  pointerEvents: 'none',
+                  userSelect: 'none',
+                  display: 'block'
+                }}
+              />
             </button>
             <div style={{ fontSize: '12px', color: '#ddd', textAlign: 'center', maxWidth: '320px', lineHeight: 1.4 }}>
               No timer. You will be guided step by step: which card goes to which slot and why.

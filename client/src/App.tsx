@@ -9,9 +9,14 @@ import Menu from './screens/Menu';
 import Battle from './screens/Battle';
 import Onboarding from './screens/Onboarding';
 import TransitionShield from './components/TransitionShield';
-import menuBg from './assets/menu_bg.webp';
+import menuBg from './assets/orc-theme/menu_bg.svg';
 import orcainLogo from './assets/orcain_logo.webp';
-import pvpButtonImage from './assets/pvp_button.webp';
+import pvpButtonImage from './assets/orc-theme/btn_pvp.svg';
+import pveButtonImage from './assets/orc-theme/btn_pve.svg';
+import tutorialButtonImage from './assets/orc-theme/btn_tutorial.svg';
+import battleBgImage from './assets/orc-theme/battle_bg.svg';
+import cardAttackImage from './assets/orc-theme/card_attack.svg';
+import cardBackImage from './assets/orc-theme/card_back.svg';
 import './App.css';
 
 type Screen = 'login' | 'menu' | 'battle' | 'onboarding';
@@ -20,7 +25,16 @@ type BootState = 'checking' | 'telegram_auth' | 'ready' | 'error';
 const BUILD_ID = import.meta.env.VITE_BUILD_ID || `dev-${Date.now()}`;
 const DEBUG_MODE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
 const TUTORIAL_COMPLETED_KEY = 'orcain_tutorial_completed_v1';
-const PRELOAD_ASSETS = [menuBg, orcainLogo, pvpButtonImage];
+const PRELOAD_ASSETS = [
+  menuBg,
+  battleBgImage,
+  orcainLogo,
+  pvpButtonImage,
+  pveButtonImage,
+  tutorialButtonImage,
+  cardAttackImage,
+  cardBackImage
+];
 
 function preloadImage(src: string, timeoutMs = 8000): Promise<boolean> {
   return new Promise((resolve) => {
