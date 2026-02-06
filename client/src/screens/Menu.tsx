@@ -1,5 +1,5 @@
-import orcainLogo from "../assets/orcain_logo.png";
-import menuBg from "../assets/menu_bg.png";
+import orcainLogo from "../assets/orcain_logo.webp";
+import menuBg from "../assets/menu_bg.webp";
 
 // Build version badge: mode + sha
 const buildMode: 'dev' | 'prod' = import.meta.env.PROD ? 'prod' : 'dev';

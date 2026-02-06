@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import menuBg from "../assets/menu_bg.png";
+import menuBg from "../assets/menu_bg.webp";
 import BackgroundLayout from "../components/BackgroundLayout";
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://orcain-server.onrender.com';
