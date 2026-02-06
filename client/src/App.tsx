@@ -9,6 +9,9 @@ import Menu from './screens/Menu';
 import Battle from './screens/Battle';
 import Onboarding from './screens/Onboarding';
 import TransitionShield from './components/TransitionShield';
+import menuBg from './assets/menu_bg.webp';
+import orcainLogo from './assets/orcain_logo.webp';
+import pvpButtonImage from './assets/pvp_button.webp';
 import './App.css';
 
 type Screen = 'login' | 'menu' | 'battle' | 'onboarding';
@@ -17,6 +20,89 @@ type BootState = 'checking' | 'telegram_auth' | 'ready' | 'error';
 const BUILD_ID = import.meta.env.VITE_BUILD_ID || `dev-${Date.now()}`;
 const DEBUG_MODE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
 const TUTORIAL_COMPLETED_KEY = 'orcain_tutorial_completed_v1';
+const PRELOAD_ASSETS = [menuBg, orcainLogo, pvpButtonImage];
+
+function preloadImage(src: string, timeoutMs = 8000): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const img = new Image();
+
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(ok);
+    };
+
+    const timer = window.setTimeout(() => {
+      finish(false);
+    }, timeoutMs);
+
+    img.onload = () => {
+      window.clearTimeout(timer);
+      finish(true);
+    };
+
+    img.onerror = () => {
+      window.clearTimeout(timer);
+      finish(false);
+    };
+
+    img.decoding = 'async';
+    img.src = src;
+  });
+}
+
+function StartupLoader({ progress, assetsReady, bootState }: { progress: number; assetsReady: boolean; bootState: BootState }) {
+  const bootResolved = bootState === 'ready' || bootState === 'error';
+  const statusText = !assetsReady
+    ? `Loading resources... ${progress}%`
+    : !bootResolved
+    ? 'Authenticating...'
+    : 'Preparing game...';
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'radial-gradient(circle at 50% 30%, #323232 0%, #161616 55%, #0e0e0e 100%)',
+        color: '#fff',
+        zIndex: 20000,
+        padding: '24px'
+      }}
+    >
+      <div style={{ width: 'min(420px, 92vw)', textAlign: 'center' }}>
+        <div style={{ fontSize: 'clamp(28px, 7vw, 42px)', fontWeight: 800, letterSpacing: '0.05em' }}>
+          ORCAIN
+        </div>
+        <div style={{ marginTop: '10px', fontSize: '14px', color: '#d0d0d0' }}>{statusText}</div>
+        <div
+          style={{
+            marginTop: '18px',
+            width: '100%',
+            height: '10px',
+            borderRadius: '999px',
+            backgroundColor: 'rgba(255,255,255,0.15)',
+            overflow: 'hidden',
+            boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.25)'
+          }}
+        >
+          <div
+            style={{
+              width: `${Math.max(8, progress)}%`,
+              height: '100%',
+              background: 'linear-gradient(90deg, #ffb300 0%, #ff8f00 50%, #ff6f00 100%)',
+              transition: 'width 220ms ease'
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function DebugOverlay({ 
   hasTelegram, 
@@ -99,11 +185,47 @@ function App() {
   const [authRequest, setAuthRequest] = useState<string>('idle');
   const [authStatus, setAuthStatus] = useState<number | null>(null);
   const [telegramAuthError, setTelegramAuthError] = useState<string | null>(null);
+  const [assetsReady, setAssetsReady] = useState(false);
+  const [assetsProgress, setAssetsProgress] = useState(0);
 
   useEffect(() => {
     const cleanupViewport = initAppViewport();
     return () => {
       cleanupViewport();
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const assets = [...new Set(PRELOAD_ASSETS)];
+    const total = assets.length;
+
+    if (total === 0) {
+      setAssetsProgress(100);
+      setAssetsReady(true);
+      return;
+    }
+
+    setAssetsProgress(0);
+    setAssetsReady(false);
+
+    (async () => {
+      let loaded = 0;
+      for (const asset of assets) {
+        await preloadImage(asset);
+        loaded += 1;
+        if (!cancelled) {
+          setAssetsProgress(Math.round((loaded / total) * 100));
+        }
+      }
+      if (!cancelled) {
+        setAssetsProgress(100);
+        setAssetsReady(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -528,29 +650,12 @@ function App() {
   }, [transitionShieldVisible, screen, tutorialMode]);
 
   // Render logic
-  // 1. Показываем loading во время проверки или Telegram auth
-  if (bootState === 'checking' || bootState === 'telegram_auth') {
-    return (
-      <>
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-          Authenticating...
-        </div>
-        <DebugOverlay
-          hasTelegram={hasTelegramWebApp}
-          initDataLen={initDataLen}
-          authRequest={authRequest}
-          authStatus={authStatus}
-          gotAccountId={gotAccountId}
-          storedAuthToken={storedAuthToken}
-          nickname={nickname}
-          currentScreen={currentScreenForDebug}
-          bootState={bootState}
-        />
-      </>
-    );
+  const bootResolved = bootState === 'ready' || bootState === 'error';
+  if (!assetsReady || !bootResolved) {
+    return <StartupLoader progress={assetsProgress} assetsReady={assetsReady} bootState={bootState} />;
   }
 
-  // 2. Показываем ошибку Telegram auth
+  // 1. Показываем ошибку Telegram auth
   if (bootState === 'error' && hasTelegramWebApp && initDataLen > 0 && !authToken) {
     return (
       <>
@@ -575,7 +680,7 @@ function App() {
     );
   }
 
-  // 3. Guest Login - только если НЕТ Telegram WebApp ИЛИ нет initData
+  // 2. Guest Login - только если НЕТ Telegram WebApp ИЛИ нет initData
   if (screen === 'login' && !authToken && (!hasTelegramWebApp || initDataLen === 0)) {
     return (
       <>
@@ -595,7 +700,7 @@ function App() {
     );
   }
 
-  // 4. Onboarding - если nickname пустой
+  // 3. Onboarding - если nickname пустой
   if (screen === 'onboarding') {
     // Если authToken отсутствует, не показываем Onboarding
     if (!authToken) {

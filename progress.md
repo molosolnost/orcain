@@ -98,3 +98,19 @@ Original prompt: Добавь в игру интерактивное обуче�
 - Added targeted Playwright check for PvP start flow on mobile viewport:
   - after tapping PvP button, `Searching opponent…` is visible,
   - transition shield is not blocking viewport.
+
+## Feature: Startup preload loading screen
+- Added a dedicated startup loading screen in `App` that appears on launch before app screens render.
+- Implemented asset preloading pipeline for critical game/menu images:
+  - `menu_bg.webp`
+  - `orcain_logo.webp`
+  - `pvp_button.webp`
+- Startup screen now remains visible until:
+  - core assets are preloaded,
+  - boot/auth state resolves (`ready` or `error`).
+- Added loading progress indicator and fallback timeout handling per image preload to avoid deadlock.
+
+## Validation
+- `npm run build --prefix client` passed.
+- `npm run test:ui-regression` passed.
+- Added startup smoke check: loader appears at startup and app proceeds to login/menu afterward.
