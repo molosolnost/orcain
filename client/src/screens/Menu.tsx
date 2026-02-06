@@ -1,5 +1,7 @@
+import { useState } from "react";
 import orcainLogo from "../assets/orcain_logo.webp";
 import menuBg from "../assets/menu_bg.webp";
+import pvpButtonImage from "../assets/pvp_button.webp";
 
 // Build version badge: mode + sha
 const buildMode: 'dev' | 'prod' = import.meta.env.PROD ? 'prod' : 'dev';
@@ -30,9 +32,11 @@ export default function Menu({
   connected,
   tutorialCompleted
 }: MenuProps) {
+  const [pvpPressed, setPvpPressed] = useState(false);
   // Кнопка Start Battle disabled если tokens !== null && tokens < 1
   const hasEnoughTokens = connected && tokens !== null && tokens >= 1;
   const canStartPvE = connected;
+  const pvpDisabledReason = connected ? 'Not enough tokens' : 'Waiting for connection';
   const isCompact = typeof window !== 'undefined' ? window.innerHeight < 740 : false;
 
   // Debug mode: adjust overlay opacity
@@ -135,20 +139,64 @@ export default function Menu({
             <button 
               onClick={onStartBattle}
               disabled={!hasEnoughTokens}
+              aria-label="Start PvP battle"
+              onPointerDown={() => {
+                if (hasEnoughTokens) setPvpPressed(true);
+              }}
+              onPointerUp={() => setPvpPressed(false)}
+              onPointerLeave={() => setPvpPressed(false)}
+              onPointerCancel={() => setPvpPressed(false)}
               style={{
-                padding: '14px 24px',
-                fontSize: 'clamp(16px, 4.4vw, 18px)',
+                padding: 0,
                 cursor: hasEnoughTokens ? 'pointer' : 'not-allowed',
-                opacity: hasEnoughTokens ? 1 : 0.55,
-                width: 'min(300px, 84vw)',
-                minHeight: '48px',
-                borderRadius: '10px',
+                width: 'min(330px, 88vw)',
+                minHeight: isCompact ? '84px' : '94px',
+                borderRadius: '14px',
                 border: 'none',
-                fontWeight: 700
+                backgroundColor: 'transparent',
+                position: 'relative',
+                overflow: 'hidden',
+                touchAction: 'manipulation',
+                transform: pvpPressed ? 'scale(0.98)' : 'scale(1)',
+                transition: 'transform 120ms ease, filter 180ms ease, box-shadow 180ms ease, opacity 180ms ease',
+                filter: hasEnoughTokens
+                  ? (pvpPressed ? 'brightness(0.9)' : 'none')
+                  : 'grayscale(0.35) brightness(0.52)',
+                boxShadow: hasEnoughTokens
+                  ? (pvpPressed ? '0 4px 14px rgba(0,0,0,0.32)' : '0 8px 22px rgba(0,0,0,0.36)')
+                  : '0 4px 10px rgba(0,0,0,0.24)',
+                opacity: hasEnoughTokens ? 1 : 0.86
               }}
             >
-              {hasEnoughTokens ? 'Start Battle' : 'Not enough tokens'}
+              <img
+                src={pvpButtonImage}
+                alt=""
+                draggable={false}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                  pointerEvents: 'none',
+                  userSelect: 'none',
+                  display: 'block'
+                }}
+              />
+              {!hasEnoughTokens && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    backgroundColor: 'rgba(0, 0, 0, 0.42)',
+                    pointerEvents: 'none'
+                  }}
+                />
+              )}
             </button>
+            {!hasEnoughTokens && (
+              <div style={{ fontSize: '12px', color: '#ddd', marginTop: '-6px', textAlign: 'center' }}>
+                {pvpDisabledReason}
+              </div>
+            )}
             <button 
               onClick={onStartPvE}
               disabled={!canStartPvE}

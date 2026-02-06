@@ -68,3 +68,18 @@ Original prompt: Добавь в игру интерактивное обуче�
 ## Validation
 - `npm run build --prefix client` passed.
 - `npm run test:ui-regression` passed.
+
+## Update: PvP button image + interaction states
+- Added new optimized PvP button image asset from provided source:
+  - cropped to content-friendly ratio,
+  - resized for UI (860x487),
+  - compressed to WebP (~82KB): `client/src/assets/pvp_button.webp`.
+- Wired image into PvP start button in menu and tuned fit/size for mobile menu layout.
+- Added button interaction polish:
+  - press animation (scale + brightness),
+  - disabled visual state (dim + grayscale + overlay),
+  - disabled reason text under button when unavailable.
+- Validation:
+  - `npm run build --prefix client` passed,
+  - `npm run test:ui-regression` passed,
+  - manual screenshot check for mobile menu layout passed.
