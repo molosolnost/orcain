@@ -54,6 +54,7 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
   const draftDebounceRef = useRef<number | null>(null);
   const draftToastTimeoutRef = useRef<number | null>(null); // Separate ref for draftToast timeout
   const slotOccupiedToastTimeoutRef = useRef<number | null>(null); // Separate ref for slotOccupiedToast timeout
+  const autoConfirmTimeoutRef = useRef<number | null>(null);
   const lastAppliedRoundIndexRef = useRef<number | null>(null);
   const slotsRef = useRef<(CardId | null)[]>([null, null, null]);
   const phaseRef = useRef<'PREP' | 'REVEAL' | 'END'>('PREP');
@@ -395,6 +396,10 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
 
   useEffect(() => {
     return () => {
+      if (autoConfirmTimeoutRef.current) {
+        clearTimeout(autoConfirmTimeoutRef.current);
+        autoConfirmTimeoutRef.current = null;
+      }
       // CRITICAL: Flush any pending draft on unmount ONLY if still in PREP
       if (phaseRef.current === 'PREP' && draftDebounceRef.current && slotsRef.current.length === 3) {
         flushDraft(slotsRef.current);
@@ -763,6 +768,26 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
     // Convert CardId[] to string[] for server (server expects CardId strings)
     socketManager.layoutConfirm(layout);
   };
+
+  // PvE UX: auto-confirm as soon as all 3 slots are filled.
+  useEffect(() => {
+    if (autoConfirmTimeoutRef.current) {
+      clearTimeout(autoConfirmTimeoutRef.current);
+      autoConfirmTimeoutRef.current = null;
+    }
+
+    if (matchMode !== 'pve') return;
+    if (state !== 'prep' || confirmed || phase !== 'PREP') return;
+    if (slots.filter((c) => c !== null).length !== 3) return;
+
+    autoConfirmTimeoutRef.current = window.setTimeout(() => {
+      if (phaseRef.current !== 'PREP') return;
+      if (confirmed) return;
+      if (slotsRef.current.filter((c) => c !== null).length !== 3) return;
+      handleConfirm();
+      autoConfirmTimeoutRef.current = null;
+    }, 120);
+  }, [matchMode, state, confirmed, phase, slots]);
 
 
   // Функция для получения цвета карты (принимает CardId, конвертирует в CardType для UI)
