@@ -7,9 +7,11 @@
     "dev:server": "cd server && npm run dev",
     "dev:client": "cd client && npm run dev",
     "test:smoke": "sh scripts/smoke.sh",
-    "test:sim": "npm run test:smoke && node server/scripts/sim/run_all.js"
+    "test:sim": "npm run test:smoke && node server/scripts/sim/run_all.js",
+    "test:ui-regression": "node scripts/ui_regression.js"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "playwright": "^1.58.2"
   }
 }

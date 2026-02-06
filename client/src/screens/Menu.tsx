@@ -19,6 +19,7 @@ interface MenuProps {
 export default function Menu({ onStartBattle, onStartPvE, onCancelSearch, isSearching, tokens, nickname }: MenuProps) {
   // Кнопка Start Battle disabled если tokens !== null && tokens < 1
   const hasEnoughTokens = tokens !== null && tokens >= 1;
+  const isCompact = typeof window !== 'undefined' ? window.innerHeight < 740 : false;
 
   // Debug mode: adjust overlay opacity
   const overlayOpacity = isDebug ? 0.55 : 0.45;
@@ -67,38 +68,44 @@ export default function Menu({ onStartBattle, onStartPvE, onCancelSearch, isSear
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '20px',
+        gap: isCompact ? '14px' : '18px',
         width: '100%',
-        padding: '20px'
+        maxWidth: '480px',
+        boxSizing: 'border-box',
+        padding: `max(16px, env(safe-area-inset-top, 0px)) 20px max(16px, env(safe-area-inset-bottom, 0px))`
       }}>
         <img
           src={orcainLogo}
           alt="ORCAIN logo"
           style={{
-            width: "min(80vw, 380px)",
+            width: "min(78vw, 360px)",
             height: "auto",
-            margin: "0 auto 24px",
+            margin: isCompact ? "0 auto 10px" : "0 auto 16px",
             display: "block",
             userSelect: "none",
             pointerEvents: "none",
           }}
         />
         {nickname && (
-          <div style={{ fontSize: '18px', color: '#666', marginTop: '-10px' }}>
+          <div style={{ fontSize: 'clamp(15px, 4vw, 18px)', color: '#ddd', marginTop: '-6px', textAlign: 'center' }}>
             Welcome, <strong>{nickname}</strong>
           </div>
         )}
-        <div style={{ fontSize: '20px' }}>Tokens: {tokens === null ? '—' : tokens}</div>
+        <div style={{ fontSize: 'clamp(18px, 5vw, 22px)', fontWeight: 700 }}>Tokens: {tokens === null ? '—' : tokens}</div>
         
         {isSearching ? (
           <>
-            <div style={{ fontSize: '18px', color: '#666' }}>Searching opponent…</div>
+            <div style={{ fontSize: 'clamp(15px, 4vw, 18px)', color: '#ddd' }}>Searching opponent…</div>
             <button 
               onClick={onCancelSearch}
               style={{
-                padding: '12px 24px',
-                fontSize: '18px',
-                cursor: 'pointer'
+                padding: '14px 24px',
+                fontSize: 'clamp(16px, 4.4vw, 18px)',
+                cursor: 'pointer',
+                width: 'min(300px, 84vw)',
+                minHeight: '48px',
+                borderRadius: '10px',
+                border: 'none'
               }}
             >
               Cancel
@@ -110,10 +117,15 @@ export default function Menu({ onStartBattle, onStartPvE, onCancelSearch, isSear
               onClick={onStartBattle}
               disabled={!hasEnoughTokens}
               style={{
-                padding: '12px 24px',
-                fontSize: '18px',
+                padding: '14px 24px',
+                fontSize: 'clamp(16px, 4.4vw, 18px)',
                 cursor: hasEnoughTokens ? 'pointer' : 'not-allowed',
-                opacity: hasEnoughTokens ? 1 : 0.5
+                opacity: hasEnoughTokens ? 1 : 0.55,
+                width: 'min(300px, 84vw)',
+                minHeight: '48px',
+                borderRadius: '10px',
+                border: 'none',
+                fontWeight: 700
               }}
             >
               {hasEnoughTokens ? 'Start Battle' : 'Not enough tokens'}
@@ -121,13 +133,16 @@ export default function Menu({ onStartBattle, onStartPvE, onCancelSearch, isSear
             <button 
               onClick={onStartPvE}
               style={{
-                padding: '12px 24px',
-                fontSize: '18px',
+                padding: '14px 24px',
+                fontSize: 'clamp(16px, 4.4vw, 18px)',
                 cursor: 'pointer',
                 backgroundColor: '#4caf50',
                 color: '#fff',
                 border: 'none',
-                borderRadius: '4px'
+                borderRadius: '10px',
+                width: 'min(300px, 84vw)',
+                minHeight: '48px',
+                fontWeight: 700
               }}
             >
               Start PvE Training

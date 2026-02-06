@@ -35,6 +35,9 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
   const [phase, setPhase] = useState<'PREP' | 'REVEAL' | 'END'>('PREP');
   const [yourNickname, setYourNickname] = useState<string | null>(null);
   const [oppNickname, setOppNickname] = useState<string | null>(null);
+  const [viewportHeight, setViewportHeight] = useState<number>(
+    typeof window !== 'undefined' ? window.innerHeight : 800
+  );
 
   const [dragState, setDragState] = useState<{
     card: CardId;
@@ -68,11 +71,19 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
   const prevOppHpRef = useRef<number>(10);
 
   const DEBUG_MATCH = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
+  const isCompactHeight = viewportHeight < 740;
+  const isUltraCompactHeight = viewportHeight < 680;
 
   // Sync currentMatchIdRef with prop
   useEffect(() => {
     currentMatchIdRef.current = currentMatchId;
   }, [currentMatchId]);
+
+  useEffect(() => {
+    const onResize = () => setViewportHeight(window.innerHeight);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   useEffect(() => {
     lockAppHeight('battle_mount');
@@ -781,9 +792,13 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
     // Hand: 4 cards, padding 24px (12px*2), gaps 12px (4px*3) = (100vw - 24px - 12px) / 4
     // Slots: 3 cards, padding 24px, gaps 12px (6px*2) = (100vw - 24px - 12px) / 3
     const isHand = mode === 'HAND';
-    const cardWidth = isHand 
-      ? 'clamp(55px, calc((100vw - 36px) / 4), 75px)' // 4 cards: padding 24px + gaps 12px
-      : 'clamp(65px, calc((100vw - 36px) / 3), 85px)'; // 3 cards: padding 24px + gaps 12px
+    const cardWidth = isHand
+      ? (isCompactHeight
+          ? 'clamp(50px, calc((100vw - 34px) / 4), 68px)'
+          : 'clamp(55px, calc((100vw - 36px) / 4), 75px)')
+      : (isCompactHeight
+          ? 'clamp(60px, calc((100vw - 34px) / 3), 76px)'
+          : 'clamp(65px, calc((100vw - 36px) / 3), 85px)');
     
     if (mode === 'BACK') {
       return (
@@ -934,6 +949,8 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
       overflow: 'hidden',
       paddingTop: 'env(safe-area-inset-top, 0)',
       paddingBottom: 'env(safe-area-inset-bottom, 0)',
+      paddingLeft: 'env(safe-area-inset-left, 0)',
+      paddingRight: 'env(safe-area-inset-right, 0)',
       backgroundColor: '#242424',
       color: 'rgba(255, 255, 255, 0.87)',
       zIndex: 1
@@ -941,13 +958,13 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
       {/* Compact Top Bar - 1 строка максимум */}
       <div style={{ 
         flexShrink: 0,
-        padding: '6px 12px',
+        padding: isCompactHeight ? '4px 10px' : '6px 12px',
         display: 'flex',
         flexWrap: 'wrap',
         gap: '6px 12px',
         alignItems: 'center',
         justifyContent: 'space-between',
-        fontSize: '10px',
+        fontSize: isCompactHeight ? '9px' : '10px',
         lineHeight: '1.3',
         borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
       }}>
@@ -1003,9 +1020,9 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
       {/* Opponent Cards Row - опущена ниже для лучшей компоновки */}
       <div style={{ 
         flexShrink: 0,
-        padding: '12px 12px 8px 12px',
+        padding: isCompactHeight ? '8px 10px 6px 10px' : '12px 12px 8px 12px',
         display: 'flex',
-        gap: '6px',
+        gap: isCompactHeight ? '4px' : '6px',
         justifyContent: 'center',
         alignItems: 'center'
       }}>
@@ -1055,8 +1072,8 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
         <div style={{
           flexShrink: 0,
           textAlign: 'center',
-          padding: '4px 12px',
-          fontSize: '14px',
+          padding: isCompactHeight ? '2px 10px' : '4px 12px',
+          fontSize: isCompactHeight ? '12px' : '14px',
           fontWeight: 'bold',
           color: '#fff'
         }}>
@@ -1067,9 +1084,9 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
       {/* Your Slots Row - строго по центру, ровные gap */}
       <div style={{ 
         flexShrink: 0,
-        padding: '10px 12px',
+        padding: isCompactHeight ? '6px 10px' : '10px 12px',
         display: 'flex',
-        gap: '8px',
+        gap: isCompactHeight ? '6px' : '8px',
         justifyContent: 'center',
         alignItems: 'center'
       }}>
@@ -1199,14 +1216,14 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
         justifyContent: 'center',
         minHeight: 0,
         overflow: 'hidden',
-        paddingTop: '8px'
+        paddingTop: isCompactHeight ? '4px' : '8px'
       }}>
         {state === 'prep' && !confirmed && (
           <div style={{ 
             flexShrink: 0,
-            padding: '8px 12px',
+            padding: isCompactHeight ? '4px 10px' : '8px 12px',
             display: 'flex',
-            gap: '4px',
+            gap: isCompactHeight ? '3px' : '4px',
             justifyContent: 'center',
             alignItems: 'center',
             width: '100%',
@@ -1254,7 +1271,9 @@ export default function Battle({ onBackToMenu, onPlayAgain, matchMode, tokens, m
       {state === 'prep' && !confirmed && (
         <div style={{ 
           flexShrink: 0,
-          padding: `12px 12px calc(12px + env(safe-area-inset-bottom, 0px)) 12px`,
+          padding: isUltraCompactHeight
+            ? `8px 10px calc(8px + env(safe-area-inset-bottom, 0px)) 10px`
+            : `12px 12px calc(12px + env(safe-area-inset-bottom, 0px)) 12px`,
           textAlign: 'center',
           borderTop: '1px solid rgba(255, 255, 255, 0.1)'
         }}>
