@@ -52,3 +52,8 @@ Original prompt: Добавь в игру интерактивное обуче�
   - tutorial opens,
   - timer hidden,
   - no automatic step progression without user action.
+
+## Hotfix: Tutorial confirm overlap
+- Fixed mobile overlap on tutorial confirm step: tutorial panel now moves to top when current step is `confirm`.
+- Added bounded panel height with internal scroll to prevent blocking actionable controls on small/long mobile viewports.
+- Verified with `npm run build --prefix client`.

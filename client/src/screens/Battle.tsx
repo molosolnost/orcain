@@ -1304,6 +1304,7 @@ export default function Battle({
         currentTutorialStep?.id === 'place_defense' ||
         currentTutorialStep?.id === 'place_heal')
   };
+  const tutorialPanelAtTop = currentTutorialStep?.id === 'confirm';
 
   // BattleShell: статичная оболочка до prep_start. Не меняет размеры DOM, без карт и тяжёлого layout.
   // Рендер игрового поля — только после prep_start, без анимаций при первом появлении.
@@ -1932,12 +1933,17 @@ export default function Battle({
             position: 'fixed',
             left: 0,
             right: 0,
-            bottom: 0,
+            top: tutorialPanelAtTop ? 'max(8px, env(safe-area-inset-top, 0px))' : 'auto',
+            bottom: tutorialPanelAtTop ? 'auto' : 0,
             display: 'flex',
             justifyContent: 'center',
-            padding: isCompactHeight
-              ? '8px 10px calc(14px + env(safe-area-inset-bottom, 0px)) 10px'
-              : '12px 14px calc(18px + env(safe-area-inset-bottom, 0px)) 14px',
+            padding: tutorialPanelAtTop
+              ? (isCompactHeight
+                  ? '0 10px 8px 10px'
+                  : '0 14px 10px 14px')
+              : (isCompactHeight
+                  ? '8px 10px calc(14px + env(safe-area-inset-bottom, 0px)) 10px'
+                  : '12px 14px calc(18px + env(safe-area-inset-bottom, 0px)) 14px'),
             zIndex: 10020,
             pointerEvents: 'none'
           }}
@@ -1950,6 +1956,8 @@ export default function Battle({
               borderRadius: '12px',
               boxShadow: '0 10px 24px rgba(0, 0, 0, 0.45)',
               padding: isCompactHeight ? '10px 12px' : '12px 14px',
+              maxHeight: tutorialPanelAtTop ? '44vh' : '48vh',
+              overflowY: 'auto',
               pointerEvents: 'auto'
             }}
           >
