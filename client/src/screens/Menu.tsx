@@ -176,7 +176,7 @@ export default function Menu({
               {tutorialCompleted ? 'Repeat Interactive Tutorial' : 'Interactive Tutorial (Recommended)'}
             </button>
             <div style={{ fontSize: '12px', color: '#ddd', textAlign: 'center', maxWidth: '320px', lineHeight: 1.4 }}>
-              Learn cards, phase flow, and basic PvP tactics step by step in a guided match.
+              No timer. You will be guided step by step: which card goes to which slot and why.
             </div>
           </>
         )}

@@ -432,8 +432,12 @@ function App() {
   const handleStartTutorial = () => {
     startBattleTransition();
     setTutorialMode(true);
-    setMatchMode('pve');
-    socketManager.pveStart();
+    setMatchMode(null);
+    setIsSearching(false);
+    setMatchEndPayload(null);
+    setLastPrepStart(null);
+    setCurrentMatchId(null);
+    setScreen('battle');
   };
 
   const handleCancelSearch = () => {
@@ -619,7 +623,7 @@ function App() {
   }
 
   // 6. Main screens: один неизменяемый root, смена внутреннего контента без mount при переходе Menu→Battle
-  const battleActive = isSearching || matchMode === 'pve' || screen === 'battle';
+  const battleActive = tutorialMode || isSearching || matchMode === 'pve' || screen === 'battle';
   return (
     <>
       <div
@@ -633,7 +637,7 @@ function App() {
       >
         <div
           style={{
-            display: screen === 'menu' ? 'block' : 'none',
+            display: screen === 'menu' && !tutorialMode ? 'block' : 'none',
             position: 'absolute',
             inset: 0,
             overflow: 'hidden',
@@ -653,7 +657,7 @@ function App() {
         {battleActive && (
           <div
             style={{
-              display: screen === 'battle' ? 'block' : 'none',
+              display: screen === 'battle' || tutorialMode ? 'block' : 'none',
               position: 'absolute',
               inset: 0,
               overflow: 'hidden',

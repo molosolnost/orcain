@@ -8,10 +8,13 @@ type BattleState = 'prep' | 'playing' | 'ended';
 type TutorialStepId =
   | 'intro'
   | 'cards'
-  | 'first_card'
-  | 'fill_slots'
+  | 'place_attack'
+  | 'place_defense'
+  | 'place_heal'
   | 'confirm'
-  | 'reveal'
+  | 'reveal_1'
+  | 'reveal_2'
+  | 'reveal_3'
   | 'pvp_tactics'
   | 'finish';
 
@@ -26,61 +29,98 @@ interface TutorialStepConfig {
 const TUTORIAL_STEPS: TutorialStepConfig[] = [
   {
     id: 'intro',
-    title: 'Шаг 1/8: Что происходит в бою',
-    body: 'Раунд всегда идёт по схеме PREP -> REVEAL. В PREP у тебя есть таймер на выбор 3 карт. В REVEAL карты вскрываются по одной, а HP меняется по результатам.',
-    action: 'Нажми «Дальше», чтобы перейти к картам.',
+    title: 'Шаг 1/11: Как устроен раунд',
+    body: 'Раунд всегда состоит из двух фаз: «Планирование» и «Вскрытие». Сначала ты выкладываешь 3 карты, потом карты открываются по шагам слева направо.',
+    action: 'Нажми «Дальше», чтобы изучить карты.',
     autoAdvance: false
   },
   {
     id: 'cards',
-    title: 'Шаг 2/8: Как работают карты',
+    title: 'Шаг 2/11: Карты и их роли',
     body: 'Attack наносит 2 урона. Defense блокирует Attack. Heal даёт +1 HP. Counter отражает Attack обратно в соперника. Эти 4 карты и есть база всей тактики.',
-    action: 'Нажми «Дальше», чтобы начать свой первый ход.',
+    action: 'Нажми «Дальше», начнем раскладывать карты по слотам.',
     autoAdvance: false
   },
   {
-    id: 'first_card',
-    title: 'Шаг 3/8: Положи первую карту',
-    body: 'Перетащи любую карту из руки в один из 3 слотов. Это и есть draft хода: сервер видит расклад и ждёт подтверждения.',
-    action: 'Положи 1 карту в любой слот.',
+    id: 'place_attack',
+    title: 'Шаг 3/11: Поставь Attack в слот 1',
+    body: 'Первый слот открывается первым. Начни ход с Attack: так ты проверяешь реакцию соперника на раннюю агрессию.',
+    action: 'Перетащи Attack в первый слот S1.',
     autoAdvance: true
   },
   {
-    id: 'fill_slots',
-    title: 'Шаг 4/8: Заполни все слоты',
-    body: 'В каждый раунд нужно выставить ровно 3 карты. Порядок важен: они вскрываются слева направо, шаг за шагом.',
-    action: 'Заполни 3/3 слота.',
+    id: 'place_defense',
+    title: 'Шаг 4/11: Поставь Defense в слот 2',
+    body: 'Второй слот нужен как страховка, если соперник ответит Attack после первого шага.',
+    action: 'Перетащи Defense во второй слот S2.',
+    autoAdvance: true
+  },
+  {
+    id: 'place_heal',
+    title: 'Шаг 5/11: Поставь Heal в слот 3',
+    body: 'Третий слот часто используют для добора HP к концу раунда.',
+    action: 'Перетащи Heal в третий слот S3.',
     autoAdvance: true
   },
   {
     id: 'confirm',
-    title: 'Шаг 5/8: Подтверди ход',
-    body: 'После Confirm расклад фиксируется. До подтверждения можно переставлять карты, чтобы подстроить порядок под предполагаемый ответ соперника.',
+    title: 'Шаг 6/11: Подтверди расклад',
+    body: 'После Confirm порядок карт фиксируется. В реальном матче после этого менять ход нельзя.',
     action: 'Нажми кнопку Confirm.',
     autoAdvance: true
   },
   {
-    id: 'reveal',
-    title: 'Шаг 6/8: Читай вскрытие',
-    body: 'Смотри, какая карта открылась у соперника и как изменилась HP-панель. Это основной источник информации для следующего раунда.',
-    action: 'Дождись первого шага REVEAL.',
+    id: 'reveal_1',
+    title: 'Шаг 7/11: Вскрытие шага 1',
+    body: 'Сейчас вручную откроем первый обмен, чтобы ты видел, как работают карты без спешки.',
+    action: 'Нажми «Показать шаг» и посмотри результат.',
+    autoAdvance: true
+  },
+  {
+    id: 'reveal_2',
+    title: 'Шаг 8/11: Вскрытие шага 2',
+    body: 'Сравни вторые карты и обрати внимание на HP после их взаимодействия.',
+    action: 'Нажми «Показать шаг».',
+    autoAdvance: true
+  },
+  {
+    id: 'reveal_3',
+    title: 'Шаг 9/11: Вскрытие шага 3',
+    body: 'Финальный обмен завершит раунд. Именно так читается итоговое преимущество по HP.',
+    action: 'Нажми «Показать шаг».',
     autoAdvance: true
   },
   {
     id: 'pvp_tactics',
-    title: 'Шаг 7/8: Мини-тактики против реальных игроков',
+    title: 'Шаг 10/11: Мини-тактики против реальных игроков',
     body: 'Не повторяй один и тот же порядок. Если соперник часто открывает Attack в начале, ставь Defense/Counter в первом слоте. Если видишь осторожную игру, наказывай Attack. Heal лучше прятать в шаг, где по тебе реже бьют.',
     action: 'Нажми «Дальше», чтобы завершить обучение.',
     autoAdvance: false
   },
   {
     id: 'finish',
-    title: 'Шаг 8/8: Готов к PvP',
+    title: 'Шаг 11/11: Готов к PvP',
     body: 'Ты разобрал базовый цикл матча, карты и чтение вскрытий. Теперь можно идти в Start Battle и отрабатывать предсказание реальных соперников.',
     action: 'Нажми «Завершить обучение» и вернись в меню.',
     autoAdvance: false
   }
 ];
+
+const PHASE_LABELS: Record<'PREP' | 'REVEAL' | 'END', string> = {
+  PREP: 'Планирование',
+  REVEAL: 'Вскрытие',
+  END: 'Финал'
+};
+
+const CARD_LABELS: Record<CardId, string> = {
+  attack: 'Attack',
+  defense: 'Defense',
+  heal: 'Heal',
+  counter: 'Counter'
+};
+
+const TUTORIAL_PLAYER_LAYOUT: CardId[] = ['attack', 'defense', 'heal'];
+const TUTORIAL_OPP_LAYOUT: CardId[] = ['defense', 'attack', 'heal'];
 
 interface BattleProps {
   onBackToMenu: () => void;
@@ -157,7 +197,6 @@ export default function Battle({
   const [revealAnimations, setRevealAnimations] = useState<Set<number>>(new Set()); // stepIndexes that should animate
   const [confirmButtonPressed, setConfirmButtonPressed] = useState(false);
   const [tutorialStepIndex, setTutorialStepIndex] = useState(0);
-  const [tutorialDismissed, setTutorialDismissed] = useState(false);
   const prevYourHpRef = useRef<number>(10);
   const prevOppHpRef = useRef<number>(10);
 
@@ -165,10 +204,19 @@ export default function Battle({
   const isCompactHeight = viewportHeight < 740;
   const isUltraCompactHeight = viewportHeight < 680;
   const selectedSlotsCount = slots.filter(c => c !== null).length;
-  const tutorialEnabled = Boolean(tutorialMode) && !tutorialDismissed;
+  const tutorialEnabled = Boolean(tutorialMode);
   const currentTutorialStep = tutorialEnabled ? TUTORIAL_STEPS[Math.min(tutorialStepIndex, TUTORIAL_STEPS.length - 1)] : null;
   const tutorialHandUnlocked = !tutorialEnabled || tutorialStepIndex >= 2;
-  const tutorialConfirmUnlocked = !tutorialEnabled || tutorialStepIndex >= 4;
+  const tutorialConfirmUnlocked = !tutorialEnabled || tutorialStepIndex >= 5;
+  const phaseLabel = PHASE_LABELS[phase];
+
+  const tutorialPlacementTarget: { card: CardId; slotIndex: number } | null = (() => {
+    if (!tutorialEnabled || !currentTutorialStep) return null;
+    if (currentTutorialStep.id === 'place_attack') return { card: 'attack', slotIndex: 0 };
+    if (currentTutorialStep.id === 'place_defense') return { card: 'defense', slotIndex: 1 };
+    if (currentTutorialStep.id === 'place_heal') return { card: 'heal', slotIndex: 2 };
+    return null;
+  })();
 
   // Sync currentMatchIdRef with prop
   useEffect(() => {
@@ -289,8 +337,8 @@ export default function Battle({
       
       // UX: Round start banner
       const bannerText = lastPrepStart.suddenDeath 
-        ? `Round ${lastPrepStart.roundIndex} — PREP (Sudden Death)`
-        : `Round ${lastPrepStart.roundIndex} — PREP`;
+        ? `Раунд ${lastPrepStart.roundIndex} — ${PHASE_LABELS.PREP} (Sudden Death)`
+        : `Раунд ${lastPrepStart.roundIndex} — ${PHASE_LABELS.PREP}`;
       setRoundBanner(bannerText);
       setTimeout(() => setRoundBanner(null), 700);
     }
@@ -305,7 +353,7 @@ export default function Battle({
 
   useEffect(() => {
     const socket = socketManager.getSocket();
-    if (!socket) return;
+    if (!socket || tutorialEnabled) return;
 
     socketManager.onMatchFound((payload) => {
       // При старте нового матча очищаем все локальные стейты и устанавливаем начальные значения
@@ -424,7 +472,7 @@ export default function Battle({
       phaseRef.current = 'PREP';
       
       // UX: Round end banner
-      setRoundBanner(`Round ${roundIndex} complete`);
+      setRoundBanner(`Раунд ${roundIndex} завершен`);
       setTimeout(() => setRoundBanner(null), 700);
     });
 
@@ -433,11 +481,14 @@ export default function Battle({
       socketManager.off('step_reveal');
       socketManager.off('round_end');
     };
-  }, []);
+  }, [tutorialEnabled]);
 
   // Вычисляемый countdownSeconds - источник правды для таймера
   // Всегда вычисляем от deadlineTs и текущего времени
   const computedSeconds = (() => {
+    if (tutorialEnabled) {
+      return null;
+    }
     if (phase === 'PREP' && deadlineTs !== null) {
       const baseNow = nowTs || Date.now();
       const secs = Math.max(0, Math.ceil((deadlineTs - baseNow) / 1000));
@@ -448,6 +499,9 @@ export default function Battle({
 
   // Таймер для обновления countdown - стартует сразу при получении deadlineTs
   useEffect(() => {
+    if (tutorialEnabled) {
+      return;
+    }
     if (phase !== 'PREP' || deadlineTs === null) {
       // Если не PREP или нет deadlineTs - останавливаем таймер
       return;
@@ -474,26 +528,51 @@ export default function Battle({
         console.log(`[BATTLE_TIMER_STOP] phase=${phase} deadlineTs=${deadlineTs}`);
       }
     };
-  }, [phase, deadlineTs, roundIndex]);
+  }, [tutorialEnabled, phase, deadlineTs, roundIndex]);
 
   useEffect(() => {
-    if (!tutorialMode) {
+    if (!tutorialEnabled) {
       setTutorialStepIndex(0);
-      setTutorialDismissed(false);
       return;
     }
+
+    setState('prep');
+    setPhase('PREP');
+    phaseRef.current = 'PREP';
+    setRoundIndex(1);
+    setDeadlineTs(null);
+    setNowTs(Date.now());
+    setYourHp(8);
+    setOppHp(8);
+    prevYourHpRef.current = 8;
+    prevOppHpRef.current = 8;
+    setPot(0);
+    setSuddenDeath(false);
+    setYourHand(['attack', 'defense', 'heal', 'counter']);
+    setSlots([null, null, null]);
+    slotsRef.current = [null, null, null];
+    setConfirmed(false);
+    setRevealedCards([]);
+    setCurrentStepIndex(null);
+    setYourNickname('You');
+    setOppNickname('Coach Bot');
+    setDraftToast(null);
+    setSlotOccupiedToast(null);
     setTutorialStepIndex(0);
-    setTutorialDismissed(false);
-  }, [tutorialMode, currentMatchId]);
+  }, [tutorialEnabled, currentMatchId]);
 
   useEffect(() => {
     if (!tutorialEnabled || !currentTutorialStep || !currentTutorialStep.autoAdvance) return;
 
-    if (currentTutorialStep.id === 'first_card' && selectedSlotsCount >= 1) {
+    if (currentTutorialStep.id === 'place_attack' && slots[0] === 'attack') {
       setTutorialStepIndex(prev => Math.min(prev + 1, TUTORIAL_STEPS.length - 1));
       return;
     }
-    if (currentTutorialStep.id === 'fill_slots' && selectedSlotsCount === 3) {
+    if (currentTutorialStep.id === 'place_defense' && slots[0] === 'attack' && slots[1] === 'defense') {
+      setTutorialStepIndex(prev => Math.min(prev + 1, TUTORIAL_STEPS.length - 1));
+      return;
+    }
+    if (currentTutorialStep.id === 'place_heal' && slots[0] === 'attack' && slots[1] === 'defense' && slots[2] === 'heal') {
       setTutorialStepIndex(prev => Math.min(prev + 1, TUTORIAL_STEPS.length - 1));
       return;
     }
@@ -501,10 +580,18 @@ export default function Battle({
       setTutorialStepIndex(prev => Math.min(prev + 1, TUTORIAL_STEPS.length - 1));
       return;
     }
-    if (currentTutorialStep.id === 'reveal' && phase === 'REVEAL' && currentStepIndex !== null) {
+    if (currentTutorialStep.id === 'reveal_1' && revealedCards[0]) {
+      setTutorialStepIndex(prev => Math.min(prev + 1, TUTORIAL_STEPS.length - 1));
+      return;
+    }
+    if (currentTutorialStep.id === 'reveal_2' && revealedCards[1]) {
+      setTutorialStepIndex(prev => Math.min(prev + 1, TUTORIAL_STEPS.length - 1));
+      return;
+    }
+    if (currentTutorialStep.id === 'reveal_3' && revealedCards[2]) {
       setTutorialStepIndex(prev => Math.min(prev + 1, TUTORIAL_STEPS.length - 1));
     }
-  }, [tutorialEnabled, currentTutorialStep, selectedSlotsCount, confirmed, phase, currentStepIndex]);
+  }, [tutorialEnabled, currentTutorialStep, slots, confirmed, revealedCards]);
 
   const canInteract = state === 'prep' && !confirmed && tutorialHandUnlocked;
 
@@ -646,8 +733,30 @@ export default function Battle({
     });
   };
 
+  const showTutorialHint = (message: string) => {
+    if (draftToastTimeoutRef.current) {
+      clearTimeout(draftToastTimeoutRef.current);
+    }
+    setDraftToast(message);
+    draftToastTimeoutRef.current = window.setTimeout(() => {
+      setDraftToast(null);
+      draftToastTimeoutRef.current = null;
+    }, 1000);
+  };
+
   const applyDropToSlot = (card: CardId, slotIndex: number, sourceSlotIndex: number | null) => {
     if (!canInteract) return;
+
+    if (tutorialPlacementTarget) {
+      if (card !== tutorialPlacementTarget.card) {
+        showTutorialHint(`Сейчас нужна карта ${CARD_LABELS[tutorialPlacementTarget.card]}`);
+        return;
+      }
+      if (slotIndex !== tutorialPlacementTarget.slotIndex) {
+        showTutorialHint(`Положи карту в слот S${tutorialPlacementTarget.slotIndex + 1}`);
+        return;
+      }
+    }
     
     // UX: Check if slot is occupied (and not swapping from same slot)
     const targetSlotCard = slots[slotIndex];
@@ -762,6 +871,10 @@ export default function Battle({
     sourceSlotIndex: number | null
   ) => {
     if (!canInteract) return;
+    if (sourceSlotIndex === null && tutorialPlacementTarget && card !== tutorialPlacementTarget.card) {
+      showTutorialHint(`Сейчас выбери ${CARD_LABELS[tutorialPlacementTarget.card]}`);
+      return;
+    }
     if (sourceSlotIndex === null && slots.includes(card)) return;
     
     // UX: Block drag-start if all slots are full (X==3)
@@ -867,6 +980,29 @@ export default function Battle({
     if (!tutorialConfirmUnlocked) return;
     const layout = slots.filter((card): card is CardId => card !== null);
     if (layout.length !== 3) return;
+
+    if (tutorialEnabled) {
+      const exactLayout =
+        slots[0] === TUTORIAL_PLAYER_LAYOUT[0] &&
+        slots[1] === TUTORIAL_PLAYER_LAYOUT[1] &&
+        slots[2] === TUTORIAL_PLAYER_LAYOUT[2];
+      if (!exactLayout) {
+        showTutorialHint('Для обучения используй порядок: Attack -> Defense -> Heal');
+        return;
+      }
+
+      setConfirmButtonPressed(true);
+      setTimeout(() => setConfirmButtonPressed(false), 200);
+      setConfirmed(true);
+      setState('playing');
+      setPhase('REVEAL');
+      phaseRef.current = 'REVEAL';
+      setCurrentStepIndex(null);
+      setRevealedCards([]);
+      setRoundBanner('План готов. Переходим к вскрытию');
+      setTimeout(() => setRoundBanner(null), 900);
+      return;
+    }
     
     // GUARD: Only confirm in PREP phase
     if (phaseRef.current !== 'PREP') {
@@ -916,10 +1052,104 @@ export default function Battle({
     }, 120);
   }, [matchMode, tutorialEnabled, state, confirmed, phase, slots]);
 
+  const runTutorialRevealStep = () => {
+    if (!tutorialEnabled || !confirmed || !currentTutorialStep) return;
+    const expectedRevealStep =
+      currentTutorialStep.id === 'reveal_1' ? 0 :
+      currentTutorialStep.id === 'reveal_2' ? 1 :
+      currentTutorialStep.id === 'reveal_3' ? 2 : null;
+    if (expectedRevealStep === null) return;
+
+    const stepIndex = revealedCards.length;
+    if (stepIndex !== expectedRevealStep) return;
+    if (stepIndex < 0 || stepIndex > 2) return;
+
+    const yourCard = slotsRef.current[stepIndex];
+    if (!yourCard) return;
+    const oppCard = TUTORIAL_OPP_LAYOUT[stepIndex];
+
+    let nextYourHp = prevYourHpRef.current;
+    let nextOppHp = prevOppHpRef.current;
+
+    if (yourCard === 'heal') {
+      nextYourHp = Math.min(10, nextYourHp + 1);
+    }
+    if (oppCard === 'heal') {
+      nextOppHp = Math.min(10, nextOppHp + 1);
+    }
+    if (yourCard === 'attack' && oppCard !== 'defense' && oppCard !== 'counter') {
+      nextOppHp = Math.max(0, nextOppHp - 2);
+    }
+    if (oppCard === 'attack' && yourCard !== 'defense' && yourCard !== 'counter') {
+      nextYourHp = Math.max(0, nextYourHp - 2);
+    }
+    if (yourCard === 'counter' && oppCard === 'attack') {
+      nextOppHp = Math.max(0, nextOppHp - 2);
+    }
+    if (oppCard === 'counter' && yourCard === 'attack') {
+      nextYourHp = Math.max(0, nextYourHp - 2);
+    }
+
+    if (nextYourHp < prevYourHpRef.current) {
+      setHpFlash({ type: 'your', direction: 'down' });
+      setTimeout(() => setHpFlash(null), 400);
+    } else if (nextYourHp > prevYourHpRef.current) {
+      setHpFlash({ type: 'your', direction: 'up' });
+      setTimeout(() => setHpFlash(null), 400);
+    }
+    if (nextOppHp < prevOppHpRef.current) {
+      setHpFlash({ type: 'opp', direction: 'down' });
+      setTimeout(() => setHpFlash(null), 400);
+    } else if (nextOppHp > prevOppHpRef.current) {
+      setHpFlash({ type: 'opp', direction: 'up' });
+      setTimeout(() => setHpFlash(null), 400);
+    }
+
+    prevYourHpRef.current = nextYourHp;
+    prevOppHpRef.current = nextOppHp;
+    setYourHp(nextYourHp);
+    setOppHp(nextOppHp);
+    setState('playing');
+    setPhase('REVEAL');
+    phaseRef.current = 'REVEAL';
+    setCurrentStepIndex(stepIndex);
+
+    setRevealAnimations(prev => new Set([...prev, stepIndex]));
+    setTimeout(() => {
+      setRevealAnimations(prev => {
+        const next = new Set(prev);
+        next.delete(stepIndex);
+        return next;
+      });
+    }, 600);
+
+    setRevealedCards(prev => {
+      const next = [...prev];
+      next[stepIndex] = {
+        step: stepIndex,
+        yourCard,
+        oppCard
+      };
+      return next;
+    });
+
+    if (stepIndex === 2) {
+      setState('ended');
+      setPhase('END');
+      phaseRef.current = 'END';
+      setRoundBanner('Учебный раунд завершен');
+      setTimeout(() => setRoundBanner(null), 900);
+    }
+  };
+
   const advanceTutorialManually = () => {
     if (!tutorialEnabled || !currentTutorialStep || currentTutorialStep.autoAdvance) return;
     if (currentTutorialStep.id === 'finish') return;
     setTutorialStepIndex(prev => Math.min(prev + 1, TUTORIAL_STEPS.length - 1));
+  };
+
+  const handleSkipTutorial = () => {
+    onBackToMenu();
   };
 
   const handleFinishTutorial = () => {
@@ -1057,15 +1287,27 @@ export default function Battle({
 
   const tutorialHighlights = {
     topBar: tutorialEnabled && (currentTutorialStep?.id === 'intro' || currentTutorialStep?.id === 'cards'),
-    slots: tutorialEnabled && (currentTutorialStep?.id === 'first_card' || currentTutorialStep?.id === 'fill_slots'),
+    slots:
+      tutorialEnabled &&
+      (currentTutorialStep?.id === 'place_attack' ||
+        currentTutorialStep?.id === 'place_defense' ||
+        currentTutorialStep?.id === 'place_heal'),
     confirm: tutorialEnabled && currentTutorialStep?.id === 'confirm',
-    reveal: tutorialEnabled && currentTutorialStep?.id === 'reveal',
-    hand: tutorialEnabled && currentTutorialStep?.id === 'first_card'
+    reveal:
+      tutorialEnabled &&
+      (currentTutorialStep?.id === 'reveal_1' ||
+        currentTutorialStep?.id === 'reveal_2' ||
+        currentTutorialStep?.id === 'reveal_3'),
+    hand:
+      tutorialEnabled &&
+      (currentTutorialStep?.id === 'place_attack' ||
+        currentTutorialStep?.id === 'place_defense' ||
+        currentTutorialStep?.id === 'place_heal')
   };
 
   // BattleShell: статичная оболочка до prep_start. Не меняет размеры DOM, без карт и тяжёлого layout.
   // Рендер игрового поля — только после prep_start, без анимаций при первом появлении.
-  if (!lastPrepStart) {
+  if (!lastPrepStart && !tutorialEnabled) {
     return (
       <div
         style={{
@@ -1150,7 +1392,7 @@ export default function Battle({
       }}>
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 'bold' }}>R{roundIndex}{suddenDeath ? ' SD' : ''}</span>
-          <span style={{ opacity: 0.7 }}>{phase}</span>
+          <span style={{ opacity: 0.7 }}>{phaseLabel}</span>
           {phase === 'PREP' && deadlineTs !== null && computedSeconds !== null && (
             <span style={{ color: computedSeconds <= 5 ? '#ff6b6b' : '#fff', fontWeight: 'bold' }}>{computedSeconds}s</span>
           )}
@@ -1213,7 +1455,7 @@ export default function Battle({
             const isCurrentStep = currentStepIndex === index;
             const isRevealing = revealAnimations.has(index);
             // В PREP всегда рубашка, в REVEAL показываем только если это текущий шаг или уже был вскрыт
-            const shouldShowRevealed = phase !== 'PREP' && revealed && (isCurrentStep || phase === 'END');
+            const shouldShowRevealed = phase !== 'PREP' && revealed && (isCurrentStep || phase === 'END' || tutorialEnabled);
             
             return (
               <div
@@ -1734,7 +1976,7 @@ export default function Battle({
             </div>
             <div style={{ marginTop: '10px', display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <button
-                onClick={() => setTutorialDismissed(true)}
+                onClick={handleSkipTutorial}
                 style={{
                   border: '1px solid rgba(255,255,255,0.25)',
                   backgroundColor: 'rgba(255,255,255,0.06)',
@@ -1762,6 +2004,22 @@ export default function Battle({
                   }}
                 >
                   Завершить обучение
+                </button>
+              ) : currentTutorialStep.id === 'reveal_1' || currentTutorialStep.id === 'reveal_2' || currentTutorialStep.id === 'reveal_3' ? (
+                <button
+                  onClick={runTutorialRevealStep}
+                  style={{
+                    border: 'none',
+                    backgroundColor: '#4caf50',
+                    color: '#fff',
+                    borderRadius: '8px',
+                    padding: '8px 14px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Показать шаг
                 </button>
               ) : currentTutorialStep.autoAdvance ? (
                 <button
