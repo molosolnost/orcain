@@ -20,7 +20,9 @@ db.exec(`
     createdAt INTEGER NOT NULL,
     telegramUserId INTEGER,
     nickname TEXT,
-    nicknameLower TEXT
+    nicknameLower TEXT,
+    avatar TEXT,
+    language TEXT
   )
 `);
 
@@ -55,6 +57,27 @@ try {
   // Колонка уже существует, игнорируем ошибку
 }
 
+// Миграция: добавляем profile-поля если их нет
+try {
+  db.exec('ALTER TABLE accounts ADD COLUMN avatar TEXT');
+} catch (e) {
+  // Колонка уже существует, игнорируем ошибку
+}
+
+try {
+  db.exec('ALTER TABLE accounts ADD COLUMN language TEXT');
+} catch (e) {
+  // Колонка уже существует, игнорируем ошибку
+}
+
+// Заполняем дефолтные profile значения для старых записей
+try {
+  db.exec("UPDATE accounts SET avatar = 'orc' WHERE avatar IS NULL OR TRIM(avatar) = ''");
+  db.exec("UPDATE accounts SET language = 'ru' WHERE language IS NULL OR TRIM(language) = ''");
+} catch (e) {
+  // Безопасный fallback для несовместимых старых схем
+}
+
 // Создаём уникальный индекс для nicknameLower (case-insensitive уникальность)
 try {
   db.exec(`
@@ -73,10 +96,10 @@ function createGuestAccount() {
   const tokens = 10;
   const createdAt = Date.now();
 
-  const stmt = db.prepare('INSERT INTO accounts (accountId, authToken, tokens, createdAt) VALUES (?, ?, ?, ?)');
-  stmt.run(accountId, authToken, tokens, createdAt);
+  const stmt = db.prepare('INSERT INTO accounts (accountId, authToken, tokens, createdAt, avatar, language) VALUES (?, ?, ?, ?, ?, ?)');
+  stmt.run(accountId, authToken, tokens, createdAt, 'orc', 'ru');
 
-  return { accountId, authToken, tokens };
+  return { accountId, authToken, tokens, avatar: 'orc', language: 'ru', nickname: null };
 }
 
 function getOrCreateTelegramAccount(telegramUserId) {
@@ -85,7 +108,7 @@ function getOrCreateTelegramAccount(telegramUserId) {
     // Пробуем выбрать с nickname (если колонка есть)
     let findStmt;
     try {
-      findStmt = db.prepare('SELECT accountId, authToken, tokens, nickname FROM accounts WHERE telegramUserId = ?');
+      findStmt = db.prepare('SELECT accountId, authToken, tokens, nickname, avatar, language FROM accounts WHERE telegramUserId = ?');
     } catch (e) {
       // Если nickname колонка отсутствует, выбираем без неё
       findStmt = db.prepare('SELECT accountId, authToken, tokens FROM accounts WHERE telegramUserId = ?');
@@ -98,7 +121,9 @@ function getOrCreateTelegramAccount(telegramUserId) {
         accountId: existing.accountId, 
         authToken: existing.authToken, 
         tokens: existing.tokens,
-        nickname: existing.nickname || null
+        nickname: existing.nickname || null,
+        avatar: existing.avatar || 'orc',
+        language: existing.language || 'ru'
       };
     }
     
@@ -110,15 +135,15 @@ function getOrCreateTelegramAccount(telegramUserId) {
     
     try {
       // Пробуем вставить с nickname (если колонка есть)
-      const insertStmt = db.prepare('INSERT INTO accounts (accountId, authToken, tokens, createdAt, telegramUserId, nickname, nicknameLower) VALUES (?, ?, ?, ?, ?, NULL, NULL)');
-      insertStmt.run(accountId, authToken, tokens, createdAt, telegramUserId);
+      const insertStmt = db.prepare('INSERT INTO accounts (accountId, authToken, tokens, createdAt, telegramUserId, nickname, nicknameLower, avatar, language) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?)');
+      insertStmt.run(accountId, authToken, tokens, createdAt, telegramUserId, 'orc', 'ru');
     } catch (e) {
       // Если nickname колонки отсутствуют, вставляем без них
       const insertStmt = db.prepare('INSERT INTO accounts (accountId, authToken, tokens, createdAt, telegramUserId) VALUES (?, ?, ?, ?, ?)');
       insertStmt.run(accountId, authToken, tokens, createdAt, telegramUserId);
     }
     
-    return { accountId, authToken, tokens, nickname: null };
+    return { accountId, authToken, tokens, nickname: null, avatar: 'orc', language: 'ru' };
   } catch (error) {
     // Если telegramUserId колонка отсутствует, попробуем без неё (fallback для старых БД)
     if (error.message && error.message.includes('no such column: telegramUserId')) {
@@ -128,25 +153,37 @@ function getOrCreateTelegramAccount(telegramUserId) {
       const tokens = 10;
       const createdAt = Date.now();
       
-      const insertStmt = db.prepare('INSERT INTO accounts (accountId, authToken, tokens, createdAt) VALUES (?, ?, ?, ?)');
-      insertStmt.run(accountId, authToken, tokens, createdAt);
+      const insertStmt = db.prepare('INSERT INTO accounts (accountId, authToken, tokens, createdAt, avatar, language) VALUES (?, ?, ?, ?, ?, ?)');
+      insertStmt.run(accountId, authToken, tokens, createdAt, 'orc', 'ru');
       
-      return { accountId, authToken, tokens, nickname: null };
+      return { accountId, authToken, tokens, nickname: null, avatar: 'orc', language: 'ru' };
     }
     throw error;
   }
 }
 
 function getAccountByAuthToken(authToken) {
-  const stmt = db.prepare('SELECT accountId, tokens, nickname FROM accounts WHERE authToken = ?');
+  const stmt = db.prepare('SELECT accountId, tokens, nickname, avatar, language FROM accounts WHERE authToken = ?');
   const row = stmt.get(authToken);
-  return row ? { accountId: row.accountId, tokens: row.tokens, nickname: row.nickname || null } : null;
+  return row ? {
+    accountId: row.accountId,
+    tokens: row.tokens,
+    nickname: row.nickname || null,
+    avatar: row.avatar || 'orc',
+    language: row.language || 'ru'
+  } : null;
 }
 
 function getAccountById(accountId) {
-  const stmt = db.prepare('SELECT accountId, tokens, nickname FROM accounts WHERE accountId = ?');
+  const stmt = db.prepare('SELECT accountId, tokens, nickname, avatar, language FROM accounts WHERE accountId = ?');
   const row = stmt.get(accountId);
-  return row ? { accountId: row.accountId, tokens: row.tokens, nickname: row.nickname || null } : null;
+  return row ? {
+    accountId: row.accountId,
+    tokens: row.tokens,
+    nickname: row.nickname || null,
+    avatar: row.avatar || 'orc',
+    language: row.language || 'ru'
+  } : null;
 }
 
 function getTokens(accountId) {
@@ -195,6 +232,16 @@ function getNickname(accountId) {
   return account ? account.nickname : null;
 }
 
+function setProfile(accountId, { avatar, language }) {
+  const current = getAccountById(accountId);
+  if (!current) return false;
+  const nextAvatar = avatar || current.avatar || 'orc';
+  const nextLanguage = language || current.language || 'ru';
+  const stmt = db.prepare('UPDATE accounts SET avatar = ?, language = ? WHERE accountId = ?');
+  stmt.run(nextAvatar, nextLanguage, accountId);
+  return true;
+}
+
 module.exports = {
   createGuestAccount,
   getOrCreateTelegramAccount,
@@ -206,5 +253,6 @@ module.exports = {
   addTokens,
   setNickname,
   getNicknameByLower,
-  getNickname
+  getNickname,
+  setProfile
 };

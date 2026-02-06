@@ -9,6 +9,7 @@ import Menu from './screens/Menu';
 import Battle from './screens/Battle';
 import Onboarding from './screens/Onboarding';
 import TransitionShield from './components/TransitionShield';
+import { DEFAULT_AVATAR, DEFAULT_LANGUAGE, type AvatarId, type GameLanguage } from './i18n';
 import menuBg from './assets/orc-theme/menu_bg.svg';
 import orcainLogo from './assets/orcain_logo.webp';
 import pvpButtonImage from './assets/orc-theme/btn_pvp.svg';
@@ -178,6 +179,8 @@ function App() {
   const [tokens, setTokens] = useState<number | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [nickname, setNickname] = useState<string | null>(null);
+  const [language, setLanguage] = useState<GameLanguage>(DEFAULT_LANGUAGE);
+  const [avatar, setAvatar] = useState<AvatarId>(DEFAULT_AVATAR);
   const [accountId, setAccountId] = useState<string | null>(null);
   const [matchEndPayload, setMatchEndPayload] = useState<MatchEndPayload | null>(null);
   const [isSearching, setIsSearching] = useState(false);
@@ -333,7 +336,7 @@ function App() {
             return response.json();
           })
           .then((data) => {
-            const { accountId: accId, authToken: token, tokens: tokensVal, nickname: nick } = data;
+            const { accountId: accId, authToken: token, tokens: tokensVal, nickname: nick, language: lang, avatar: profileAvatar } = data;
             
             // Обязательно сохраняем все данные
             localStorage.setItem('orcain_authToken', token);
@@ -344,6 +347,8 @@ function App() {
             setAuthToken(token);
             setTokens(tokensVal);
             setNickname(nick || null);
+            setLanguage((lang === 'en' || lang === 'ru') ? lang : DEFAULT_LANGUAGE);
+            setAvatar((typeof profileAvatar === 'string' ? profileAvatar : DEFAULT_AVATAR) as AvatarId);
             
             setBootState('ready');
             setAuthRequest('ok');
@@ -368,6 +373,8 @@ function App() {
         const accId = getAccountId();
         setAuthToken(token);
         setAccountId(accId);
+        setLanguage(DEFAULT_LANGUAGE);
+        setAvatar(DEFAULT_AVATAR);
         if (!token) {
           setScreen('login');
         }
@@ -379,6 +386,8 @@ function App() {
       const accId = getAccountId();
       setAuthToken(token);
       setAccountId(accId);
+      setLanguage(DEFAULT_LANGUAGE);
+      setAvatar(DEFAULT_AVATAR);
       if (!token) {
         setScreen('login');
       }
@@ -421,6 +430,14 @@ function App() {
       if (payload.tokens !== undefined) {
         setTokens(prev => (prev === null ? payload.tokens : prev));
       }
+
+      if (payload.language === 'ru' || payload.language === 'en') {
+        setLanguage(payload.language);
+      }
+
+      if (payload.avatar) {
+        setAvatar(payload.avatar);
+      }
       
       // Если nickname пустой и мы не в onboarding - показываем onboarding
       const currentNick = payload.nickname !== undefined ? payload.nickname : nickname;
@@ -443,6 +460,8 @@ function App() {
         setAuthToken(null);
         setAccountId(null);
         setNickname(null);
+        setLanguage(DEFAULT_LANGUAGE);
+        setAvatar(DEFAULT_AVATAR);
         setScreen('login');
         setConnected(false);
         setTokens(null);
@@ -548,9 +567,24 @@ function App() {
     // Сокет должен жить всю сессию вкладки, не отключаем при cleanup
   }, [authToken, currentMatchId, nickname, screen]);
 
-  const handleLoginSuccess = ({ authToken: token, tokens: initialTokens }: { authToken: string; tokens: number }) => {
+  const handleLoginSuccess = ({
+    authToken: token,
+    tokens: initialTokens,
+    nickname: initialNickname,
+    language: initialLanguage,
+    avatar: initialAvatar
+  }: {
+    authToken: string;
+    tokens: number;
+    nickname?: string | null;
+    language?: GameLanguage;
+    avatar?: AvatarId;
+  }) => {
     setAuthToken(token);
     setTokens(initialTokens);
+    setNickname(initialNickname || null);
+    setLanguage(initialLanguage || DEFAULT_LANGUAGE);
+    setAvatar(initialAvatar || DEFAULT_AVATAR);
     const accId = getAccountId();
     setAccountId(accId);
   };
@@ -558,6 +592,26 @@ function App() {
   const handleNicknameSet = (newNickname: string) => {
     setNickname(newNickname);
     setScreen('menu');
+  };
+
+  const handleProfileUpdate = (payload: {
+    nickname?: string | null;
+    tokens?: number;
+    language?: GameLanguage;
+    avatar?: AvatarId;
+  }) => {
+    if (payload.nickname !== undefined) {
+      setNickname(payload.nickname || null);
+    }
+    if (payload.tokens !== undefined) {
+      setTokens(payload.tokens);
+    }
+    if (payload.language) {
+      setLanguage(payload.language);
+    }
+    if (payload.avatar) {
+      setAvatar(payload.avatar);
+    }
   };
 
   const handleStartBattle = () => {
@@ -698,7 +752,7 @@ function App() {
   if (screen === 'login' && !authToken && (!hasTelegramWebApp || initDataLen === 0)) {
     return (
       <>
-        <Login onLoginSuccess={handleLoginSuccess} />
+        <Login onLoginSuccess={handleLoginSuccess} language={language} />
         <DebugOverlay
           hasTelegram={hasTelegramWebApp}
           initDataLen={initDataLen}
@@ -722,7 +776,7 @@ function App() {
     }
     return (
       <>
-        <Onboarding authToken={authToken} onNicknameSet={handleNicknameSet} />
+        <Onboarding authToken={authToken} onNicknameSet={handleNicknameSet} language={language} />
         <DebugOverlay
           hasTelegram={hasTelegramWebApp}
           initDataLen={initDataLen}
@@ -764,9 +818,13 @@ function App() {
             onStartPvE={handleStartPvE}
             onStartTutorial={handleStartTutorial}
             onCancelSearch={handleCancelSearch}
+            onProfileUpdate={handleProfileUpdate}
             isSearching={isSearching}
             tokens={tokens}
             nickname={nickname}
+            language={language}
+            avatar={avatar}
+            authToken={authToken}
             connected={connected}
             tutorialCompleted={tutorialCompleted}
           />

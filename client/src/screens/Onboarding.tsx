@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import menuBg from "../assets/orc-theme/menu_bg.svg";
 import BackgroundLayout from "../components/BackgroundLayout";
+import { t, type GameLanguage } from '../i18n';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://orcain-server.onrender.com';
 
 interface OnboardingProps {
   authToken: string;
   onNicknameSet: (nickname: string) => void;
+  language: GameLanguage;
 }
 
-export default function Onboarding({ authToken, onNicknameSet }: OnboardingProps) {
+export default function Onboarding({ authToken, onNicknameSet, language }: OnboardingProps) {
   const [nickname, setNickname] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -17,11 +19,11 @@ export default function Onboarding({ authToken, onNicknameSet }: OnboardingProps
   const validateNickname = (value: string): string | null => {
     const trimmed = value.trim();
     if (trimmed.length < 3 || trimmed.length > 16) {
-      return 'Nickname must be 3-16 characters long';
+      return t(language, 'onboarding.nicknameLength');
     }
-    const allowedPattern = /^[a-zA-Z0-9_\s-]+$/;
+    const allowedPattern = /^[\p{L}\p{N}_\s-]+$/u;
     if (!allowedPattern.test(trimmed)) {
-      return 'Nickname can only contain letters, numbers, underscore, space, and hyphen';
+      return t(language, 'onboarding.nicknameChars');
     }
     return null;
   };
@@ -53,7 +55,7 @@ export default function Onboarding({ authToken, onNicknameSet }: OnboardingProps
         try {
           const errorJson = JSON.parse(text);
           if (errorJson.error === 'nickname_taken') {
-            errorMessage = 'Nickname is already taken. Please choose another.';
+            errorMessage = t(language, 'onboarding.nicknameTaken');
           } else {
             errorMessage = errorJson.message || errorJson.error || errorMessage;
           }
@@ -68,7 +70,7 @@ export default function Onboarding({ authToken, onNicknameSet }: OnboardingProps
       onNicknameSet(data.nickname);
     } catch (error) {
       console.error('[NICKNAME_SET_FAIL]', error);
-      setError('Failed to set nickname. Please try again.');
+      setError(t(language, 'onboarding.saveFailed'));
     } finally {
       setLoading(false);
     }
@@ -87,9 +89,9 @@ export default function Onboarding({ authToken, onNicknameSet }: OnboardingProps
         width: '100%',
         maxWidth: '500px'
       }}>
-        <h1 style={{ fontSize: '36px', margin: 0 }}>Welcome to ORCAIN</h1>
+        <h1 style={{ fontSize: '36px', margin: 0 }}>{t(language, 'onboarding.title')}</h1>
         <p style={{ fontSize: '18px', color: '#666', textAlign: 'center', maxWidth: '400px' }}>
-          Choose your unique nickname to start playing
+          {t(language, 'onboarding.subtitle')}
         </p>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px', width: '100%', maxWidth: '400px' }}>
           <input
@@ -99,7 +101,7 @@ export default function Onboarding({ authToken, onNicknameSet }: OnboardingProps
               setNickname(e.target.value);
               setError(null);
             }}
-            placeholder="Enter your nickname (3-16 characters)"
+            placeholder={t(language, 'onboarding.placeholder')}
             disabled={loading}
             style={{
               padding: '12px',
@@ -130,7 +132,7 @@ export default function Onboarding({ authToken, onNicknameSet }: OnboardingProps
               color: 'white'
             }}
           >
-            {loading ? 'Saving...' : 'Save & Continue'}
+            {loading ? t(language, 'onboarding.saving') : t(language, 'onboarding.saveAndContinue')}
           </button>
         </form>
       </div>

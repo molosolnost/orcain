@@ -46,6 +46,9 @@ const ROUNDS_PER_MATCH = 3;
 const START_TOKENS = 10;
 const DISCONNECT_GRACE_MS = 5000; // 5 seconds grace period for reconnect
 const PLAY_STEP_TIMEOUT_MS = 15000; // 15 seconds global timeout for PLAY phase
+const NICKNAME_CHANGE_COST = 3;
+const SUPPORTED_LANGUAGES = ['ru', 'en'];
+const SUPPORTED_AVATARS = ['orc', 'knight', 'mage', 'rogue', 'ranger', 'paladin'];
 
 // Debug flag (can be set via env DEBUG_MATCH=1)
 const DEBUG = process.env.DEBUG_MATCH === '1' || process.env.DEBUG_MATCH === 'true';
@@ -1865,11 +1868,15 @@ io.on('connection', (socket) => {
     
     // Получаем nickname
     const nickname = db.getNickname(accountId);
+    const language = account.language || 'ru';
+    const avatar = account.avatar || 'orc';
     
-    // Отправляем hello_ok с токенами и nickname
+    // Отправляем hello_ok с токенами и данными профиля
     socket.emit('hello_ok', {
       tokens: tokens !== null ? tokens : START_TOKENS,
-      nickname: nickname || null
+      nickname: nickname || null,
+      language,
+      avatar
     });
     
     // Если sessionId участвует в активном матче
@@ -2300,7 +2307,10 @@ app.post('/auth/guest', (req, res) => {
     res.json({
       accountId: account.accountId,
       authToken: account.authToken,
-      tokens: account.tokens
+      tokens: account.tokens,
+      nickname: account.nickname || null,
+      avatar: account.avatar || 'orc',
+      language: account.language || 'ru'
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to create guest account' });
@@ -2420,7 +2430,9 @@ app.post('/auth/telegram', (req, res) => {
       accountId: account.accountId,
       authToken: account.authToken,
       tokens: account.tokens,
-      nickname: account.nickname || null
+      nickname: account.nickname || null,
+      avatar: account.avatar || 'orc',
+      language: account.language || 'ru'
     });
   } catch (error) {
     console.error('[auth/telegram] exception:', error);
@@ -2447,7 +2459,10 @@ app.get('/auth/me', (req, res) => {
   res.json({
     accountId: account.accountId,
     tokens: account.tokens,
-    nickname: account.nickname || null
+    nickname: account.nickname || null,
+    avatar: account.avatar || 'orc',
+    language: account.language || 'ru',
+    nicknameChangeCost: NICKNAME_CHANGE_COST
   });
 });
 
@@ -2463,8 +2478,8 @@ function validateNickname(nickname) {
     return { valid: false, error: 'Nickname must be 3-16 characters long' };
   }
   
-  // Разрешенные символы: латиница, цифры, подчерк, пробел, дефис
-  const allowedPattern = /^[a-zA-Z0-9_\s-]+$/;
+  // Разрешенные символы: буквы всех языков (включая кириллицу), цифры, подчеркивание, пробел, дефис
+  const allowedPattern = /^[\p{L}\p{N}_\s-]+$/u;
   if (!allowedPattern.test(trimmed)) {
     return { valid: false, error: 'Nickname can only contain letters, numbers, underscore, space, and hyphen' };
   }
@@ -2474,6 +2489,64 @@ function validateNickname(nickname) {
   
   return { valid: true, normalized };
 }
+
+function normalizeLanguage(value) {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  return SUPPORTED_LANGUAGES.includes(normalized) ? normalized : null;
+}
+
+function normalizeAvatar(value) {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  return SUPPORTED_AVATARS.includes(normalized) ? normalized : null;
+}
+
+app.post('/account/profile', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'unauthorized', message: 'Unauthorized' });
+  }
+
+  const authToken = authHeader.substring(7);
+  const account = db.getAccountByAuthToken(authToken);
+  if (!account) {
+    return res.status(401).json({ error: 'unauthorized', message: 'Unauthorized' });
+  }
+
+  const requestedLanguage = normalizeLanguage(req.body?.language);
+  const requestedAvatar = normalizeAvatar(req.body?.avatar);
+
+  if ((req.body?.language !== undefined && !requestedLanguage) || (req.body?.avatar !== undefined && !requestedAvatar)) {
+    return res.status(400).json({
+      error: 'invalid_profile_data',
+      message: 'Invalid language or avatar',
+      supportedLanguages: SUPPORTED_LANGUAGES,
+      supportedAvatars: SUPPORTED_AVATARS
+    });
+  }
+
+  if (!requestedLanguage && !requestedAvatar) {
+    return res.status(400).json({ error: 'invalid_profile_data', message: 'No profile changes provided' });
+  }
+
+  const updated = db.setProfile(account.accountId, {
+    language: requestedLanguage || undefined,
+    avatar: requestedAvatar || undefined
+  });
+
+  if (!updated) {
+    return res.status(500).json({ error: 'internal_error', message: 'Failed to update profile' });
+  }
+
+  const refreshed = db.getAccountById(account.accountId);
+  return res.json({
+    language: refreshed?.language || 'ru',
+    avatar: refreshed?.avatar || 'orc',
+    supportedLanguages: SUPPORTED_LANGUAGES,
+    supportedAvatars: SUPPORTED_AVATARS
+  });
+});
 
 // Endpoint для установки nickname
 app.post('/account/nickname', (req, res) => {
@@ -2502,6 +2575,9 @@ app.post('/account/nickname', (req, res) => {
 
   const normalized = validation.normalized;
   const nicknameLower = normalized.toLowerCase();
+  const currentNickname = account.nickname ? account.nickname.trim() : null;
+  const isRename = Boolean(currentNickname && currentNickname.toLowerCase() !== nicknameLower);
+  const currentTokens = db.getTokens(account.accountId) ?? START_TOKENS;
   
   // Проверяем уникальность (case-insensitive)
   const existingAccountId = db.getNicknameByLower(nicknameLower);
@@ -2509,11 +2585,41 @@ app.post('/account/nickname', (req, res) => {
     return res.status(409).json({ error: 'nickname_taken', message: 'Nickname is already taken' });
   }
 
+  if (isRename && currentTokens < NICKNAME_CHANGE_COST) {
+    return res.status(402).json({
+      error: 'not_enough_tokens',
+      message: 'Not enough tokens to change nickname',
+      nicknameChangeCost: NICKNAME_CHANGE_COST,
+      tokens: currentTokens
+    });
+  }
+
   // Устанавливаем nickname
   try {
+    let charged = false;
+    if (isRename) {
+      const chargedOk = db.deductTokens(account.accountId, NICKNAME_CHANGE_COST);
+      if (!chargedOk) {
+        return res.status(402).json({
+          error: 'not_enough_tokens',
+          message: 'Not enough tokens to change nickname',
+          nicknameChangeCost: NICKNAME_CHANGE_COST,
+          tokens: db.getTokens(account.accountId) ?? START_TOKENS
+        });
+      }
+      charged = true;
+    }
+
     db.setNickname(account.accountId, normalized);
-    console.log(`[NICKNAME_SET] accountId=${account.accountId} nickname=${normalized}`);
-    res.json({ nickname: normalized, nicknameLower });
+    const nextTokens = db.getTokens(account.accountId) ?? START_TOKENS;
+    console.log(`[NICKNAME_SET] accountId=${account.accountId} nickname=${normalized} charged=${charged} tokens=${nextTokens}`);
+    res.json({
+      nickname: normalized,
+      nicknameLower,
+      charged,
+      nicknameChangeCost: NICKNAME_CHANGE_COST,
+      tokens: nextTokens
+    });
   } catch (error) {
     console.error('[NICKNAME_SET_FAIL]', error);
     res.status(500).json({ error: 'internal_error', message: 'Failed to set nickname' });

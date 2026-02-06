@@ -67,4 +67,6 @@ export type MatchEndPayload = {
 export type HelloOkPayload = {
   tokens: number;
   nickname?: string | null;
+  language?: 'ru' | 'en';
+  avatar?: 'orc' | 'knight' | 'mage' | 'rogue' | 'ranger' | 'paladin';
 };
