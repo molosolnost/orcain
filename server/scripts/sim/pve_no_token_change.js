@@ -5,39 +5,85 @@ const simUtils = require('../lib/sim_utils');
 const db = require('../../db');
 const common = require('./common');
 
+async function waitEither(socket, leftName, leftOpts, rightName, rightOpts) {
+  const ac = { aborted: false };
+  return Promise.race([
+    common
+      .waitForEventBuffered(socket, leftName, { ...leftOpts, signal: ac })
+      .then((payload) => {
+        ac.aborted = true;
+        return { event: leftName, payload };
+      })
+      .catch((e) => (e?.message === 'aborted' ? new Promise(() => {}) : Promise.reject(e))),
+    common
+      .waitForEventBuffered(socket, rightName, { ...rightOpts, signal: ac })
+      .then((payload) => {
+        ac.aborted = true;
+        return { event: rightName, payload };
+      })
+      .catch((e) => (e?.message === 'aborted' ? new Promise(() => {}) : Promise.reject(e))),
+  ]);
+}
+
 async function run(port, logBuffer) {
   const acc = db.createGuestAccount();
   const tBefore = db.getTokens(acc.accountId);
 
   const s = await simUtils.connectClient(port, acc);
-  common.attachEventBuffer(s, ['match_found', 'prep_start', 'match_end']);
+  common.attachEventBuffer(s, ['match_found', 'prep_start', 'confirm_ok', 'round_end', 'match_end']);
 
   s.emit('pve_start');
-  await common.waitForEventBuffered(s, 'match_found', { timeoutMs: 3000 });
-  await common.waitForEventBuffered(s, 'prep_start', { timeoutMs: 3000 });
+  const mf = await common.waitForEventBuffered(s, 'match_found', { timeoutMs: 3000 });
+  let prep = await common.waitForEventBuffered(s, 'prep_start', { timeoutMs: 3000 });
 
   const layout = ['attack', 'defense', 'heal'];
   let gotMatchEnd = false;
   for (let r = 0; r < 10; r++) {
+    const currentRound = prep.roundIndex;
     s.emit('layout_confirm', { layout: [...layout] });
-    await common.waitForEvent(s, 'confirm_ok', 2000);
-    for (let i = 0; i < 3; i++) await common.waitForEvent(s, 'step_reveal', 3000);
-    // Use waitForEvent for match_end so we don't consume from buffer when 'round' wins;
-    // match_end must remain in buffer for the 'next' race (prep_start vs match_end).
-    const re = await Promise.race([
-      common.waitForEvent(s, 'round_end', 3000).then(() => 'round'),
-      common.waitForEvent(s, 'match_end', 3000).then(() => 'match')
-    ]);
-    if (re === 'match') { gotMatchEnd = true; break; }
-    // Brief yield so match_end (sent after round_end) can arrive and be buffered before we look
-    await common.delay(30);
-    const next = await Promise.race([
-      common.waitForEventBuffered(s, 'prep_start', { timeoutMs: 4000 }).then(() => 'prep'),
-      common.waitForEventBuffered(s, 'match_end', { timeoutMs: 4000 }).then(() => 'match')
-    ]);
-    if (next === 'match') { gotMatchEnd = true; break; }
+    const confirmOrEnd = await waitEither(
+      s,
+      'confirm_ok',
+      { timeoutMs: 2500 },
+      'match_end',
+      { timeoutMs: 2500, predicate: (p) => p?.matchId === mf.matchId }
+    );
+    if (confirmOrEnd.event === 'match_end') {
+      gotMatchEnd = true;
+      break;
+    }
+
+    const roundOrEnd = await waitEither(
+      s,
+      'round_end',
+      { timeoutMs: 6000, predicate: (p) => p?.matchId === mf.matchId && p?.roundIndex === currentRound },
+      'match_end',
+      { timeoutMs: 6000, predicate: (p) => p?.matchId === mf.matchId }
+    );
+    if (roundOrEnd.event === 'match_end') {
+      gotMatchEnd = true;
+      break;
+    }
+
+    const prepOrEnd = await waitEither(
+      s,
+      'prep_start',
+      { timeoutMs: 4000, predicate: (p) => p?.matchId === mf.matchId && p?.roundIndex > currentRound },
+      'match_end',
+      { timeoutMs: 4000, predicate: (p) => p?.matchId === mf.matchId }
+    );
+    if (prepOrEnd.event === 'match_end') {
+      gotMatchEnd = true;
+      break;
+    }
+    prep = prepOrEnd.payload;
   }
-  if (!gotMatchEnd) await common.waitForEventBuffered(s, 'match_end', { timeoutMs: 8000 });
+  if (!gotMatchEnd) {
+    await common.waitForEventBuffered(s, 'match_end', {
+      timeoutMs: 8000,
+      predicate: (p) => p?.matchId === mf.matchId
+    });
+  }
 
   const tAfter = db.getTokens(acc.accountId);
 
