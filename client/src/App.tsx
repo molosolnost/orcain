@@ -12,6 +12,8 @@ import TransitionShield from './components/TransitionShield';
 import { DEFAULT_AVATAR, DEFAULT_LANGUAGE, type AvatarId, type GameLanguage } from './i18n';
 import menuBg from './assets/orc-theme/menu_bg.svg';
 import orcainLogo from './assets/orcain_logo.webp';
+import startupBg from './assets/menu_bg.webp';
+import startupBgFallback from './assets/startup_bg.jpg';
 import pvpButtonImage from './assets/orc-theme/btn_pvp.svg';
 import pveButtonImage from './assets/orc-theme/btn_pve.svg';
 import tutorialButtonImage from './assets/orc-theme/btn_tutorial.svg';
@@ -27,6 +29,7 @@ const BUILD_ID = import.meta.env.VITE_BUILD_ID || `dev-${Date.now()}`;
 const DEBUG_MODE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
 const TUTORIAL_COMPLETED_KEY = 'orcain_tutorial_completed_v1';
 const PRELOAD_ASSETS = [
+  startupBg,
   menuBg,
   battleBgImage,
   orcainLogo,
@@ -69,50 +72,28 @@ function preloadImage(src: string, timeoutMs = 8000): Promise<boolean> {
 
 function StartupLoader({ progress, assetsReady, bootState }: { progress: number; assetsReady: boolean; bootState: BootState }) {
   const bootResolved = bootState === 'ready' || bootState === 'error';
+  const visualProgress = assetsReady ? 100 : Math.max(6, Math.min(100, progress));
+  const startupBackground = `image-set(url("${startupBg}") type("image/webp"), url("${startupBgFallback}") type("image/jpeg"))`;
   const statusText = !assetsReady
-    ? `Loading resources... ${progress}%`
+    ? 'Loading game files to your device...'
     : !bootResolved
     ? 'Authenticating...'
     : 'Preparing game...';
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'radial-gradient(circle at 50% 30%, #323232 0%, #161616 55%, #0e0e0e 100%)',
-        color: '#fff',
-        zIndex: 20000,
-        padding: '24px'
-      }}
-    >
-      <div style={{ width: 'min(420px, 92vw)', textAlign: 'center' }}>
-        <div style={{ fontSize: 'clamp(28px, 7vw, 42px)', fontWeight: 800, letterSpacing: '0.05em' }}>
-          ORCAIN
-        </div>
-        <div style={{ marginTop: '10px', fontSize: '14px', color: '#d0d0d0' }}>{statusText}</div>
-        <div
-          style={{
-            marginTop: '18px',
-            width: '100%',
-            height: '10px',
-            borderRadius: '999px',
-            backgroundColor: 'rgba(255,255,255,0.15)',
-            overflow: 'hidden',
-            boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.25)'
-          }}
-        >
-          <div
-            style={{
-              width: `${Math.max(8, progress)}%`,
-              height: '100%',
-              background: 'linear-gradient(90deg, #ffb300 0%, #ff8f00 50%, #ff6f00 100%)',
-              transition: 'width 220ms ease'
-            }}
-          />
+    <div className="startup-loader" role="status" aria-live="polite">
+      <div className="startup-loader__bg" style={{ backgroundImage: startupBackground }} />
+      <div className="startup-loader__scrim" />
+      <div className="startup-loader__content">
+        <div className="startup-loader__panel">
+          <div className="startup-loader__label">Loading...</div>
+          <div className="startup-loader__barTrack">
+            <div className="startup-loader__barFill" style={{ width: `${visualProgress}%` }} />
+          </div>
+          <div className="startup-loader__meta">
+            <span>{statusText}</span>
+            <span>{visualProgress}%</span>
+          </div>
         </div>
       </div>
     </div>
