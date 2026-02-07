@@ -3,7 +3,9 @@ import { socketManager } from '../net/socket';
 import type { CardId, MatchFoundPayload, PrepStartPayload, StepRevealPayload, MatchEndPayload } from '../net/types';
 import { lockAppHeight, unlockAppHeight } from '../lib/appViewport';
 import battleBgImage from '../assets/orc-theme/battle_bg.svg';
-import cardAttackImage from '../assets/orc-theme/card_attack.svg';
+import cardAttackImage192 from '../assets/orc-theme/card_attack_user_192.jpg';
+import cardAttackImage288 from '../assets/orc-theme/card_attack_user_288.jpg';
+import cardAttackImage384 from '../assets/orc-theme/card_attack_user_384.jpg';
 import cardDefenseImage from '../assets/orc-theme/card_defense.svg';
 import cardHealImage from '../assets/orc-theme/card_heal.svg';
 import cardCounterImage from '../assets/orc-theme/card_counter.svg';
@@ -133,10 +135,14 @@ const CARD_LABELS: Record<CardId, string> = {
 };
 
 const CARD_ART: Record<CardId, string> = {
-  attack: cardAttackImage,
+  attack: cardAttackImage288,
   defense: cardDefenseImage,
   heal: cardHealImage,
   counter: cardCounterImage
+};
+
+const CARD_ART_SRCSET: Partial<Record<CardId, string>> = {
+  attack: `${cardAttackImage192} 192w, ${cardAttackImage288} 288w, ${cardAttackImage384} 384w`
 };
 
 const TUTORIAL_PLAYER_LAYOUT: CardId[] = ['attack', 'defense', 'heal'];
@@ -1337,6 +1343,10 @@ export default function Battle({
     }
 
     const cardImage = CARD_ART[cardId];
+    const cardSrcSet = CARD_ART_SRCSET[cardId];
+    const cardSizes = isHand
+      ? '(max-width: 480px) calc((100vw - 34px) / 4), (max-width: 1024px) 75px, 88px'
+      : '(max-width: 480px) calc((100vw - 34px) / 3), (max-width: 1024px) 85px, 96px';
 
     return (
       <div
@@ -1353,7 +1363,10 @@ export default function Battle({
         <img
           src={cardImage}
           alt={CARD_LABELS[cardId]}
+          srcSet={cardSrcSet}
+          sizes={cardSrcSet ? cardSizes : undefined}
           draggable={false}
+          decoding="async"
           style={{
             width: '100%',
             height: '100%',
