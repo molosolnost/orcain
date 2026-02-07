@@ -163,6 +163,13 @@ export default function Battle({
   lastPrepStart,
   currentMatchId
 }: BattleProps) {
+  const isAndroidTelegram =
+    typeof navigator !== 'undefined' &&
+    /android/i.test(navigator.userAgent) &&
+    typeof window !== 'undefined' &&
+    Boolean((window as any).Telegram?.WebApp);
+  const revealFxEnabled = !isAndroidTelegram;
+
   const [state, setState] = useState<BattleState>('prep');
   const [yourHp, setYourHp] = useState(10);
   const [oppHp, setOppHp] = useState(10);
@@ -535,10 +542,10 @@ export default function Battle({
     // Сразу обновляем nowTs для мгновенного отображения таймера
     setNowTs(Date.now());
 
-    // Запускаем интервал для обновления таймера
+    // Tick once per second to reduce excessive re-renders on mobile WebView.
     const interval = setInterval(() => {
       setNowTs(Date.now());
-    }, 250);
+    }, 1000);
 
     return () => {
       clearInterval(interval);
@@ -1445,8 +1452,8 @@ export default function Battle({
         fontSize: isCompactHeight ? '9px' : '10px',
         lineHeight: '1.3',
         borderBottom: '1px solid rgba(0, 0, 0, 0.25)',
-        backgroundColor: 'rgba(22, 31, 19, 0.58)',
-        backdropFilter: 'blur(1px)',
+        backgroundColor: isAndroidTelegram ? 'rgba(22, 31, 19, 0.82)' : 'rgba(22, 31, 19, 0.58)',
+        backdropFilter: isAndroidTelegram ? 'none' : 'blur(1px)',
         zIndex: 1,
         ...tutorialHighlight(tutorialHighlights.topBar)
       }}>
@@ -1524,19 +1531,23 @@ export default function Battle({
                   border: isCurrentStep ? '2px solid #ff6b6b' : 'none',
                   borderRadius: '8px',
                   padding: isCurrentStep ? '1px' : '0',
-                  transform: isRevealing ? 'translateY(-4px)' : 'translateY(0)',
-                  opacity: isRevealing ? 0 : 1,
-                  transition: isRevealing 
-                    ? 'opacity 0.2s ease-in, transform 0.3s ease-out' 
-                    : 'transform 0.2s ease, opacity 0.2s ease'
+                  transform: revealFxEnabled && isRevealing ? 'translateY(-4px)' : 'translateY(0)',
+                  opacity: revealFxEnabled && isRevealing ? 0 : 1,
+                  transition: revealFxEnabled
+                    ? (isRevealing
+                        ? 'opacity 0.2s ease-in, transform 0.3s ease-out'
+                        : 'transform 0.2s ease, opacity 0.2s ease')
+                    : 'none'
                 }}
               >
                 {shouldShowRevealed ? (
                   <div
                     style={{
-                      animation: isRevealing ? 'cardReveal 0.4s ease-out' : 'none',
-                      filter: isRevealing ? 'drop-shadow(0 0 8px rgba(255, 107, 107, 0.6))' : 'none',
-                      transition: isRevealing ? 'filter 0.3s ease-out' : 'filter 0.2s ease'
+                      animation: revealFxEnabled && isRevealing ? 'cardReveal 0.4s ease-out' : 'none',
+                      filter: revealFxEnabled && isRevealing ? 'drop-shadow(0 0 8px rgba(255, 107, 107, 0.6))' : 'none',
+                      transition: revealFxEnabled
+                        ? (isRevealing ? 'filter 0.3s ease-out' : 'filter 0.2s ease')
+                        : 'none'
                     }}
                   >
                     {renderCard(revealed.oppCard, 'REVEAL', index)}
@@ -1605,13 +1616,19 @@ export default function Battle({
                   padding: border !== 'none' ? '1px' : '0',
                   cursor: canInteract ? 'pointer' : 'default',
                   boxShadow: isHovered ? `0 0 0 2px rgba(76, 175, 80, 0.3)` : 'none',
-                  transform: isPopping ? 'scale(1.03)' : isRevealing ? 'translateY(-4px)' : 'scale(1)',
-                  opacity: isRevealing ? 0 : 1,
+                  transform: isPopping
+                    ? 'scale(1.03)'
+                    : revealFxEnabled && isRevealing
+                    ? 'translateY(-4px)'
+                    : 'scale(1)',
+                  opacity: revealFxEnabled && isRevealing ? 0 : 1,
                   transition: isPopping 
                     ? 'transform 0.15s ease-out' 
-                    : isRevealing 
+                    : revealFxEnabled && isRevealing
                     ? 'opacity 0.2s ease-in, transform 0.3s ease-out'
-                    : 'transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease',
+                    : revealFxEnabled
+                    ? 'transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease'
+                    : 'box-shadow 0.2s ease',
                   position: 'relative'
                 }}
                 onClick={(e) => {
@@ -1631,9 +1648,11 @@ export default function Battle({
                       onPointerUp={handlePointerEnd}
                       onPointerCancel={handlePointerCancel}
                       style={{
-                        transform: isRevealing ? 'scale(1.05)' : 'scale(1)',
-                        filter: isRevealing ? 'drop-shadow(0 0 8px rgba(76, 175, 80, 0.6))' : 'none',
-                        transition: isRevealing ? 'transform 0.3s ease-out, filter 0.3s ease-out' : 'transform 0.2s ease'
+                        transform: revealFxEnabled && isRevealing ? 'scale(1.05)' : 'scale(1)',
+                        filter: revealFxEnabled && isRevealing ? 'drop-shadow(0 0 8px rgba(76, 175, 80, 0.6))' : 'none',
+                        transition: revealFxEnabled
+                          ? (isRevealing ? 'transform 0.3s ease-out, filter 0.3s ease-out' : 'transform 0.2s ease')
+                          : 'none'
                       }}
                     >
                       {renderCard(displayCard, 'SLOT', index)}
@@ -2206,7 +2225,7 @@ export default function Battle({
           fontSize: '12px',
           zIndex: 10000,
           pointerEvents: 'none',
-          animation: 'fadeInOut 0.6s ease'
+          animation: isAndroidTelegram ? 'none' : 'fadeInOut 0.6s ease'
         }}>
           {draftToast}
         </div>
@@ -2227,7 +2246,7 @@ export default function Battle({
           fontWeight: 'bold',
           zIndex: 10001,
           pointerEvents: 'none',
-          animation: 'fadeInOut 0.7s ease',
+          animation: isAndroidTelegram ? 'none' : 'fadeInOut 0.7s ease',
           border: '1px solid rgba(255, 255, 255, 0.2)'
         }}>
           {roundBanner}
