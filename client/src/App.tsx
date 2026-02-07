@@ -12,8 +12,7 @@ import TransitionShield from './components/TransitionShield';
 import { DEFAULT_AVATAR, DEFAULT_LANGUAGE, type AvatarId, type GameLanguage } from './i18n';
 import menuBg from './assets/orc-theme/menu_bg.svg';
 import orcainLogo from './assets/orcain_logo.webp';
-import startupBg from './assets/menu_bg.webp';
-import startupBgFallback from './assets/startup_bg.jpg';
+import startupBg from './assets/startup_bg.png';
 import pvpButtonImage from './assets/orc-theme/btn_pvp.svg';
 import pveButtonImage from './assets/orc-theme/btn_pve.svg';
 import tutorialButtonImage from './assets/orc-theme/btn_tutorial.svg';
@@ -73,7 +72,6 @@ function preloadImage(src: string, timeoutMs = 8000): Promise<boolean> {
 function StartupLoader({ progress, assetsReady, bootState }: { progress: number; assetsReady: boolean; bootState: BootState }) {
   const bootResolved = bootState === 'ready' || bootState === 'error';
   const visualProgress = assetsReady ? 100 : Math.max(6, Math.min(100, progress));
-  const startupBackground = `image-set(url("${startupBg}") type("image/webp"), url("${startupBgFallback}") type("image/jpeg"))`;
   const statusText = !assetsReady
     ? 'Loading game files to your device...'
     : !bootResolved
@@ -82,18 +80,14 @@ function StartupLoader({ progress, assetsReady, bootState }: { progress: number;
 
   return (
     <div className="startup-loader" role="status" aria-live="polite">
-      <div className="startup-loader__bg" style={{ backgroundImage: startupBackground }} />
-      <div className="startup-loader__scrim" />
-      <div className="startup-loader__content">
-        <div className="startup-loader__panel">
-          <div className="startup-loader__label">Loading...</div>
-          <div className="startup-loader__barTrack">
-            <div className="startup-loader__barFill" style={{ width: `${visualProgress}%` }} />
-          </div>
-          <div className="startup-loader__meta">
-            <span>{statusText}</span>
-            <span>{visualProgress}%</span>
-          </div>
+      <div className="startup-loader__artFrame">
+        <img className="startup-loader__art" src={startupBg} alt="" />
+        <div className="startup-loader__barOverlay" aria-hidden="true">
+          <div className="startup-loader__barFill" style={{ width: `${visualProgress}%` }} />
+        </div>
+        <div className="startup-loader__meta">
+          <span>{statusText}</span>
+          <span>{visualProgress}%</span>
         </div>
       </div>
     </div>
