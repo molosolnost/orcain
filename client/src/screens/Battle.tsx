@@ -163,6 +163,15 @@ export default function Battle({
   lastPrepStart,
   currentMatchId
 }: BattleProps) {
+  const readCssAppHeight = (): number => {
+    if (typeof window === 'undefined') return 800;
+    if (typeof document === 'undefined') return window.innerHeight;
+    const raw = getComputedStyle(document.documentElement).getPropertyValue('--app-height').trim();
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    return window.innerHeight;
+  };
+
   const isAndroidTelegram =
     typeof navigator !== 'undefined' &&
     /android/i.test(navigator.userAgent) &&
@@ -188,9 +197,7 @@ export default function Battle({
   const [phase, setPhase] = useState<'PREP' | 'REVEAL' | 'END'>('PREP');
   const [yourNickname, setYourNickname] = useState<string | null>(null);
   const [oppNickname, setOppNickname] = useState<string | null>(null);
-  const [viewportHeight, setViewportHeight] = useState<number>(
-    typeof window !== 'undefined' ? window.innerHeight : 800
-  );
+  const [viewportHeight, setViewportHeight] = useState<number>(readCssAppHeight());
 
   const [dragState, setDragState] = useState<{
     card: CardId;
@@ -249,10 +256,20 @@ export default function Battle({
   }, [currentMatchId]);
 
   useEffect(() => {
-    const onResize = () => setViewportHeight(window.innerHeight);
+    // Android Telegram WebView emits tiny resize jitters that can cause full layout
+    // recomposition and visible flicker; keep battle layout height stable there.
+    if (isAndroidTelegram) {
+      setViewportHeight(readCssAppHeight());
+      return;
+    }
+
+    const onResize = () => {
+      const next = readCssAppHeight();
+      setViewportHeight((prev) => (Math.abs(prev - next) >= 8 ? next : prev));
+    };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, []);
+  }, [isAndroidTelegram]);
 
   useEffect(() => {
     lockAppHeight('battle_mount');
@@ -1323,9 +1340,9 @@ export default function Battle({
           inset: 0,
           width: '100%',
           height: '100%',
-          contain: 'layout paint size style',
+          contain: isAndroidTelegram ? 'none' : 'layout paint size style',
           isolation: 'isolate',
-          transform: 'translateZ(0)',
+          transform: isAndroidTelegram ? 'none' : 'translateZ(0)',
           backgroundColor: '#242424',
           overflow: 'hidden',
           display: 'flex',
@@ -1376,9 +1393,9 @@ export default function Battle({
       bottom: 0,
       width: '100%',
       height: '100%',
-      contain: 'layout paint size style',
+      contain: isAndroidTelegram ? 'none' : 'layout paint size style',
       isolation: 'isolate',
-      transform: 'translateZ(0)',
+      transform: isAndroidTelegram ? 'none' : 'translateZ(0)',
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
@@ -1411,34 +1428,38 @@ export default function Battle({
           zIndex: 0
         }}
       />
-      <img
-        src={topOrnamentImage}
-        alt=""
-        style={{
-          position: 'absolute',
-          top: 'max(4px, calc(env(safe-area-inset-top, 0px) + 2px))',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(96vw, 980px)',
-          opacity: 0.9,
-          pointerEvents: 'none',
-          zIndex: 0
-        }}
-      />
-      <img
-        src={bottomOrnamentImage}
-        alt=""
-        style={{
-          position: 'absolute',
-          bottom: 'max(4px, calc(env(safe-area-inset-bottom, 0px) + 2px))',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(96vw, 980px)',
-          opacity: 0.8,
-          pointerEvents: 'none',
-          zIndex: 0
-        }}
-      />
+      {!isAndroidTelegram && (
+        <>
+          <img
+            src={topOrnamentImage}
+            alt=""
+            style={{
+              position: 'absolute',
+              top: 'max(4px, calc(env(safe-area-inset-top, 0px) + 2px))',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: 'min(96vw, 980px)',
+              opacity: 0.9,
+              pointerEvents: 'none',
+              zIndex: 0
+            }}
+          />
+          <img
+            src={bottomOrnamentImage}
+            alt=""
+            style={{
+              position: 'absolute',
+              bottom: 'max(4px, calc(env(safe-area-inset-bottom, 0px) + 2px))',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: 'min(96vw, 980px)',
+              opacity: 0.8,
+              pointerEvents: 'none',
+              zIndex: 0
+            }}
+          />
+        </>
+      )}
 
       {/* Compact Top Bar - 1 строка максимум */}
       <div style={{ 
