@@ -16,6 +16,8 @@ import topOrnamentImage from '../assets/orc-theme/ornament_top.svg';
 import bottomOrnamentImage from '../assets/orc-theme/ornament_bottom.svg';
 
 type BattleState = 'prep' | 'playing' | 'ended';
+type HpSide = 'your' | 'opp';
+type HpFloatFeedback = { id: number; amount: number; direction: 'up' | 'down' };
 type TutorialStepId =
   | 'intro'
   | 'cards'
@@ -225,12 +227,18 @@ export default function Battle({
   const [draftToast, setDraftToast] = useState<string | null>(null); // "Card placed" / "Card removed"
   const [slotOccupiedToast, setSlotOccupiedToast] = useState<string | null>(null); // "Slot occupied" toast
   const [hpFlash, setHpFlash] = useState<{ type: 'your' | 'opp'; direction: 'up' | 'down' } | null>(null); // Which HP to flash and direction
+  const [yourHpFloat, setYourHpFloat] = useState<HpFloatFeedback | null>(null);
+  const [oppHpFloat, setOppHpFloat] = useState<HpFloatFeedback | null>(null);
+  const [hpShake, setHpShake] = useState<Record<HpSide, boolean>>({ your: false, opp: false });
   const [roundBanner, setRoundBanner] = useState<string | null>(null); // "Round X - PREP" / "Round X complete"
   const [revealAnimations, setRevealAnimations] = useState<Set<number>>(new Set()); // stepIndexes that should animate
   const [confirmButtonPressed, setConfirmButtonPressed] = useState(false);
   const [tutorialStepIndex, setTutorialStepIndex] = useState(0);
   const prevYourHpRef = useRef<number>(10);
   const prevOppHpRef = useRef<number>(10);
+  const hpFxSeqRef = useRef(0);
+  const hpFloatTimeoutRef = useRef<Record<HpSide, number | null>>({ your: null, opp: null });
+  const hpShakeTimeoutRef = useRef<Record<HpSide, number | null>>({ your: null, opp: null });
 
   const DEBUG_MATCH = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
   const isCompactHeight = viewportHeight < 740;
@@ -249,6 +257,61 @@ export default function Battle({
     if (currentTutorialStep.id === 'place_heal') return { card: 'heal', slotIndex: 2 };
     return null;
   })();
+
+  const clearHpFloatTimeout = (side: HpSide) => {
+    const timer = hpFloatTimeoutRef.current[side];
+    if (timer !== null) {
+      window.clearTimeout(timer);
+      hpFloatTimeoutRef.current[side] = null;
+    }
+  };
+
+  const clearHpShakeTimeout = (side: HpSide) => {
+    const timer = hpShakeTimeoutRef.current[side];
+    if (timer !== null) {
+      window.clearTimeout(timer);
+      hpShakeTimeoutRef.current[side] = null;
+    }
+  };
+
+  const triggerHpFloat = (side: HpSide, delta: number) => {
+    if (delta === 0) return;
+    const nextFx: HpFloatFeedback = {
+      id: ++hpFxSeqRef.current,
+      amount: Math.abs(delta),
+      direction: delta < 0 ? 'down' : 'up'
+    };
+
+    clearHpFloatTimeout(side);
+
+    if (side === 'your') {
+      setYourHpFloat(nextFx);
+    } else {
+      setOppHpFloat(nextFx);
+    }
+
+    hpFloatTimeoutRef.current[side] = window.setTimeout(() => {
+      if (side === 'your') {
+        setYourHpFloat((prev) => (prev?.id === nextFx.id ? null : prev));
+      } else {
+        setOppHpFloat((prev) => (prev?.id === nextFx.id ? null : prev));
+      }
+    }, 700);
+  };
+
+  const triggerHpShake = (side: HpSide) => {
+    clearHpShakeTimeout(side);
+
+    setHpShake((prev) => ({ ...prev, [side]: false }));
+    window.requestAnimationFrame(() => {
+      setHpShake((prev) => ({ ...prev, [side]: true }));
+    });
+
+    hpShakeTimeoutRef.current[side] = window.setTimeout(() => {
+      setHpShake((prev) => ({ ...prev, [side]: false }));
+      hpShakeTimeoutRef.current[side] = null;
+    }, 260);
+  };
 
   // Sync currentMatchIdRef with prop
   useEffect(() => {
@@ -464,19 +527,27 @@ export default function Battle({
       // UX: HP feedback (flash red if decreased, green if increased)
       const prevYourHp = prevYourHpRef.current;
       const prevOppHp = prevOppHpRef.current;
+      const yourDelta = payload.yourHp - prevYourHp;
+      const oppDelta = payload.oppHp - prevOppHp;
       
-      if (payload.yourHp < prevYourHp) {
+      if (yourDelta < 0) {
         setHpFlash({ type: 'your', direction: 'down' });
+        triggerHpFloat('your', yourDelta);
+        triggerHpShake('your');
         setTimeout(() => setHpFlash(null), 400);
-      } else if (payload.yourHp > prevYourHp) {
+      } else if (yourDelta > 0) {
         setHpFlash({ type: 'your', direction: 'up' });
+        triggerHpFloat('your', yourDelta);
         setTimeout(() => setHpFlash(null), 400);
       }
-      if (payload.oppHp < prevOppHp) {
+      if (oppDelta < 0) {
         setHpFlash({ type: 'opp', direction: 'down' });
+        triggerHpFloat('opp', oppDelta);
+        triggerHpShake('opp');
         setTimeout(() => setHpFlash(null), 400);
-      } else if (payload.oppHp > prevOppHp) {
+      } else if (oppDelta > 0) {
         setHpFlash({ type: 'opp', direction: 'up' });
+        triggerHpFloat('opp', oppDelta);
         setTimeout(() => setHpFlash(null), 400);
       }
       
@@ -683,6 +754,13 @@ export default function Battle({
         window.clearTimeout(slotOccupiedToastTimeoutRef.current);
         slotOccupiedToastTimeoutRef.current = null;
       }
+      clearHpFloatTimeout('your');
+      clearHpFloatTimeout('opp');
+      clearHpShakeTimeout('your');
+      clearHpShakeTimeout('opp');
+      setYourHpFloat(null);
+      setOppHpFloat(null);
+      setHpShake({ your: false, opp: false });
     };
   }, []);
 
@@ -1413,6 +1491,21 @@ export default function Battle({
       color: 'rgba(255, 255, 255, 0.87)',
       zIndex: 1
     }}>
+      <style>{`
+        @keyframes battleHpShake {
+          0% { transform: translateX(0); }
+          20% { transform: translateX(-4px); }
+          40% { transform: translateX(4px); }
+          60% { transform: translateX(-3px); }
+          80% { transform: translateX(3px); }
+          100% { transform: translateX(0); }
+        }
+        @keyframes battleHpFloatUp {
+          0% { opacity: 0; transform: translate(-50%, 6px) scale(0.92); }
+          18% { opacity: 1; transform: translate(-50%, -4px) scale(1.08); }
+          100% { opacity: 0; transform: translate(-50%, -30px) scale(1); }
+        }
+      `}</style>
       <div
         style={{
           position: 'absolute',
@@ -1496,40 +1589,88 @@ export default function Battle({
           <span>🏆{pot}</span>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', fontSize: '11px', fontWeight: 'bold' }}>
-          <span 
-            style={{ 
-              color: '#4caf50',
-              textOverflow: 'ellipsis',
-              overflow: 'hidden',
-              whiteSpace: 'nowrap',
-              maxWidth: '80px',
-              transition: hpFlash?.type === 'your' ? 'background-color 0.3s ease' : 'none',
-              backgroundColor: hpFlash?.type === 'your' 
-                ? (hpFlash.direction === 'down' ? 'rgba(244, 67, 54, 0.3)' : 'rgba(76, 175, 80, 0.3)')
-                : 'transparent',
-              padding: hpFlash?.type === 'your' ? '2px 4px' : '0',
-              borderRadius: hpFlash?.type === 'your' ? '4px' : '0'
-            }}
-          >
-            {(yourNickname || 'You').length > 10 ? (yourNickname || 'You').substring(0, 10) + '...' : (yourNickname || 'You')}: {yourHp}
-          </span>
-          <span 
-            style={{ 
-              color: '#f44336',
-              textOverflow: 'ellipsis',
-              overflow: 'hidden',
-              whiteSpace: 'nowrap',
-              maxWidth: '80px',
-              transition: hpFlash?.type === 'opp' ? 'background-color 0.3s ease' : 'none',
-              backgroundColor: hpFlash?.type === 'opp' 
-                ? (hpFlash.direction === 'down' ? 'rgba(244, 67, 54, 0.3)' : 'rgba(76, 175, 80, 0.3)')
-                : 'transparent',
-              padding: hpFlash?.type === 'opp' ? '2px 4px' : '0',
-              borderRadius: hpFlash?.type === 'opp' ? '4px' : '0'
-            }}
-          >
-            {(oppNickname || 'Opp').length > 10 ? (oppNickname || 'Opp').substring(0, 10) + '...' : (oppNickname || 'Opp')}: {oppHp}
-          </span>
+          <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+            {yourHpFloat && (
+              <span
+                key={yourHpFloat.id}
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '-2px',
+                  transform: 'translate(-50%, 0)',
+                  pointerEvents: 'none',
+                  fontSize: isCompactHeight ? '22px' : '26px',
+                  fontWeight: 900,
+                  letterSpacing: '0.02em',
+                  color: yourHpFloat.direction === 'down' ? '#ff4d4f' : '#76ff7a',
+                  textShadow: '0 3px 12px rgba(0, 0, 0, 0.65)',
+                  zIndex: 3,
+                  animation: isAndroidTelegram ? 'none' : 'battleHpFloatUp 680ms ease-out forwards'
+                }}
+              >
+                {yourHpFloat.direction === 'down' ? `-${yourHpFloat.amount}` : `+${yourHpFloat.amount}`}
+              </span>
+            )}
+            <span 
+              style={{ 
+                color: '#4caf50',
+                textOverflow: 'ellipsis',
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                maxWidth: '80px',
+                transition: hpFlash?.type === 'your' ? 'background-color 0.3s ease' : 'none',
+                backgroundColor: hpFlash?.type === 'your' 
+                  ? (hpFlash.direction === 'down' ? 'rgba(244, 67, 54, 0.3)' : 'rgba(76, 175, 80, 0.3)')
+                  : 'transparent',
+                padding: hpFlash?.type === 'your' ? '2px 4px' : '0',
+                borderRadius: hpFlash?.type === 'your' ? '4px' : '0',
+                animation: !isAndroidTelegram && hpShake.your ? 'battleHpShake 240ms ease-out' : 'none'
+              }}
+            >
+              {(yourNickname || 'You').length > 10 ? (yourNickname || 'You').substring(0, 10) + '...' : (yourNickname || 'You')}: {yourHp}
+            </span>
+          </div>
+          <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+            {oppHpFloat && (
+              <span
+                key={oppHpFloat.id}
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '-2px',
+                  transform: 'translate(-50%, 0)',
+                  pointerEvents: 'none',
+                  fontSize: isCompactHeight ? '22px' : '26px',
+                  fontWeight: 900,
+                  letterSpacing: '0.02em',
+                  color: oppHpFloat.direction === 'down' ? '#ff4d4f' : '#76ff7a',
+                  textShadow: '0 3px 12px rgba(0, 0, 0, 0.65)',
+                  zIndex: 3,
+                  animation: isAndroidTelegram ? 'none' : 'battleHpFloatUp 680ms ease-out forwards'
+                }}
+              >
+                {oppHpFloat.direction === 'down' ? `-${oppHpFloat.amount}` : `+${oppHpFloat.amount}`}
+              </span>
+            )}
+            <span 
+              style={{ 
+                color: '#f44336',
+                textOverflow: 'ellipsis',
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                maxWidth: '80px',
+                transition: hpFlash?.type === 'opp' ? 'background-color 0.3s ease' : 'none',
+                backgroundColor: hpFlash?.type === 'opp' 
+                  ? (hpFlash.direction === 'down' ? 'rgba(244, 67, 54, 0.3)' : 'rgba(76, 175, 80, 0.3)')
+                  : 'transparent',
+                padding: hpFlash?.type === 'opp' ? '2px 4px' : '0',
+                borderRadius: hpFlash?.type === 'opp' ? '4px' : '0',
+                animation: !isAndroidTelegram && hpShake.opp ? 'battleHpShake 240ms ease-out' : 'none'
+              }}
+            >
+              {(oppNickname || 'Opp').length > 10 ? (oppNickname || 'Opp').substring(0, 10) + '...' : (oppNickname || 'Opp')}: {oppHp}
+            </span>
+          </div>
         </div>
       </div>
 

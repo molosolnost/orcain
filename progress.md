@@ -136,3 +136,14 @@ Original prompt: Добавь в игру интерактивное обуче�
 ## Validation (orc visual pass)
 - `npm run build --prefix client` passed.
 - `npm run test:ui-regression` passed (iphone-se, pixel-7, ipad-mini, desktop-1366).
+
+## Update: Battle HP visual feedback (floating numbers + shake)
+- Added explicit per-side combat feedback in `client/src/screens/Battle.tsx`:
+  - large floating damage/heal numbers above each HP label (`-N` in red, `+N` in green),
+  - short HP shake animation when taking damage.
+- Implemented separate state/timers for each side (`your`/`opp`) to avoid collisions when both HP values change in the same step.
+- Added cleanup for all HP FX timers on unmount to prevent stale animations.
+
+## Validation (HP feedback pass)
+- `npm run test:smoke` passed.
+- `npm run test:ui-regression` passed (iphone-se, pixel-7, ipad-mini, desktop-1366).
