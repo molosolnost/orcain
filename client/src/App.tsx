@@ -27,6 +27,9 @@ type BootState = 'checking' | 'telegram_auth' | 'ready' | 'error';
 const BUILD_ID = import.meta.env.VITE_BUILD_ID || `dev-${Date.now()}`;
 const DEBUG_MODE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
 const TUTORIAL_COMPLETED_KEY = 'orcain_tutorial_completed_v1';
+const STARTUP_ART_WIDTH = 1024;
+const STARTUP_ART_HEIGHT = 1536;
+const STARTUP_BAR_RECT = { x: 414.208, y: 1344.768, width: 373.248, height: 62.208 };
 const PRELOAD_ASSETS = [
   startupBg,
   menuBg,
@@ -69,9 +72,62 @@ function preloadImage(src: string, timeoutMs = 8000): Promise<boolean> {
   });
 }
 
+function projectRectOnCover(
+  containerWidth: number,
+  containerHeight: number,
+  artWidth: number,
+  artHeight: number,
+  rect: { x: number; y: number; width: number; height: number }
+) {
+  const scale = Math.max(containerWidth / artWidth, containerHeight / artHeight);
+  const offsetX = (containerWidth - artWidth * scale) / 2;
+  const offsetY = (containerHeight - artHeight * scale) / 2;
+  return {
+    left: offsetX + rect.x * scale,
+    top: offsetY + rect.y * scale,
+    width: rect.width * scale,
+    height: rect.height * scale
+  };
+}
+
 function StartupLoader({ progress, assetsReady, bootState }: { progress: number; assetsReady: boolean; bootState: BootState }) {
   const bootResolved = bootState === 'ready' || bootState === 'error';
   const visualProgress = assetsReady ? 100 : Math.max(6, Math.min(100, progress));
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const node = frameRef.current;
+    if (!node) return;
+
+    const update = () => {
+      const rect = node.getBoundingClientRect();
+      setFrameSize({
+        width: rect.width,
+        height: rect.height
+      });
+    };
+
+    update();
+
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  const barRect = useMemo(() => {
+    if (!frameSize.width || !frameSize.height) {
+      return { left: 0, top: 0, width: 0, height: 0 };
+    }
+    return projectRectOnCover(
+      frameSize.width,
+      frameSize.height,
+      STARTUP_ART_WIDTH,
+      STARTUP_ART_HEIGHT,
+      STARTUP_BAR_RECT
+    );
+  }, [frameSize.width, frameSize.height]);
+
   const statusText = !assetsReady
     ? 'Loading game files to your device...'
     : !bootResolved
@@ -80,9 +136,18 @@ function StartupLoader({ progress, assetsReady, bootState }: { progress: number;
 
   return (
     <div className="startup-loader" role="status" aria-live="polite">
-      <div className="startup-loader__artFrame">
+      <div className="startup-loader__artFrame" ref={frameRef}>
         <img className="startup-loader__art" src={startupBg} alt="" />
-        <div className="startup-loader__barOverlay" aria-hidden="true">
+        <div
+          className="startup-loader__barOverlay"
+          aria-hidden="true"
+          style={{
+            left: `${barRect.left}px`,
+            top: `${barRect.top}px`,
+            width: `${barRect.width}px`,
+            height: `${barRect.height}px`
+          }}
+        >
           <div className="startup-loader__barFill" style={{ width: `${visualProgress}%` }} />
         </div>
         <div className="startup-loader__meta">

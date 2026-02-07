@@ -19,10 +19,8 @@
 
 .startup-loader__artFrame {
   position: relative;
-  width: min(100vw, calc(var(--app-height, 100vh) * 2 / 3));
-  max-height: var(--app-height, 100vh);
-  aspect-ratio: 2 / 3;
-  box-shadow: 0 0 40px rgba(0, 0, 0, 0.22);
+  width: 100vw;
+  height: var(--app-height, 100vh);
 }
 
 .startup-loader__art {
@@ -34,10 +32,6 @@
 
 .startup-loader__barOverlay {
   position: absolute;
-  left: 40.45%;
-  top: 87.55%;
-  width: 36.45%;
-  height: 4.05%;
   border-radius: 999px;
   overflow: hidden;
 }
@@ -71,9 +65,9 @@
 
 .startup-loader__meta {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: max(2.3%, env(safe-area-inset-bottom));
+  left: max(14px, env(safe-area-inset-left));
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -90,11 +84,5 @@
 @keyframes startup-loading-shimmer {
   100% {
     transform: translateX(170%);
-  }
-}
-
-@media (max-aspect-ratio: 2/3) {
-  .startup-loader__artFrame {
-    width: 100vw;
   }
 }
