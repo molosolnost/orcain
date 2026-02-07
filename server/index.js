@@ -425,6 +425,29 @@ function logSessionEvent(sessionId, eventType, payload = {}) {
   db.logAccountEvent(accountId, eventType, payload);
 }
 
+function getRatingSnapshotByAccountId(accountId) {
+  if (!accountId || accountId === BOT_ACCOUNT_ID) {
+    return { rating: 0, leagueKey: 'wood' };
+  }
+  const account = db.getAccountById(accountId);
+  return {
+    rating: Number.isFinite(account?.rating) ? account.rating : 0,
+    leagueKey: typeof account?.leagueKey === 'string' ? account.leagueKey : 'wood'
+  };
+}
+
+function getProgressionForAccountId(accountId, historyLimit = 10) {
+  if (!accountId || accountId === BOT_ACCOUNT_ID) {
+    return { rating: 0, leagueKey: 'wood', recentPvpMatches: [] };
+  }
+  const progression = db.getAccountProgression(accountId, historyLimit);
+  return {
+    rating: Number.isFinite(progression?.rating) ? progression.rating : 0,
+    leagueKey: typeof progression?.leagueKey === 'string' ? progression.leagueKey : 'wood',
+    recentPvpMatches: Array.isArray(progression?.recentPvpMatches) ? progression.recentPvpMatches : []
+  };
+}
+
 function persistMatchResult(match, { winnerSessionId = null, loserSessionId = null, reason = 'normal' } = {}) {
   if (!match?.id || !match?.sessions || match.sessions.length < 2) return;
 
@@ -861,6 +884,9 @@ function endMatchBothAfk(match) {
   
   if (match.mode === 'PVP') economy.settleMatchPayout(match, 'timeout', null);
 
+  logMatchEnd(match, 'timeout', null, null); // Both lose, no winner
+  persistMatchResult(match, { reason: 'timeout' });
+
   // Получаем токены по accountId для отправки
   const acc1AccountId = getAccountIdBySessionId(match.sessions[0]);
   const acc2AccountId = getAccountIdBySessionId(match.sessions[1]);
@@ -876,6 +902,7 @@ function endMatchBothAfk(match) {
     const sessionId = getSessionIdBySocket(socketId);
     const accountId = getAccountIdBySessionId(sessionId);
     const tokens = accountId ? (db.getTokens(accountId) !== null ? db.getTokens(accountId) : START_TOKENS) : START_TOKENS;
+    const progression = getRatingSnapshotByAccountId(accountId);
     
     return {
       matchId: match.id,
@@ -885,14 +912,13 @@ function endMatchBothAfk(match) {
       yourHp: sessionId === match.sessions[0] ? p1Hp : p2Hp,
       oppHp: sessionId === match.sessions[0] ? p2Hp : p1Hp,
       yourTokens: tokens,
+      rating: progression.rating,
+      leagueKey: progression.leagueKey,
       reason: 'timeout',
       yourNickname: sessionId === match.sessions[0] ? acc1Nickname : acc2Nickname,
       oppNickname: sessionId === match.sessions[0] ? acc2Nickname : acc1Nickname
     };
   });
-  
-  logMatchEnd(match, 'timeout', null, null); // Both lose, no winner
-  persistMatchResult(match, { reason: 'timeout' });
   
   // Очистка player data
   p1Data.matchId = null;
@@ -1606,6 +1632,7 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
     const isWinner = sessionId === winnerSessionId;
     const accountId = getAccountIdBySessionId(sessionId);
     const tokens = accountId ? (db.getTokens(accountId) !== null ? db.getTokens(accountId) : START_TOKENS) : START_TOKENS;
+    const progression = getRatingSnapshotByAccountId(accountId);
     
     // Единый payload для обоих игроков с winnerId/loserId
     return {
@@ -1616,6 +1643,8 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
       yourHp: sessionId === match.sessions[0] ? p1Hp : p2Hp,
       oppHp: sessionId === match.sessions[0] ? p2Hp : p1Hp,
       yourTokens: tokens,
+      rating: progression.rating,
+      leagueKey: progression.leagueKey,
       reason: finalReason,
       yourNickname: sessionId === match.sessions[0] ? acc1Nickname : acc2Nickname,
       oppNickname: sessionId === match.sessions[0] ? acc2Nickname : acc1Nickname
@@ -1740,6 +1769,7 @@ function endMatch(match, reason = 'normal') {
     const isWinner = sessionId === winnerSessionId;
     const accountId = getAccountIdBySessionId(sessionId);
     const tokens = accountId ? (db.getTokens(accountId) !== null ? db.getTokens(accountId) : START_TOKENS) : START_TOKENS;
+    const progression = getRatingSnapshotByAccountId(accountId);
     
     // Единый payload для обоих игроков с winnerId/loserId
     return {
@@ -1750,6 +1780,8 @@ function endMatch(match, reason = 'normal') {
       yourHp: sessionId === match.sessions[0] ? p1Data.hp : p2Data.hp,
       oppHp: sessionId === match.sessions[0] ? p2Data.hp : p1Data.hp,
       yourTokens: tokens,
+      rating: progression.rating,
+      leagueKey: progression.leagueKey,
       reason: finalReason,
       yourNickname: sessionId === match.sessions[0] ? acc1Nickname : acc2Nickname,
       oppNickname: sessionId === match.sessions[0] ? acc2Nickname : acc1Nickname
@@ -1919,7 +1951,9 @@ io.on('connection', (socket) => {
       tokens: tokens !== null ? tokens : START_TOKENS,
       nickname: nickname || null,
       language,
-      avatar
+      avatar,
+      rating: Number.isFinite(account?.rating) ? account.rating : 0,
+      leagueKey: typeof account?.leagueKey === 'string' ? account.leagueKey : 'wood'
     });
     
     // Если sessionId участвует в активном матче
@@ -2334,6 +2368,7 @@ app.post('/auth/guest', (req, res) => {
   try {
     const account = db.createGuestAccount();
     const persisted = db.getAccountById(account.accountId);
+    const progression = getProgressionForAccountId(account.accountId, 10);
     res.json({
       accountId: account.accountId,
       authToken: account.authToken,
@@ -2341,6 +2376,9 @@ app.post('/auth/guest', (req, res) => {
       nickname: account.nickname || null,
       avatar: account.avatar || 'orc',
       language: account.language || 'ru',
+      rating: progression.rating,
+      leagueKey: progression.leagueKey,
+      recentPvpMatches: progression.recentPvpMatches,
       telegramUserId: persisted?.telegramUserId || null,
       stats: persisted?.stats || db.getAccountStats(account.accountId)
     });
@@ -2448,6 +2486,7 @@ app.post('/auth/telegram', (req, res) => {
     
     const account = db.getOrCreateTelegramAccount(user.id);
     const persisted = db.getAccountById(account.accountId);
+    const progression = getProgressionForAccountId(account.accountId, 10);
     
     if (!account || !account.accountId || !account.authToken) {
       console.error('[auth/telegram] CRITICAL: getOrCreateTelegramAccount returned invalid account:', account);
@@ -2466,6 +2505,9 @@ app.post('/auth/telegram', (req, res) => {
       nickname: account.nickname || null,
       avatar: account.avatar || 'orc',
       language: account.language || 'ru',
+      rating: progression.rating,
+      leagueKey: progression.leagueKey,
+      recentPvpMatches: progression.recentPvpMatches,
       telegramUserId: persisted?.telegramUserId || user.id,
       stats: persisted?.stats || db.getAccountStats(account.accountId)
     });
@@ -2491,12 +2533,17 @@ app.get('/auth/me', (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  const progression = getProgressionForAccountId(account.accountId, 10);
+
   res.json({
     accountId: account.accountId,
     tokens: account.tokens,
     nickname: account.nickname || null,
     avatar: account.avatar || 'orc',
     language: account.language || 'ru',
+    rating: progression.rating,
+    leagueKey: progression.leagueKey,
+    recentPvpMatches: progression.recentPvpMatches,
     nicknameChangeCost: NICKNAME_CHANGE_COST,
     telegramUserId: account.telegramUserId || null,
     stats: account.stats || db.getAccountStats(account.accountId)
@@ -2577,9 +2624,13 @@ app.post('/account/profile', (req, res) => {
   }
 
   const refreshed = db.getAccountById(account.accountId);
+  const progression = getProgressionForAccountId(account.accountId, 10);
   return res.json({
     language: refreshed?.language || 'ru',
     avatar: refreshed?.avatar || 'orc',
+    rating: progression.rating,
+    leagueKey: progression.leagueKey,
+    recentPvpMatches: progression.recentPvpMatches,
     supportedLanguages: SUPPORTED_LANGUAGES,
     supportedAvatars: SUPPORTED_AVATARS
   });
@@ -2649,13 +2700,17 @@ app.post('/account/nickname', (req, res) => {
 
     db.setNickname(account.accountId, normalized);
     const nextTokens = db.getTokens(account.accountId) ?? START_TOKENS;
+    const progression = getProgressionForAccountId(account.accountId, 10);
     console.log(`[NICKNAME_SET] accountId=${account.accountId} nickname=${normalized} charged=${charged} tokens=${nextTokens}`);
     res.json({
       nickname: normalized,
       nicknameLower,
       charged,
       nicknameChangeCost: NICKNAME_CHANGE_COST,
-      tokens: nextTokens
+      tokens: nextTokens,
+      rating: progression.rating,
+      leagueKey: progression.leagueKey,
+      recentPvpMatches: progression.recentPvpMatches
     });
   } catch (error) {
     console.error('[NICKNAME_SET_FAIL]', error);

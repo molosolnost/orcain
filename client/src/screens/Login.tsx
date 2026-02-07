@@ -1,10 +1,18 @@
 import { useState } from 'react';
-import { DEFAULT_AVATAR, DEFAULT_LANGUAGE, t, type AvatarId, type GameLanguage } from '../i18n';
+import { DEFAULT_AVATAR, DEFAULT_LANGUAGE, DEFAULT_LEAGUE_KEY, t, type AvatarId, type GameLanguage, type LeagueKey } from '../i18n';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://orcain-server.onrender.com';
 
 interface LoginProps {
-  onLoginSuccess: (data: { authToken: string; tokens: number; nickname?: string | null; language?: GameLanguage; avatar?: AvatarId }) => void;
+  onLoginSuccess: (data: {
+    authToken: string;
+    tokens: number;
+    rating?: number;
+    leagueKey?: LeagueKey;
+    nickname?: string | null;
+    language?: GameLanguage;
+    avatar?: AvatarId;
+  }) => void;
   language: GameLanguage;
 }
 
@@ -28,7 +36,7 @@ export default function Login({ onLoginSuccess, language }: LoginProps) {
       }
 
       const data = await response.json();
-      const { accountId, authToken, tokens, nickname, avatar, language: profileLanguage } = data;
+      const { accountId, authToken, tokens, rating, leagueKey, nickname, avatar, language: profileLanguage } = data;
       
       // Сохраняем authToken и accountId в localStorage
       localStorage.setItem('orcain_authToken', authToken);
@@ -38,6 +46,8 @@ export default function Login({ onLoginSuccess, language }: LoginProps) {
       onLoginSuccess({
         authToken,
         tokens,
+        rating: Number.isFinite(rating) ? Number(rating) : 0,
+        leagueKey: (typeof leagueKey === 'string' ? leagueKey : DEFAULT_LEAGUE_KEY) as LeagueKey,
         nickname: nickname || null,
         avatar: (avatar || DEFAULT_AVATAR) as AvatarId,
         language: (profileLanguage === 'en' || profileLanguage === 'ru') ? profileLanguage : DEFAULT_LANGUAGE

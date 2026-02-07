@@ -9,7 +9,7 @@ import Menu from './screens/Menu';
 import Battle from './screens/Battle';
 import Onboarding from './screens/Onboarding';
 import TransitionShield from './components/TransitionShield';
-import { DEFAULT_AVATAR, DEFAULT_LANGUAGE, type AvatarId, type GameLanguage } from './i18n';
+import { DEFAULT_AVATAR, DEFAULT_LANGUAGE, DEFAULT_LEAGUE_KEY, LEAGUE_META, type AvatarId, type GameLanguage, type LeagueKey } from './i18n';
 import menuBg from './assets/orc-theme/menu_bg.svg';
 import orcainLogo from './assets/orcain_logo.webp';
 import pvpButtonImage from './assets/orc-theme/btn_pvp.svg';
@@ -22,6 +22,13 @@ import './App.css';
 
 type Screen = 'login' | 'menu' | 'battle' | 'onboarding';
 type BootState = 'checking' | 'telegram_auth' | 'ready' | 'error';
+
+function normalizeLeagueKey(value: unknown): LeagueKey {
+  if (typeof value === 'string' && Object.prototype.hasOwnProperty.call(LEAGUE_META, value)) {
+    return value as LeagueKey;
+  }
+  return DEFAULT_LEAGUE_KEY;
+}
 
 const BUILD_ID = import.meta.env.VITE_BUILD_ID || `dev-${Date.now()}`;
 const DEBUG_MODE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
@@ -181,6 +188,8 @@ function App() {
   const [nickname, setNickname] = useState<string | null>(null);
   const [language, setLanguage] = useState<GameLanguage>(DEFAULT_LANGUAGE);
   const [avatar, setAvatar] = useState<AvatarId>(DEFAULT_AVATAR);
+  const [rating, setRating] = useState(0);
+  const [leagueKey, setLeagueKey] = useState<LeagueKey>(DEFAULT_LEAGUE_KEY);
   const [accountId, setAccountId] = useState<string | null>(null);
   const [matchEndPayload, setMatchEndPayload] = useState<MatchEndPayload | null>(null);
   const [isSearching, setIsSearching] = useState(false);
@@ -349,7 +358,16 @@ function App() {
             return response.json();
           })
           .then((data) => {
-            const { accountId: accId, authToken: token, tokens: tokensVal, nickname: nick, language: lang, avatar: profileAvatar } = data;
+            const {
+              accountId: accId,
+              authToken: token,
+              tokens: tokensVal,
+              rating: ratingValue,
+              leagueKey: leagueValue,
+              nickname: nick,
+              language: lang,
+              avatar: profileAvatar
+            } = data;
             
             // Обязательно сохраняем все данные
             localStorage.setItem('orcain_authToken', token);
@@ -359,6 +377,8 @@ function App() {
             setAccountId(accId);
             setAuthToken(token);
             setTokens(tokensVal);
+            setRating(Number.isFinite(ratingValue) ? Number(ratingValue) : 0);
+            setLeagueKey(normalizeLeagueKey(leagueValue));
             setNickname(nick || null);
             setLanguage((lang === 'en' || lang === 'ru') ? lang : DEFAULT_LANGUAGE);
             setAvatar((typeof profileAvatar === 'string' ? profileAvatar : DEFAULT_AVATAR) as AvatarId);
@@ -436,6 +456,14 @@ function App() {
         setTokens(prev => (prev === null ? payload.tokens : prev));
       }
 
+      if (payload.rating !== undefined && Number.isFinite(payload.rating)) {
+        setRating(Number(payload.rating));
+      }
+
+      if (payload.leagueKey !== undefined) {
+        setLeagueKey(normalizeLeagueKey(payload.leagueKey));
+      }
+
       if (payload.language === 'ru' || payload.language === 'en') {
         setLanguage(payload.language);
       }
@@ -468,6 +496,8 @@ function App() {
         setNickname(null);
         setLanguage(DEFAULT_LANGUAGE);
         setAvatar(DEFAULT_AVATAR);
+        setRating(0);
+        setLeagueKey(DEFAULT_LEAGUE_KEY);
         setScreen('login');
         setConnected(false);
         setTokens(null);
@@ -585,6 +615,12 @@ function App() {
       if (payload.yourTokens !== undefined) {
         setTokens(payload.yourTokens);
       }
+      if (payload.rating !== undefined && Number.isFinite(payload.rating)) {
+        setRating(Number(payload.rating));
+      }
+      if (payload.leagueKey !== undefined) {
+        setLeagueKey(normalizeLeagueKey(payload.leagueKey));
+      }
       setMatchEndPayload(payload);
       if (activeScreen !== 'battle') {
         setScreen('battle');
@@ -624,18 +660,24 @@ function App() {
   const handleLoginSuccess = ({
     authToken: token,
     tokens: initialTokens,
+    rating: initialRating,
+    leagueKey: initialLeagueKey,
     nickname: initialNickname,
     language: initialLanguage,
     avatar: initialAvatar
   }: {
     authToken: string;
     tokens: number;
+    rating?: number;
+    leagueKey?: LeagueKey;
     nickname?: string | null;
     language?: GameLanguage;
     avatar?: AvatarId;
   }) => {
     setAuthToken(token);
     setTokens(initialTokens);
+    setRating(Number.isFinite(initialRating) ? Number(initialRating) : 0);
+    setLeagueKey(normalizeLeagueKey(initialLeagueKey));
     setNickname(initialNickname || null);
     setLanguage(initialLanguage || DEFAULT_LANGUAGE);
     setAvatar(initialAvatar || DEFAULT_AVATAR);
@@ -651,6 +693,8 @@ function App() {
   const handleProfileUpdate = (payload: {
     nickname?: string | null;
     tokens?: number;
+    rating?: number;
+    leagueKey?: LeagueKey;
     language?: GameLanguage;
     avatar?: AvatarId;
   }) => {
@@ -659,6 +703,12 @@ function App() {
     }
     if (payload.tokens !== undefined) {
       setTokens(payload.tokens);
+    }
+    if (payload.rating !== undefined && Number.isFinite(payload.rating)) {
+      setRating(Number(payload.rating));
+    }
+    if (payload.leagueKey !== undefined) {
+      setLeagueKey(normalizeLeagueKey(payload.leagueKey));
     }
     if (payload.language) {
       setLanguage(payload.language);
@@ -890,6 +940,8 @@ function App() {
             isSearching={isSearching}
             tokens={tokens}
             nickname={nickname}
+            rating={rating}
+            leagueKey={leagueKey}
             language={language}
             avatar={avatar}
             authToken={authToken}

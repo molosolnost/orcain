@@ -3,6 +3,7 @@ export type Card = "ATTACK" | "DEFENSE" | "HEAL" | "COUNTER";
 
 // CardId type (new stable card system)
 export type CardId = "attack" | "defense" | "heal" | "counter";
+export type LeagueKey = "wood" | "iron" | "bronze" | "silver" | "gold" | "mythic";
 
 export type MatchFoundPayload = {
   matchId?: string;
@@ -59,6 +60,8 @@ export type MatchEndPayload = {
   yourHp: number;
   oppHp: number;
   yourTokens: number;
+  rating?: number;
+  leagueKey?: LeagueKey;
   reason: "normal" | "disconnect" | "timeout";
   yourNickname?: string | null;
   oppNickname?: string | null;
@@ -66,6 +69,8 @@ export type MatchEndPayload = {
 
 export type HelloOkPayload = {
   tokens: number;
+  rating?: number;
+  leagueKey?: LeagueKey;
   nickname?: string | null;
   language?: 'ru' | 'en';
   avatar?: 'orc' | 'knight' | 'mage' | 'rogue' | 'ranger' | 'paladin';

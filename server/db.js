@@ -7,6 +7,19 @@ const DEFAULT_AVATAR = 'orc';
 const DEFAULT_LANGUAGE = 'ru';
 const START_TOKENS = 10;
 const BOT_ACCOUNT_ID = 'BOT';
+const PVP_WIN_RATING_DELTA = 5;
+const PVP_LOSS_RATING_DELTA = -2;
+const PVP_DRAW_RATING_DELTA = 0;
+const PVP_MATCH_HISTORY_LIMIT_DEFAULT = 10;
+
+const RATING_LEAGUES = [
+  { key: 'wood', min: 0, max: 99 },
+  { key: 'iron', min: 100, max: 199 },
+  { key: 'bronze', min: 200, max: 349 },
+  { key: 'silver', min: 350, max: 549 },
+  { key: 'gold', min: 550, max: 799 },
+  { key: 'mythic', min: 800, max: Number.POSITIVE_INFINITY }
+];
 
 const dataDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) {
@@ -49,7 +62,8 @@ db.exec(`
     nicknameLower TEXT,
     avatar TEXT,
     language TEXT,
-    lastSeenAt INTEGER
+    lastSeenAt INTEGER,
+    rating INTEGER NOT NULL DEFAULT 0
   )
 `);
 
@@ -59,6 +73,7 @@ addColumnIfMissing('accounts', 'nicknameLower', 'nicknameLower TEXT');
 addColumnIfMissing('accounts', 'avatar', 'avatar TEXT');
 addColumnIfMissing('accounts', 'language', 'language TEXT');
 addColumnIfMissing('accounts', 'lastSeenAt', 'lastSeenAt INTEGER');
+addColumnIfMissing('accounts', 'rating', 'rating INTEGER NOT NULL DEFAULT 0');
 
 db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_telegramUserId
@@ -150,6 +165,12 @@ db.exec(`
   WHERE lastSeenAt IS NULL
 `);
 
+db.exec(`
+  UPDATE accounts
+  SET rating = 0
+  WHERE rating IS NULL OR rating < 0
+`);
+
 const ensureStatsForAllAccountsStmt = db.prepare(`
   INSERT OR IGNORE INTO account_stats (
     accountId,
@@ -190,6 +211,7 @@ const selectAccountByAuthTokenStmt = db.prepare(`
     a.avatar,
     a.language,
     a.telegramUserId,
+    a.rating,
     a.createdAt,
     a.lastSeenAt,
     s.totalBattles,
@@ -214,6 +236,7 @@ const selectAccountByIdStmt = db.prepare(`
     a.avatar,
     a.language,
     a.telegramUserId,
+    a.rating,
     a.createdAt,
     a.lastSeenAt,
     s.totalBattles,
@@ -237,7 +260,8 @@ const selectAccountByTelegramStmt = db.prepare(`
     tokens,
     nickname,
     avatar,
-    language
+    language,
+    rating
   FROM accounts
   WHERE telegramUserId = ?
 `);
@@ -253,8 +277,9 @@ const insertAccountStmt = db.prepare(`
     nicknameLower,
     avatar,
     language,
-    lastSeenAt
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    lastSeenAt,
+    rating
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const insertStatsRowStmt = db.prepare(`
@@ -281,6 +306,12 @@ const updateLastSeenStmt = db.prepare(`
 
 const getTokensStmt = db.prepare('SELECT tokens FROM accounts WHERE accountId = ?');
 const setTokensStmt = db.prepare('UPDATE accounts SET tokens = ? WHERE accountId = ?');
+const getRatingStmt = db.prepare('SELECT rating FROM accounts WHERE accountId = ?');
+const addRatingDeltaStmt = db.prepare(`
+  UPDATE accounts
+  SET rating = MAX(0, rating + ?), lastSeenAt = ?
+  WHERE accountId = ?
+`);
 
 const setNicknameStmt = db.prepare(`
   UPDATE accounts
@@ -307,6 +338,14 @@ const insertAccountEventStmt = db.prepare(`
     payloadJson,
     createdAt
   ) VALUES (?, ?, ?, ?)
+`);
+
+const selectRecentRecordedMatchesStmt = db.prepare(`
+  SELECT payloadJson, createdAt
+  FROM account_events
+  WHERE accountId = ? AND eventType = 'match_recorded'
+  ORDER BY createdAt DESC
+  LIMIT ?
 `);
 
 const selectStatsByAccountStmt = db.prepare(`
@@ -360,8 +399,21 @@ function sanitizeMode(mode) {
   return mode === 'PVP' ? 'PVP' : 'PVE';
 }
 
+function normalizeRating(rawRating) {
+  const numeric = Number(rawRating);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.floor(numeric));
+}
+
+function getLeagueByRating(rating) {
+  const normalized = normalizeRating(rating);
+  return RATING_LEAGUES.find((league) => normalized >= league.min && normalized <= league.max) || RATING_LEAGUES[0];
+}
+
 function mapAccountRow(row) {
   if (!row) return null;
+  const rating = normalizeRating(row.rating);
+  const league = getLeagueByRating(rating);
   const stats = {
     totalBattles: row.totalBattles || 0,
     wins: row.wins || 0,
@@ -377,6 +429,8 @@ function mapAccountRow(row) {
   return {
     accountId: row.accountId,
     tokens: row.tokens,
+    rating,
+    leagueKey: league.key,
     nickname: row.nickname || null,
     avatar: row.avatar || DEFAULT_AVATAR,
     language: row.language || DEFAULT_LANGUAGE,
@@ -424,7 +478,8 @@ function createAccount({
     nicknameLower,
     avatar || DEFAULT_AVATAR,
     language || DEFAULT_LANGUAGE,
-    createdAt
+    createdAt,
+    0
   );
 
   ensureStatsRow(accountId, createdAt);
@@ -458,6 +513,7 @@ function getOrCreateTelegramAccount(telegramUserId) {
       accountId: existing.accountId,
       authToken: existing.authToken,
       tokens: existing.tokens,
+      rating: normalizeRating(existing.rating),
       nickname: existing.nickname || null,
       avatar: existing.avatar || DEFAULT_AVATAR,
       language: existing.language || DEFAULT_LANGUAGE
@@ -492,6 +548,22 @@ function getTokens(accountId) {
 function setTokens(accountId, tokens) {
   setTokensStmt.run(tokens, accountId);
   touchAccount(accountId);
+}
+
+function getRating(accountId) {
+  if (!accountId || accountId === BOT_ACCOUNT_ID) return 0;
+  const row = getRatingStmt.get(accountId);
+  return row ? normalizeRating(row.rating) : 0;
+}
+
+function addRatingDelta(accountId, delta, timestamp = Date.now()) {
+  if (!accountId || accountId === BOT_ACCOUNT_ID) return 0;
+  const normalizedDelta = Number(delta);
+  if (!Number.isFinite(normalizedDelta)) {
+    return getRating(accountId);
+  }
+  addRatingDeltaStmt.run(Math.trunc(normalizedDelta), timestamp, accountId);
+  return getRating(accountId);
 }
 
 function deductTokens(accountId, amount, reason = 'generic') {
@@ -591,6 +663,47 @@ function getAccountStats(accountId) {
   };
 }
 
+function getRecentPvpMatches(accountId, limit = PVP_MATCH_HISTORY_LIMIT_DEFAULT) {
+  if (!accountId || accountId === BOT_ACCOUNT_ID) return [];
+  const safeLimit = Math.max(1, Math.min(Math.trunc(Number(limit)) || PVP_MATCH_HISTORY_LIMIT_DEFAULT, 50));
+  const rows = selectRecentRecordedMatchesStmt.all(accountId, safeLimit * 3);
+  const matches = [];
+
+  for (const row of rows) {
+    let payload = null;
+    try {
+      payload = row.payloadJson ? JSON.parse(row.payloadJson) : null;
+    } catch (error) {
+      payload = null;
+    }
+    if (!payload || payload.mode !== 'PVP') continue;
+    matches.push({
+      matchId: payload.matchId || null,
+      result: payload.result === 'win' || payload.result === 'loss' ? payload.result : 'draw',
+      reason: payload.reason || null,
+      roundIndex: Number.isFinite(payload.roundIndex) ? payload.roundIndex : null,
+      ratingDelta: Number.isFinite(payload.ratingDelta) ? payload.ratingDelta : 0,
+      ratingAfter: Number.isFinite(payload.ratingAfter) ? payload.ratingAfter : null,
+      leagueKey: typeof payload.leagueKey === 'string' ? payload.leagueKey : null,
+      endedAt: Number.isFinite(payload.endedAt) ? payload.endedAt : row.createdAt,
+      createdAt: row.createdAt
+    });
+    if (matches.length >= safeLimit) break;
+  }
+
+  return matches;
+}
+
+function getAccountProgression(accountId, historyLimit = PVP_MATCH_HISTORY_LIMIT_DEFAULT) {
+  const rating = getRating(accountId);
+  const league = getLeagueByRating(rating);
+  return {
+    rating,
+    leagueKey: league.key,
+    recentPvpMatches: getRecentPvpMatches(accountId, historyLimit)
+  };
+}
+
 const recordMatchResultTx = db.transaction((payload) => {
   const {
     matchId,
@@ -637,6 +750,12 @@ const recordMatchResultTx = db.transaction((payload) => {
     const pveBattle = normalizedMode === 'PVE' ? 1 : 0;
     const pvpWin = normalizedMode === 'PVP' && isWinner ? 1 : 0;
     const pveWin = normalizedMode === 'PVE' && isWinner ? 1 : 0;
+    const ratingBefore = getRating(accountId);
+    const ratingDelta = normalizedMode === 'PVP'
+      ? (isWinner ? PVP_WIN_RATING_DELTA : isLoser ? PVP_LOSS_RATING_DELTA : PVP_DRAW_RATING_DELTA)
+      : 0;
+    const ratingAfter = addRatingDelta(accountId, ratingDelta, endedAt);
+    const leagueKey = getLeagueByRating(ratingAfter).key;
 
     updateStatsAfterMatchStmt.run(
       isWinner ? 1 : 0,
@@ -660,7 +779,12 @@ const recordMatchResultTx = db.transaction((payload) => {
         result: isWinner ? 'win' : isLoser ? 'loss' : 'draw',
         winnerAccountId: winnerAccountId || null,
         loserAccountId: loserAccountId || null,
-        roundIndex: Number.isFinite(roundIndex) ? roundIndex : null
+        roundIndex: Number.isFinite(roundIndex) ? roundIndex : null,
+        ratingBefore,
+        ratingDelta,
+        ratingAfter,
+        leagueKey,
+        endedAt
       }),
       endedAt
     );
@@ -682,6 +806,11 @@ module.exports = {
   getAccountById,
   getTokens,
   setTokens,
+  getRating,
+  addRatingDelta,
+  getLeagueByRating,
+  getRecentPvpMatches,
+  getAccountProgression,
   deductTokens,
   addTokens,
   setNickname,

@@ -1,10 +1,32 @@
 export type GameLanguage = 'ru' | 'en';
 
 export type AvatarId = 'orc' | 'knight' | 'mage' | 'rogue' | 'ranger' | 'paladin';
+export type LeagueKey = 'wood' | 'iron' | 'bronze' | 'silver' | 'gold' | 'mythic';
 
 export const DEFAULT_LANGUAGE: GameLanguage = 'ru';
 export const DEFAULT_AVATAR: AvatarId = 'orc';
+export const DEFAULT_LEAGUE_KEY: LeagueKey = 'wood';
 export const SUPPORTED_LANGUAGES: GameLanguage[] = ['ru', 'en'];
+export const LEAGUE_META: Record<LeagueKey, { label: Record<GameLanguage, string> }> = {
+  wood: {
+    label: { ru: 'Деревянная', en: 'Wooden' }
+  },
+  iron: {
+    label: { ru: 'Железная', en: 'Iron' }
+  },
+  bronze: {
+    label: { ru: 'Бронзовая', en: 'Bronze' }
+  },
+  silver: {
+    label: { ru: 'Серебряная', en: 'Silver' }
+  },
+  gold: {
+    label: { ru: 'Золотая', en: 'Gold' }
+  },
+  mythic: {
+    label: { ru: 'Мифическая', en: 'Mythic' }
+  }
+};
 
 export const AVATAR_META: Record<AvatarId, { emoji: string; label: Record<GameLanguage, string> }> = {
   orc: {
@@ -39,6 +61,8 @@ type TranslationKey =
   | 'common.save'
   | 'common.cancel'
   | 'common.language'
+  | 'common.league'
+  | 'common.rating'
   | 'login.title'
   | 'login.createAccount'
   | 'login.creatingAccount'
@@ -83,6 +107,8 @@ const STRINGS: Record<TranslationKey, Record<GameLanguage, string>> = {
   'common.save': { ru: 'Сохранить', en: 'Save' },
   'common.cancel': { ru: 'Отмена', en: 'Cancel' },
   'common.language': { ru: 'Язык', en: 'Language' },
+  'common.league': { ru: 'Лига', en: 'League' },
+  'common.rating': { ru: 'Рейтинг', en: 'Rating' },
   'login.title': { ru: 'ORCAIN', en: 'ORCAIN' },
   'login.createAccount': { ru: 'Создать аккаунт', en: 'Create account' },
   'login.creatingAccount': { ru: 'Создаём аккаунт...', en: 'Creating account...' },

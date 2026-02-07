@@ -7,7 +7,7 @@ import tutorialButtonImage from "../assets/orc-theme/btn_tutorial.svg";
 import cancelButtonImage from "../assets/orc-theme/btn_cancel.svg";
 import ornamentTopImage from "../assets/orc-theme/ornament_top.svg";
 import ornamentBottomImage from "../assets/orc-theme/ornament_bottom.svg";
-import { AVATAR_META, DEFAULT_AVATAR, DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, t, type AvatarId, type GameLanguage } from "../i18n";
+import { AVATAR_META, DEFAULT_AVATAR, DEFAULT_LANGUAGE, DEFAULT_LEAGUE_KEY, LEAGUE_META, SUPPORTED_LANGUAGES, t, type AvatarId, type GameLanguage, type LeagueKey } from "../i18n";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "https://orcain-server.onrender.com";
 const NICKNAME_CHANGE_COST_DEFAULT = 3;
@@ -23,10 +23,19 @@ interface MenuProps {
   onStartPvE: () => void;
   onStartTutorial: () => void;
   onCancelSearch: () => void;
-  onProfileUpdate: (payload: { nickname?: string | null; tokens?: number; language?: GameLanguage; avatar?: AvatarId }) => void;
+  onProfileUpdate: (payload: {
+    nickname?: string | null;
+    tokens?: number;
+    rating?: number;
+    leagueKey?: LeagueKey;
+    language?: GameLanguage;
+    avatar?: AvatarId;
+  }) => void;
   isSearching: boolean;
   tokens: number | null;
   nickname: string | null;
+  rating: number;
+  leagueKey: LeagueKey;
   language: GameLanguage;
   avatar: AvatarId;
   authToken: string | null;
@@ -55,6 +64,8 @@ export default function Menu({
   isSearching,
   tokens,
   nickname,
+  rating,
+  leagueKey,
   language,
   avatar,
   authToken,
@@ -80,6 +91,7 @@ export default function Menu({
 
   const hasProfileSettingsChanges = profileLanguage !== language || profileAvatar !== avatar;
   const isRename = !!nickname && profileNickname.trim().length > 0 && nickname.trim().toLowerCase() !== profileNickname.trim().toLowerCase();
+  const leagueLabel = (LEAGUE_META[leagueKey] || LEAGUE_META[DEFAULT_LEAGUE_KEY]).label[language];
 
   const activeAvatarMeta = useMemo(() => AVATAR_META[avatar] || AVATAR_META[DEFAULT_AVATAR], [avatar]);
 
@@ -140,6 +152,8 @@ export default function Menu({
       const nextLanguage = data.language === "en" || data.language === "ru" ? data.language : profileLanguage;
       const nextAvatar = (typeof data.avatar === "string" ? data.avatar : profileAvatar) as AvatarId;
       onProfileUpdate({
+        rating: Number.isFinite(data.rating) ? Number(data.rating) : undefined,
+        leagueKey: typeof data.leagueKey === "string" ? (data.leagueKey as LeagueKey) : undefined,
         language: nextLanguage,
         avatar: nextAvatar
       });
@@ -209,7 +223,9 @@ export default function Menu({
 
       onProfileUpdate({
         nickname: data.nickname || profileNickname.trim(),
-        tokens: typeof data.tokens === "number" ? data.tokens : undefined
+        tokens: typeof data.tokens === "number" ? data.tokens : undefined,
+        rating: Number.isFinite(data.rating) ? Number(data.rating) : undefined,
+        leagueKey: typeof data.leagueKey === "string" ? (data.leagueKey as LeagueKey) : undefined
       });
       setProfileNickname(data.nickname || profileNickname.trim());
       setProfileInfo(t(language, "profile.nicknameSaved"));
@@ -345,6 +361,9 @@ export default function Menu({
         )}
         <div style={{ fontSize: "clamp(18px, 5vw, 22px)", fontWeight: 700 }}>
           {t(language, "menu.tokens")}: {tokens === null ? "—" : tokens}
+        </div>
+        <div style={{ fontSize: "clamp(14px, 3.8vw, 17px)", color: "#e8d9b2", fontWeight: 700 }}>
+          {t(language, "common.league")}: {leagueLabel} · {t(language, "common.rating")}: {rating}
         </div>
         
         {isSearching ? (
@@ -572,6 +591,9 @@ export default function Menu({
               </div>
               <div style={{ fontSize: "13px", opacity: 0.88, marginTop: "6px" }}>
                 {t(language, "menu.tokens")}: <strong>{tokens === null ? "—" : tokens}</strong>
+              </div>
+              <div style={{ fontSize: "13px", opacity: 0.88, marginTop: "6px" }}>
+                {t(language, "common.league")}: <strong>{leagueLabel}</strong> · {t(language, "common.rating")}: <strong>{rating}</strong>
               </div>
             </div>
 
