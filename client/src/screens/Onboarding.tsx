@@ -1,13 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import onboardingBg from '../assets/onboarding_bg.png';
+import { useState } from 'react';
+import menuBg from "../assets/orc-theme/menu_bg.svg";
+import BackgroundLayout from "../components/BackgroundLayout";
 import { t, type GameLanguage } from '../i18n';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://orcain-server.onrender.com';
-const ONBOARDING_ART_WIDTH = 1024;
-const ONBOARDING_ART_HEIGHT = 1536;
-const INPUT_RECT = { x: 132.096, y: 1282.56, width: 456.704, height: 84.48 };
-const CONTINUE_RECT = { x: 613.376, y: 1282.56, width: 293.888, height: 84.48 };
-const ERROR_TOP_Y = 1164.288;
 
 interface OnboardingProps {
   authToken: string;
@@ -15,69 +11,10 @@ interface OnboardingProps {
   language: GameLanguage;
 }
 
-function projectRectOnCover(
-  containerWidth: number,
-  containerHeight: number,
-  artWidth: number,
-  artHeight: number,
-  rect: { x: number; y: number; width: number; height: number }
-) {
-  const scale = Math.max(containerWidth / artWidth, containerHeight / artHeight);
-  const offsetX = (containerWidth - artWidth * scale) / 2;
-  const offsetY = (containerHeight - artHeight * scale) / 2;
-  return {
-    left: offsetX + rect.x * scale,
-    top: offsetY + rect.y * scale,
-    width: rect.width * scale,
-    height: rect.height * scale,
-    scale,
-    offsetX,
-    offsetY
-  };
-}
-
 export default function Onboarding({ authToken, onNicknameSet, language }: OnboardingProps) {
   const [nickname, setNickname] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const frameRef = useRef<HTMLDivElement | null>(null);
-  const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
-
-  useEffect(() => {
-    const node = frameRef.current;
-    if (!node) return;
-
-    const update = () => {
-      const rect = node.getBoundingClientRect();
-      setFrameSize({
-        width: rect.width,
-        height: rect.height
-      });
-    };
-
-    update();
-
-    const observer = new ResizeObserver(update);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-
-  const inputRect = useMemo(() => {
-    if (!frameSize.width || !frameSize.height) return { left: 0, top: 0, width: 0, height: 0, scale: 1, offsetX: 0, offsetY: 0 };
-    return projectRectOnCover(frameSize.width, frameSize.height, ONBOARDING_ART_WIDTH, ONBOARDING_ART_HEIGHT, INPUT_RECT);
-  }, [frameSize.width, frameSize.height]);
-
-  const continueRect = useMemo(() => {
-    if (!frameSize.width || !frameSize.height) return { left: 0, top: 0, width: 0, height: 0, scale: 1, offsetX: 0, offsetY: 0 };
-    return projectRectOnCover(frameSize.width, frameSize.height, ONBOARDING_ART_WIDTH, ONBOARDING_ART_HEIGHT, CONTINUE_RECT);
-  }, [frameSize.width, frameSize.height]);
-
-  const errorTop = useMemo(() => {
-    if (!frameSize.width || !frameSize.height) return 0;
-    const scale = Math.max(frameSize.width / ONBOARDING_ART_WIDTH, frameSize.height / ONBOARDING_ART_HEIGHT);
-    const offsetY = (frameSize.height - ONBOARDING_ART_HEIGHT * scale) / 2;
-    return offsetY + ERROR_TOP_Y * scale;
-  }, [frameSize.width, frameSize.height]);
 
   const validateNickname = (value: string): string | null => {
     const trimmed = value.trim();
@@ -139,45 +76,24 @@ export default function Onboarding({ authToken, onNicknameSet, language }: Onboa
     }
   };
 
+  // Slightly higher overlay for input readability (still subtle, art stays visible)
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 60,
-        display: 'flex',
-        alignItems: 'center',
+    <BackgroundLayout bgImage={menuBg} overlay={0.24}>
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center', 
         justifyContent: 'center',
-        background: '#11253d'
-      }}
-    >
-      <div
-        ref={frameRef}
-        style={{
-          position: 'relative',
-          width: '100vw',
-          height: 'var(--app-height, 100vh)',
-          overflow: 'hidden'
-        }}
-      >
-        <img
-          src={onboardingBg}
-          alt="Onboarding background"
-          style={{
-            display: 'block',
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover'
-          }}
-        />
-
-        <form
-          onSubmit={handleSubmit}
-          style={{
-            position: 'absolute',
-            inset: 0
-          }}
-        >
+        gap: '20px',
+        padding: '20px',
+        width: '100%',
+        maxWidth: '500px'
+      }}>
+        <h1 style={{ fontSize: '36px', margin: 0 }}>{t(language, 'onboarding.title')}</h1>
+        <p style={{ fontSize: '18px', color: '#666', textAlign: 'center', maxWidth: '400px' }}>
+          {t(language, 'onboarding.subtitle')}
+        </p>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px', width: '100%', maxWidth: '400px' }}>
           <input
             type="text"
             value={nickname}
@@ -188,68 +104,38 @@ export default function Onboarding({ authToken, onNicknameSet, language }: Onboa
             placeholder={t(language, 'onboarding.placeholder')}
             disabled={loading}
             style={{
-              position: 'absolute',
-              left: `${inputRect.left}px`,
-              top: `${inputRect.top}px`,
-              width: `${inputRect.width}px`,
-              height: `${inputRect.height}px`,
-              border: 'none',
-              borderRadius: `${Math.max(10, inputRect.height * 0.18)}px`,
+              padding: '12px',
+              fontSize: '16px',
+              border: '2px solid #333',
+              borderRadius: '8px',
               outline: 'none',
-              backgroundColor: 'transparent',
-              color: '#4e4e55',
-              fontSize: `${Math.max(14, Math.min(30, inputRect.height * 0.45))}px`,
-              fontWeight: 700,
-              letterSpacing: '0.02em',
-              textTransform: 'uppercase',
-              padding: `0 ${Math.max(10, inputRect.width * 0.042)}px`,
-              fontFamily: 'inherit'
+              backgroundColor: 'rgba(255, 255, 255, 0.95)'
             }}
             maxLength={16}
-            autoCapitalize="characters"
-            autoCorrect="off"
           />
+          {error && (
+            <div style={{ color: 'red', fontSize: '14px', textAlign: 'center' }}>
+              {error}
+            </div>
+          )}
           <button
             type="submit"
             disabled={loading || nickname.trim().length < 3}
             style={{
-              position: 'absolute',
-              left: `${continueRect.left}px`,
-              top: `${continueRect.top}px`,
-              width: `${continueRect.width}px`,
-              height: `${continueRect.height}px`,
-              border: 'none',
-              borderRadius: `${Math.max(10, continueRect.height * 0.18)}px`,
-              background: 'transparent',
+              padding: '12px 24px',
+              fontSize: '18px',
               cursor: loading || nickname.trim().length < 3 ? 'not-allowed' : 'pointer',
               opacity: loading || nickname.trim().length < 3 ? 0.7 : 1,
-              color: 'transparent'
+              borderRadius: '8px',
+              border: 'none',
+              backgroundColor: '#646cff',
+              color: 'white'
             }}
-            aria-label={loading ? t(language, 'onboarding.saving') : t(language, 'onboarding.saveAndContinue')}
-            title={loading ? t(language, 'onboarding.saving') : t(language, 'onboarding.saveAndContinue')}
           >
-            {' '}
+            {loading ? t(language, 'onboarding.saving') : t(language, 'onboarding.saveAndContinue')}
           </button>
-
-          {error && (
-            <div
-              style={{
-                position: 'absolute',
-                left: `${Math.max(12, inputRect.left * 0.65)}px`,
-                right: `${Math.max(12, inputRect.left * 0.65)}px`,
-                top: `${errorTop}px`,
-                textAlign: 'center',
-                color: '#b72929',
-                fontWeight: 700,
-                fontSize: `${Math.max(12, Math.min(18, inputRect.height * 0.27))}px`,
-                textShadow: '0 1px 0 rgba(255,255,255,0.88)'
-              }}
-            >
-              {error}
-            </div>
-          )}
         </form>
       </div>
-    </div>
+    </BackgroundLayout>
   );
 }

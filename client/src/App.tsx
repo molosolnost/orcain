@@ -12,7 +12,6 @@ import TransitionShield from './components/TransitionShield';
 import { DEFAULT_AVATAR, DEFAULT_LANGUAGE, type AvatarId, type GameLanguage } from './i18n';
 import menuBg from './assets/orc-theme/menu_bg.svg';
 import orcainLogo from './assets/orcain_logo.webp';
-import startupBg from './assets/startup_bg.png';
 import pvpButtonImage from './assets/orc-theme/btn_pvp.svg';
 import pveButtonImage from './assets/orc-theme/btn_pve.svg';
 import tutorialButtonImage from './assets/orc-theme/btn_tutorial.svg';
@@ -27,11 +26,7 @@ type BootState = 'checking' | 'telegram_auth' | 'ready' | 'error';
 const BUILD_ID = import.meta.env.VITE_BUILD_ID || `dev-${Date.now()}`;
 const DEBUG_MODE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
 const TUTORIAL_COMPLETED_KEY = 'orcain_tutorial_completed_v1';
-const STARTUP_ART_WIDTH = 1024;
-const STARTUP_ART_HEIGHT = 1536;
-const STARTUP_BAR_RECT = { x: 414.208, y: 1344.768, width: 373.248, height: 62.208 };
 const PRELOAD_ASSETS = [
-  startupBg,
   menuBg,
   battleBgImage,
   orcainLogo,
@@ -72,87 +67,52 @@ function preloadImage(src: string, timeoutMs = 8000): Promise<boolean> {
   });
 }
 
-function projectRectOnCover(
-  containerWidth: number,
-  containerHeight: number,
-  artWidth: number,
-  artHeight: number,
-  rect: { x: number; y: number; width: number; height: number }
-) {
-  const scale = Math.max(containerWidth / artWidth, containerHeight / artHeight);
-  const offsetX = (containerWidth - artWidth * scale) / 2;
-  const offsetY = (containerHeight - artHeight * scale) / 2;
-  return {
-    left: offsetX + rect.x * scale,
-    top: offsetY + rect.y * scale,
-    width: rect.width * scale,
-    height: rect.height * scale
-  };
-}
-
 function StartupLoader({ progress, assetsReady, bootState }: { progress: number; assetsReady: boolean; bootState: BootState }) {
   const bootResolved = bootState === 'ready' || bootState === 'error';
-  const visualProgress = assetsReady ? 100 : Math.max(6, Math.min(100, progress));
-  const frameRef = useRef<HTMLDivElement | null>(null);
-  const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
-
-  useEffect(() => {
-    const node = frameRef.current;
-    if (!node) return;
-
-    const update = () => {
-      const rect = node.getBoundingClientRect();
-      setFrameSize({
-        width: rect.width,
-        height: rect.height
-      });
-    };
-
-    update();
-
-    const observer = new ResizeObserver(update);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-
-  const barRect = useMemo(() => {
-    if (!frameSize.width || !frameSize.height) {
-      return { left: 0, top: 0, width: 0, height: 0 };
-    }
-    return projectRectOnCover(
-      frameSize.width,
-      frameSize.height,
-      STARTUP_ART_WIDTH,
-      STARTUP_ART_HEIGHT,
-      STARTUP_BAR_RECT
-    );
-  }, [frameSize.width, frameSize.height]);
-
   const statusText = !assetsReady
-    ? 'Loading game files to your device...'
+    ? `Loading resources... ${progress}%`
     : !bootResolved
     ? 'Authenticating...'
     : 'Preparing game...';
 
   return (
-    <div className="startup-loader" role="status" aria-live="polite">
-      <div className="startup-loader__artFrame" ref={frameRef}>
-        <img className="startup-loader__art" src={startupBg} alt="" />
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'radial-gradient(circle at 50% 30%, #323232 0%, #161616 55%, #0e0e0e 100%)',
+        color: '#fff',
+        zIndex: 20000,
+        padding: '24px'
+      }}
+    >
+      <div style={{ width: 'min(420px, 92vw)', textAlign: 'center' }}>
+        <div style={{ fontSize: 'clamp(28px, 7vw, 42px)', fontWeight: 800, letterSpacing: '0.05em' }}>
+          ORCAIN
+        </div>
+        <div style={{ marginTop: '10px', fontSize: '14px', color: '#d0d0d0' }}>{statusText}</div>
         <div
-          className="startup-loader__barOverlay"
-          aria-hidden="true"
           style={{
-            left: `${barRect.left}px`,
-            top: `${barRect.top}px`,
-            width: `${barRect.width}px`,
-            height: `${barRect.height}px`
+            marginTop: '18px',
+            width: '100%',
+            height: '10px',
+            borderRadius: '999px',
+            backgroundColor: 'rgba(255,255,255,0.15)',
+            overflow: 'hidden',
+            boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.25)'
           }}
         >
-          <div className="startup-loader__barFill" style={{ width: `${visualProgress}%` }} />
-        </div>
-        <div className="startup-loader__meta">
-          <span>{statusText}</span>
-          <span>{visualProgress}%</span>
+          <div
+            style={{
+              width: `${Math.max(8, progress)}%`,
+              height: '100%',
+              background: 'linear-gradient(90deg, #ffb300 0%, #ff8f00 50%, #ff6f00 100%)',
+              transition: 'width 220ms ease'
+            }}
+          />
         </div>
       </div>
     </div>
