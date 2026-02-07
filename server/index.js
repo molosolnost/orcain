@@ -203,6 +203,15 @@ function createMatch(player1Socket, player2Socket) {
     throw new Error('Cannot create match: not enough tokens (p2)');
   }
 
+  db.logAccountEvent(acc1AccountId, 'pvp_match_started', {
+    matchId,
+    opponentAccountId: acc2AccountId
+  });
+  db.logAccountEvent(acc2AccountId, 'pvp_match_started', {
+    matchId,
+    opponentAccountId: acc1AccountId
+  });
+
   // Сохраняем матч по ID и по socketId
   matchesById.set(matchId, match);
   matchIdBySocket.set(player1Socket.id, matchId);
@@ -402,6 +411,38 @@ function getSocketIdBySessionId(sessionId) {
 
 function getAccountIdBySessionId(sessionId) {
   return accountIdBySessionId.get(sessionId);
+}
+
+function getPersistentAccountIdBySessionId(sessionId) {
+  const accountId = getAccountIdBySessionId(sessionId);
+  if (!accountId || accountId === BOT_ACCOUNT_ID) return null;
+  return accountId;
+}
+
+function logSessionEvent(sessionId, eventType, payload = {}) {
+  const accountId = getPersistentAccountIdBySessionId(sessionId);
+  if (!accountId) return;
+  db.logAccountEvent(accountId, eventType, payload);
+}
+
+function persistMatchResult(match, { winnerSessionId = null, loserSessionId = null, reason = 'normal' } = {}) {
+  if (!match?.id || !match?.sessions || match.sessions.length < 2) return;
+
+  const player1AccountId = getPersistentAccountIdBySessionId(match.sessions[0]);
+  const player2AccountId = getPersistentAccountIdBySessionId(match.sessions[1]);
+  const winnerAccountId = winnerSessionId ? getPersistentAccountIdBySessionId(winnerSessionId) : null;
+  const loserAccountId = loserSessionId ? getPersistentAccountIdBySessionId(loserSessionId) : null;
+
+  db.recordMatchResult({
+    matchId: match.id,
+    mode: match.mode || 'PVP',
+    reason: reason || 'normal',
+    winnerAccountId,
+    loserAccountId,
+    player1AccountId,
+    player2AccountId,
+    roundIndex: Number.isFinite(match.roundIndex) ? match.roundIndex : null
+  });
 }
 
 // Функции для работы с токенами через SQLite (обёртки для совместимости)
@@ -851,6 +892,7 @@ function endMatchBothAfk(match) {
   });
   
   logMatchEnd(match, 'timeout', null, null); // Both lose, no winner
+  persistMatchResult(match, { reason: 'timeout' });
   
   // Очистка player data
   p1Data.matchId = null;
@@ -1542,6 +1584,7 @@ function endMatchForfeit(match, loserSessionId, winnerSessionId, reason) {
   if (match.mode === 'PVP') economy.settleMatchPayout(match, reason || 'normal', winnerAccountId === BOT_ACCOUNT_ID ? null : winnerAccountId);
 
   logMatchEnd(match, reason, winnerSessionId, loserSessionId);
+  persistMatchResult(match, { winnerSessionId, loserSessionId, reason: reason || 'normal' });
   
   // Получаем токены по accountId для отправки
   const acc1AccountId = getAccountIdBySessionId(match.sessions[0]);
@@ -1676,6 +1719,7 @@ function endMatch(match, reason = 'normal') {
   if (match.mode === 'PVP') economy.settleMatchPayout(match, reason || 'normal', winnerAccountId === BOT_ACCOUNT_ID ? null : winnerAccountId);
 
   logMatchEnd(match, reason, winnerSessionId, loserSessionId);
+  persistMatchResult(match, { winnerSessionId, loserSessionId, reason: reason || 'normal' });
   
   // Получаем токены по accountId для отправки
   const acc1AccountId = getAccountIdBySessionId(match.sessions[0]);
@@ -1840,6 +1884,7 @@ io.on('connection', (socket) => {
     sessionIdBySocket.set(socket.id, sessionId);
     socketBySessionId.set(sessionId, socket.id);
     accountIdBySessionId.set(sessionId, accountId);
+    logSessionEvent(sessionId, 'session_hello', { socketId: socket.id });
     
     // Если был активен disconnect timer для sessionId -> clearTimeout
     const existingTimer = disconnectTimerBySessionId.get(sessionId);
@@ -1950,6 +1995,7 @@ io.on('connection', (socket) => {
     }
 
     queue.push(sessionId);
+    logSessionEvent(sessionId, 'queue_joined', { mode: 'PVP' });
 
     socket.emit('queue_ok', {
       tokens: tokens
@@ -2028,8 +2074,10 @@ io.on('connection', (socket) => {
     if (queueIndex !== -1) {
       queue.splice(queueIndex, 1);
       console.log(`[QUEUE_LEAVE] sid=${sessionId} (was in queue)`);
+      logSessionEvent(sessionId, 'queue_left', { mode: 'PVP', wasInQueue: true });
     } else {
       console.log(`[QUEUE_LEAVE] sid=${sessionId} (was not in queue)`);
+      logSessionEvent(sessionId, 'queue_left', { mode: 'PVP', wasInQueue: false });
     }
     
     socket.emit('queue_left');
@@ -2057,6 +2105,7 @@ io.on('connection', (socket) => {
     try {
       // Create PvE match (FREE - no token deduction)
       const match = createPvEMatch(socket);
+      logSessionEvent(sessionId, 'pve_match_started', { matchId: match.id });
       
       const playerData = getPlayerData(sessionId);
       const botData = getPlayerData(BOT_SESSION_ID);
@@ -2284,13 +2333,16 @@ app.get('/healthz', (req, res) => {
 app.post('/auth/guest', (req, res) => {
   try {
     const account = db.createGuestAccount();
+    const persisted = db.getAccountById(account.accountId);
     res.json({
       accountId: account.accountId,
       authToken: account.authToken,
       tokens: account.tokens,
       nickname: account.nickname || null,
       avatar: account.avatar || 'orc',
-      language: account.language || 'ru'
+      language: account.language || 'ru',
+      telegramUserId: persisted?.telegramUserId || null,
+      stats: persisted?.stats || db.getAccountStats(account.accountId)
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to create guest account' });
@@ -2395,6 +2447,7 @@ app.post('/auth/telegram', (req, res) => {
     }
     
     const account = db.getOrCreateTelegramAccount(user.id);
+    const persisted = db.getAccountById(account.accountId);
     
     if (!account || !account.accountId || !account.authToken) {
       console.error('[auth/telegram] CRITICAL: getOrCreateTelegramAccount returned invalid account:', account);
@@ -2412,7 +2465,9 @@ app.post('/auth/telegram', (req, res) => {
       tokens: account.tokens,
       nickname: account.nickname || null,
       avatar: account.avatar || 'orc',
-      language: account.language || 'ru'
+      language: account.language || 'ru',
+      telegramUserId: persisted?.telegramUserId || user.id,
+      stats: persisted?.stats || db.getAccountStats(account.accountId)
     });
   } catch (error) {
     console.error('[auth/telegram] exception:', error);
@@ -2442,7 +2497,9 @@ app.get('/auth/me', (req, res) => {
     nickname: account.nickname || null,
     avatar: account.avatar || 'orc',
     language: account.language || 'ru',
-    nicknameChangeCost: NICKNAME_CHANGE_COST
+    nicknameChangeCost: NICKNAME_CHANGE_COST,
+    telegramUserId: account.telegramUserId || null,
+    stats: account.stats || db.getAccountStats(account.accountId)
   });
 });
 
@@ -2578,7 +2635,7 @@ app.post('/account/nickname', (req, res) => {
   try {
     let charged = false;
     if (isRename) {
-      const chargedOk = db.deductTokens(account.accountId, NICKNAME_CHANGE_COST);
+      const chargedOk = db.deductTokens(account.accountId, NICKNAME_CHANGE_COST, 'nickname_change');
       if (!chargedOk) {
         return res.status(402).json({
           error: 'not_enough_tokens',

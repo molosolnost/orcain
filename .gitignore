@@ -26,3 +26,6 @@ Thumbs.db
 
 # Database (optional - можно включить если нужна тестовая БД в репо)
 server/data/*.sqlite
+server/data/*.sqlite-shm
+server/data/*.sqlite-wal
+server/data/*.sqlite-journal

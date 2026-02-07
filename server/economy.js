@@ -31,7 +31,7 @@ function chargePvpStart(accountId, match) {
     return true;
   }
   const before = db.getTokens(accountId);
-  const ok = db.deductTokens(accountId, COST_PVP_START);
+  const ok = db.deductTokens(accountId, COST_PVP_START, 'pvp_start');
   if (!ok) return false;
   const after = db.getTokens(accountId);
   match.econCharged[accountId] = true;
@@ -56,7 +56,7 @@ function settleMatchPayout(match, reason, winnerAccountId) {
     return;
   }
   if (winnerAccountId && match.pot > 0) {
-    db.addTokens(winnerAccountId, match.pot);
+    db.addTokens(winnerAccountId, match.pot, `pvp_payout:${reason || 'normal'}`);
     console.log(`[ECON_SETTLE] matchId=${match.id} reason=${reason} pot=${match.pot} winnerAcc=${winnerAccountId} action=paid`);
   }
 }
