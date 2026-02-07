@@ -3,9 +3,9 @@ import { socketManager } from '../net/socket';
 import type { CardId, MatchFoundPayload, PrepStartPayload, StepRevealPayload, MatchEndPayload } from '../net/types';
 import { lockAppHeight, unlockAppHeight } from '../lib/appViewport';
 import battleBgImage from '../assets/orc-theme/battle_bg.svg';
-import cardAttackImage192 from '../assets/orc-theme/card_attack_user_192.jpg';
-import cardAttackImage288 from '../assets/orc-theme/card_attack_user_288.jpg';
-import cardAttackImage384 from '../assets/orc-theme/card_attack_user_384.jpg';
+import cardAttackImage192 from '../assets/orc-theme/card_attack_user_192.webp';
+import cardAttackImage288 from '../assets/orc-theme/card_attack_user_288.webp';
+import cardAttackImage384 from '../assets/orc-theme/card_attack_user_384.webp';
 import cardDefenseImage from '../assets/orc-theme/card_defense.svg';
 import cardHealImage from '../assets/orc-theme/card_heal.svg';
 import cardCounterImage from '../assets/orc-theme/card_counter.svg';
@@ -1368,6 +1368,7 @@ export default function Battle({
           draggable={false}
           decoding="async"
           style={{
+            display: 'block',
             width: '100%',
             height: '100%',
             objectFit: 'cover',
