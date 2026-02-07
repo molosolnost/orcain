@@ -1376,8 +1376,6 @@ function startPrepPhase(match) {
 
   // INVARIANT: match_found → prep_start → (steps) → match_end. Emit prep_start BEFORE
   // submitBotDraft/prepTimer so no path can reach match_end without at least one prep_start.
-  // PvE round 1 is also emitted in pve_start before startPrepPhase; we emit again here so
-  // the client is guaranteed to get at least one (duplicate for r1 is acceptable).
   emitToBoth(match, 'prep_start', (socketId) => {
       const sessionId = getSessionIdBySocket(socketId);
       const accountId = getAccountIdBySessionId(sessionId);
@@ -2068,7 +2066,6 @@ io.on('connection', (socket) => {
       
       // Get hands
       const playerHand = match.hands.get(sessionId) || [];
-      const botHand = match.hands.get(BOT_SESSION_ID) || [];
       
       // Get nicknames
       const playerNickname = playerAccountId ? (db.getNickname(playerAccountId) || null) : null;
@@ -2087,24 +2084,7 @@ io.on('connection', (socket) => {
         yourHand: playerHand
       });
 
-      // PvE INVARIANT: prep_start MUST be emitted after match_found and BEFORE any match_end.
-      // Emit first prep_start here so it is never skipped (e.g. if startPrepPhase threw before its emit).
-      const firstPrepDeadline = Date.now() + PREP_MS;
-      socket.emit('prep_start', {
-        matchId: match.id,
-        roundIndex: 1,
-        suddenDeath: false,
-        deadlineTs: firstPrepDeadline,
-        yourHp: playerData.hp,
-        oppHp: botData.hp,
-        pot: match.pot,
-        yourTokens: playerTokens,
-        yourHand: playerHand,
-        yourNickname: playerNickname,
-        oppNickname: BOT_NICKNAME
-      });
-
-      // Start first round (startPrepPhase will also emit prep_start, set prepDeadline, prepTimer, submitBotDraft)
+      // Start first round (startPrepPhase emits prep_start, sets prepDeadline/prepTimer, and submits bot draft)
       startPrepPhase(match);
     } catch (error) {
       console.error(`[PVE_START_ERROR] sessionId=${sessionId} error=${error.message}`);

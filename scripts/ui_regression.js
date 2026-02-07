@@ -108,19 +108,23 @@ async function runProfile(browser, profile) {
   await page.goto(CLIENT_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(300);
 
-  await page.getByRole('button', { name: /Create account/i }).click();
-  await page.waitForTimeout(1200);
-
-  const nicknameField = page.getByPlaceholder(/Enter your nickname/i);
-  if (await nicknameField.isVisible().catch(() => false)) {
-    await nicknameField.fill(`ux${Date.now().toString().slice(-6)}`);
-    await page.getByRole('button', { name: /Save & Continue/i }).click();
+  const createAccountButton = page.getByRole('button', { name: /create account|создать аккаунт/i });
+  if (await createAccountButton.isVisible().catch(() => false)) {
+    await createAccountButton.click();
     await page.waitForTimeout(1200);
   }
 
-  await page.getByRole('button', { name: /Start PvE Training/i }).waitFor({ timeout: 12000 });
+  const nicknameField = page.getByPlaceholder(/enter your nickname|введите никнейм/i);
+  if (await nicknameField.isVisible().catch(() => false)) {
+    await nicknameField.fill(`ux${Date.now().toString().slice(-6)}`);
+    await page.getByRole('button', { name: /save & continue|сохранить и продолжить/i }).click();
+    await page.waitForTimeout(1200);
+  }
+
+  const startPveButton = page.getByRole('button', { name: /start pve training|start pve|начать pve|pve тренировка/i });
+  await startPveButton.waitFor({ timeout: 12000 });
   await assertNoOverflow(page, profile.name);
-  await page.getByRole('button', { name: /Start PvE Training/i }).click();
+  await startPveButton.click();
 
   await waitForBattle(page);
   await page.getByRole('button', { name: 'Confirm' }).waitFor({ timeout: 12000 });
