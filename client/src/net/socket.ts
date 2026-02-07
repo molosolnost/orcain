@@ -114,7 +114,11 @@ class SocketManager {
   }
 
   // Remove listeners
-  off(event: string) {
+  off(event: string, callback?: (...args: any[]) => void) {
+    if (callback) {
+      this.socket?.off(event, callback);
+      return;
+    }
     this.socket?.off(event);
   }
 }

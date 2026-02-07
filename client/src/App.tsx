@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { socketManager } from './net/socket';
 import { getAuthToken, getSessionId, clearAuth, getAccountId } from './net/ids';
-import type { MatchEndPayload, PrepStartPayload } from './net/types';
+import type { HelloOkPayload, MatchEndPayload, PrepStartPayload } from './net/types';
 import { initAppViewport, lockAppHeightFor } from './lib/appViewport';
 import { startViewportStabilizer } from './lib/viewportStabilizer';
 import Login from './screens/Login';
@@ -194,6 +194,11 @@ function App() {
   });
   const [transitionShieldVisible, setTransitionShieldVisible] = useState(false);
   const transitionUnlockRef = useRef<(() => void) | null>(null);
+  const screenRef = useRef<Screen>('login');
+  const nicknameRef = useRef<string | null>(null);
+  const isSearchingRef = useRef(false);
+  const currentMatchIdRef = useRef<string | null>(null);
+  const matchModeRef = useRef<'pvp' | 'pve' | null>(null);
   
   // Boot state machine
   const [bootState, setBootState] = useState<BootState>('checking');
@@ -245,6 +250,14 @@ function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    screenRef.current = screen;
+    nicknameRef.current = nickname;
+    isSearchingRef.current = isSearching;
+    currentMatchIdRef.current = currentMatchId;
+    matchModeRef.current = matchMode;
+  }, [screen, nickname, isSearching, currentMatchId, matchMode]);
 
   const startBattleTransition = () => {
     setTransitionShieldVisible(true);
@@ -409,23 +422,15 @@ function App() {
     const sendHello = () => {
       socketManager.hello(sessionId, authToken);
     };
-    
-    socket.on('connect', sendHello);
-    
-    // Если уже подключен, отправляем сразу
-    if (socket.connected) {
-      sendHello();
-    }
-    
-    // Обработка hello_ok - сигнал успешной авторизации
-    socketManager.onHelloOk((payload) => {
+
+    const handleHelloOk = (payload: HelloOkPayload) => {
       setConnected(true);
-      
+
       // Обновляем nickname если пришёл
       if (payload.nickname !== undefined) {
         setNickname(payload.nickname || null);
       }
-      
+
       // Обновляем tokens
       if (payload.tokens !== undefined) {
         setTokens(prev => (prev === null ? payload.tokens : prev));
@@ -438,23 +443,24 @@ function App() {
       if (payload.avatar) {
         setAvatar(payload.avatar);
       }
-      
+
       // Если nickname пустой и мы не в onboarding - показываем onboarding
-      const currentNick = payload.nickname !== undefined ? payload.nickname : nickname;
+      const currentNick = payload.nickname !== undefined ? payload.nickname : nicknameRef.current;
+      const activeScreen = screenRef.current;
       if (!currentNick || currentNick.trim().length === 0) {
-        if (screen !== 'onboarding' && screen !== 'battle') {
+        if (activeScreen !== 'onboarding' && activeScreen !== 'battle') {
           setScreen('onboarding');
         }
       } else {
         // Если nickname есть и мы не в battle - показываем menu
-        if (screen !== 'battle') {
+        if (activeScreen !== 'battle') {
           setScreen('menu');
         }
       }
-    });
-    
+    };
+
     // Обработка ошибок авторизации
-    socketManager.onErrorMsg((payload) => {
+    const handleErrorMsg = (payload: { message: string; code?: string }) => {
       if (payload.message === 'Unauthorized') {
         clearAuth();
         setAuthToken(null);
@@ -465,107 +471,155 @@ function App() {
         setScreen('login');
         setConnected(false);
         setTokens(null);
+        isSearchingRef.current = false;
         setIsSearching(false);
         stopBattleTransition();
-      } else if (isSearching) {
+      } else if (isSearchingRef.current) {
+        isSearchingRef.current = false;
         setIsSearching(false);
         stopBattleTransition();
         alert(payload.message);
       }
-    });
-    
+    };
+
     // Обработка sync_state для reconnect
-    socketManager.onSyncState((payload) => {
+    const handleSyncState = (payload: {
+      inMatch: boolean;
+      matchId?: string;
+      phase?: string;
+      roundIndex?: number;
+      suddenDeath?: boolean;
+      yourHp?: number;
+      oppHp?: number;
+      deadlineTs?: number;
+    }) => {
       if (payload.inMatch && payload.matchId) {
         // Игрок в матче, переключаемся на экран боя
         setScreen('battle');
       }
-    });
+    };
 
-    socketManager.onQueueOk((payload) => {
+    const handleQueueOk = (payload?: { tokens: number }) => {
       if (payload?.tokens !== undefined) {
         setTokens(payload.tokens);
       }
-    });
+    };
 
-    socketManager.onQueueLeft(() => {
+    const handleQueueLeft = () => {
       // Если уже в battle (матч нашёлся раньше отмены) - игнорируем
-      if (screen === 'battle') {
+      if (screenRef.current === 'battle') {
         return;
       }
+      isSearchingRef.current = false;
       setIsSearching(false);
       stopBattleTransition();
-    });
+    };
 
-    socketManager.onMatchFound((payload) => {
+    const handleMatchFound = (payload: { matchId?: string; pot: number; yourTokens?: number }) => {
       startBattleTransition();
       if (payload.matchId) {
+        currentMatchIdRef.current = payload.matchId;
         setCurrentMatchId(payload.matchId);
       }
       // Infer matchMode from pot (PvE has pot=0)
-      if (payload.pot === 0 && matchMode === null) {
+      if (payload.pot === 0 && matchModeRef.current === null) {
+        matchModeRef.current = 'pve';
         setMatchMode('pve');
-      } else if (payload.pot > 0 && matchMode === null) {
+      } else if (payload.pot > 0 && matchModeRef.current === null) {
+        matchModeRef.current = 'pvp';
         setMatchMode('pvp');
       }
       setMatchEndPayload(null);
       setLastPrepStart(null);
+      isSearchingRef.current = false;
       setIsSearching(false);
       setScreen('battle');
       if (payload.yourTokens !== undefined) {
         setTokens(payload.yourTokens);
       }
       // Nicknames будут переданы в Battle через prep_start или match_found payload
-    });
+    };
 
-    socketManager.onPrepStart((payload: PrepStartPayload) => {
+    const handlePrepStart = (payload: PrepStartPayload) => {
+      const activeScreen = screenRef.current;
+      const activeMatchId = currentMatchIdRef.current;
       // DEBUG: логируем получение prep_start
       if (DEBUG_MODE) {
-        console.log(`[PREP_START_RECEIVED] round=${payload.roundIndex} deadlineTs=${payload.deadlineTs} yourNickname=${payload.yourNickname || '<null>'} oppNickname=${payload.oppNickname || '<null>'} currentScreen=${screen} currentMatchId=${currentMatchId}`);
+        console.log(`[PREP_START_RECEIVED] round=${payload.roundIndex} deadlineTs=${payload.deadlineTs} yourNickname=${payload.yourNickname || '<null>'} oppNickname=${payload.oppNickname || '<null>'} currentScreen=${activeScreen} currentMatchId=${activeMatchId}`);
       }
-      
+
       // Устанавливаем currentMatchId если его еще нет (окно пропустило match_found)
-      if (currentMatchId === null && payload.matchId) {
+      if (activeMatchId === null && payload.matchId) {
+        currentMatchIdRef.current = payload.matchId;
         setCurrentMatchId(payload.matchId);
       }
-      
+
       // Игнорируем prep_start от старых матчей
-      if (payload.matchId && currentMatchId !== null && payload.matchId !== currentMatchId) {
+      if (payload.matchId && activeMatchId !== null && payload.matchId !== activeMatchId) {
         if (DEBUG_MODE) {
-          console.log(`[PREP_START_IGNORED] matchId mismatch: payload=${payload.matchId} current=${currentMatchId}`);
+          console.log(`[PREP_START_IGNORED] matchId mismatch: payload=${payload.matchId} current=${activeMatchId}`);
         }
         return;
       }
-      
+
       // КРИТИЧНО: ВСЕГДА сохраняем lastPrepStart, не только когда screen === 'battle'
       // Это гарантирует, что данные будут доступны в Battle сразу после монтирования
       // Race condition: prep_start может прийти до того, как screen установлен в 'battle'
       setLastPrepStart(payload);
-      
+
       // Если мы еще не в battle, но получили prep_start - переключаемся на battle
       // (это может быть если match_found был пропущен)
-      if (screen !== 'battle' && payload.matchId) {
+      if (activeScreen !== 'battle' && payload.matchId) {
         setScreen('battle');
       }
-    });
+    };
 
-    socketManager.onMatchEnd((payload: MatchEndPayload) => {
+    const handleMatchEnd = (payload: MatchEndPayload) => {
+      const activeMatchId = currentMatchIdRef.current;
+      const activeScreen = screenRef.current;
       // Игнорируем match_end от старых матчей
-      if (payload.matchId && currentMatchId !== null && payload.matchId !== currentMatchId) {
+      if (payload.matchId && activeMatchId !== null && payload.matchId !== activeMatchId) {
         return;
       }
-      
+
       if (payload.yourTokens !== undefined) {
         setTokens(payload.yourTokens);
       }
       setMatchEndPayload(payload);
-      if (screen !== 'battle') {
+      if (activeScreen !== 'battle') {
         setScreen('battle');
       }
-    });
+    };
+
+    socket.on('connect', sendHello);
+    socketManager.onHelloOk(handleHelloOk);
+    socketManager.onErrorMsg(handleErrorMsg);
+    socketManager.onSyncState(handleSyncState);
+    socketManager.onQueueOk(handleQueueOk);
+    socketManager.onQueueLeft(handleQueueLeft);
+    socketManager.onMatchFound(handleMatchFound);
+    socketManager.onPrepStart(handlePrepStart);
+    socketManager.onMatchEnd(handleMatchEnd);
+
+    // Если уже подключен, отправляем сразу
+    if (socket.connected) {
+      sendHello();
+    }
+
+    return () => {
+      socket.off('connect', sendHello);
+      socketManager.off('hello_ok', handleHelloOk);
+      socketManager.off('error_msg', handleErrorMsg);
+      socketManager.off('sync_state', handleSyncState);
+      socketManager.off('queue_ok', handleQueueOk);
+      socketManager.off('queue_left', handleQueueLeft);
+      socketManager.off('match_found', handleMatchFound);
+      socketManager.off('prep_start', handlePrepStart);
+      socketManager.off('match_end', handleMatchEnd);
+    };
 
     // Сокет должен жить всю сессию вкладки, не отключаем при cleanup
-  }, [authToken, currentMatchId, nickname, screen]);
+  }, [authToken]);
 
   const handleLoginSuccess = ({
     authToken: token,
@@ -617,7 +671,9 @@ function App() {
   const handleStartBattle = () => {
     if (!connected) return;
     setTutorialMode(false);
+    matchModeRef.current = 'pvp';
     setMatchMode('pvp');
+    isSearchingRef.current = true;
     setIsSearching(true);
     socketManager.queueJoin();
   };
@@ -625,6 +681,7 @@ function App() {
   const handleStartPvE = () => {
     if (!connected) return;
     setTutorialMode(false);
+    matchModeRef.current = 'pve';
     setMatchMode('pve');
     // PvE is immediate - no queue, no tokens
     socketManager.pveStart();
@@ -634,25 +691,32 @@ function App() {
   const handleStartTutorial = () => {
     startBattleTransition();
     setTutorialMode(true);
+    matchModeRef.current = null;
     setMatchMode(null);
+    isSearchingRef.current = false;
     setIsSearching(false);
     setMatchEndPayload(null);
     setLastPrepStart(null);
+    currentMatchIdRef.current = null;
     setCurrentMatchId(null);
     setScreen('battle');
   };
 
   const handleCancelSearch = () => {
+    isSearchingRef.current = false;
     socketManager.queueLeave();
     stopBattleTransition();
   };
 
   const handleBackToMenu = () => {
     stopBattleTransition();
+    isSearchingRef.current = false;
+    matchModeRef.current = null;
     setMatchMode(null);
     setTutorialMode(false);
     setMatchEndPayload(null);
     setLastPrepStart(null);
+    currentMatchIdRef.current = null;
     setCurrentMatchId(null);
     setScreen('menu');
   };
@@ -660,6 +724,7 @@ function App() {
   const handlePlayAgain = () => {
     setMatchEndPayload(null);
     setLastPrepStart(null);
+    currentMatchIdRef.current = null;
     setCurrentMatchId(null);
     if (matchMode === 'pve') {
       handleStartPvE();
@@ -799,10 +864,12 @@ function App() {
       <div
         style={{
           position: 'fixed',
-          inset: 0,
+          top: 0,
+          left: 0,
           width: '100%',
-          height: '100%',
+          height: 'var(--app-height, 100vh)',
           overflow: 'hidden',
+          backgroundColor: '#111'
         }}
       >
         <div
@@ -810,6 +877,7 @@ function App() {
             display: screen === 'menu' && !tutorialMode ? 'block' : 'none',
             position: 'absolute',
             inset: 0,
+            height: 'var(--app-height, 100vh)',
             overflow: 'hidden',
           }}
         >
@@ -835,6 +903,7 @@ function App() {
               display: screen === 'battle' || tutorialMode ? 'block' : 'none',
               position: 'absolute',
               inset: 0,
+              height: 'var(--app-height, 100vh)',
               overflow: 'hidden',
             }}
           >

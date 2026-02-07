@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { socketManager } from '../net/socket';
-import type { CardId, PrepStartPayload, StepRevealPayload, MatchEndPayload } from '../net/types';
+import type { CardId, MatchFoundPayload, PrepStartPayload, StepRevealPayload, MatchEndPayload } from '../net/types';
 import { lockAppHeight, unlockAppHeight } from '../lib/appViewport';
 import battleBgImage from '../assets/orc-theme/battle_bg.svg';
 import cardAttackImage from '../assets/orc-theme/card_attack.svg';
@@ -397,7 +397,7 @@ export default function Battle({
     const socket = socketManager.getSocket();
     if (!socket || tutorialEnabled) return;
 
-    socketManager.onMatchFound((payload) => {
+    const handleMatchFound = (payload: MatchFoundPayload) => {
       // При старте нового матча очищаем все локальные стейты и устанавливаем начальные значения
       setState('prep');
       setPhase('PREP');
@@ -426,15 +426,15 @@ export default function Battle({
       if (DEBUG_MATCH) {
         console.log(`[BATTLE_BOOT] matchId=${payload.matchId} yourHand=${JSON.stringify(payload.yourHand || [])}`);
       }
-    });
+    };
 
     // Убрана прямая подписка на prep_start - теперь получаем через props (lastPrepStart)
 
-    socketManager.onConfirmOk(() => {
+    const handleConfirmOk = () => {
       setConfirmed(true);
-    });
+    };
 
-    socketManager.onStepReveal((payload: StepRevealPayload) => {
+    const handleStepReveal = (payload: StepRevealPayload) => {
       // CRITICAL: Cancel any pending draft on phase change (PREP -> REVEAL)
       // DO NOT flush draft in REVEAL - server will use last draft from PREP
       if (draftDebounceRef.current) {
@@ -505,9 +505,9 @@ export default function Battle({
         };
         return newRevealed;
       });
-    });
+    };
 
-    socketManager.onRoundEnd(() => {
+    const handleRoundEnd = () => {
       setRevealedCards([]);
       setCurrentStepIndex(null);
       setPhase('PREP');
@@ -516,12 +516,18 @@ export default function Battle({
       // UX: Round end banner
       setRoundBanner(`Раунд ${roundIndex} завершен`);
       setTimeout(() => setRoundBanner(null), 700);
-    });
+    };
+
+    socketManager.onMatchFound(handleMatchFound);
+    socketManager.onConfirmOk(handleConfirmOk);
+    socketManager.onStepReveal(handleStepReveal);
+    socketManager.onRoundEnd(handleRoundEnd);
 
     return () => {
-      socketManager.off('confirm_ok');
-      socketManager.off('step_reveal');
-      socketManager.off('round_end');
+      socketManager.off('match_found', handleMatchFound);
+      socketManager.off('confirm_ok', handleConfirmOk);
+      socketManager.off('step_reveal', handleStepReveal);
+      socketManager.off('round_end', handleRoundEnd);
     };
   }, [tutorialEnabled]);
 
