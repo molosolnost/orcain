@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import menuBg from "../assets/orc-theme/menu_bg.svg";
-import BackgroundLayout from "../components/BackgroundLayout";
+import onboardingBg from '../assets/onboarding_bg.png';
 import { t, type GameLanguage } from '../i18n';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://orcain-server.onrender.com';
@@ -76,24 +75,45 @@ export default function Onboarding({ authToken, onNicknameSet, language }: Onboa
     }
   };
 
-  // Slightly higher overlay for input readability (still subtle, art stays visible)
   return (
-    <BackgroundLayout bgImage={menuBg} overlay={0.24}>
-      <div style={{ 
-        display: 'flex', 
-        flexDirection: 'column', 
-        alignItems: 'center', 
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 60,
+        display: 'flex',
+        alignItems: 'center',
         justifyContent: 'center',
-        gap: '20px',
-        padding: '20px',
-        width: '100%',
-        maxWidth: '500px'
-      }}>
-        <h1 style={{ fontSize: '36px', margin: 0 }}>{t(language, 'onboarding.title')}</h1>
-        <p style={{ fontSize: '18px', color: '#666', textAlign: 'center', maxWidth: '400px' }}>
-          {t(language, 'onboarding.subtitle')}
-        </p>
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px', width: '100%', maxWidth: '400px' }}>
+        background: '#11253d'
+      }}
+    >
+      <div
+        style={{
+          position: 'relative',
+          width: 'min(100vw, calc(var(--app-height, 100vh) * 2 / 3))',
+          maxHeight: 'var(--app-height, 100vh)',
+          aspectRatio: '2 / 3',
+          overflow: 'hidden'
+        }}
+      >
+        <img
+          src={onboardingBg}
+          alt="Onboarding background"
+          style={{
+            display: 'block',
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover'
+          }}
+        />
+
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            position: 'absolute',
+            inset: 0
+          }}
+        >
           <input
             type="text"
             value={nickname}
@@ -104,38 +124,68 @@ export default function Onboarding({ authToken, onNicknameSet, language }: Onboa
             placeholder={t(language, 'onboarding.placeholder')}
             disabled={loading}
             style={{
-              padding: '12px',
-              fontSize: '16px',
-              border: '2px solid #333',
-              borderRadius: '8px',
+              position: 'absolute',
+              left: '12.9%',
+              top: '83.5%',
+              width: '44.6%',
+              height: '5.5%',
+              border: 'none',
+              borderRadius: '14px',
               outline: 'none',
-              backgroundColor: 'rgba(255, 255, 255, 0.95)'
+              backgroundColor: 'transparent',
+              color: '#4e4e55',
+              fontSize: 'clamp(14px, 2.35vw, 28px)',
+              fontWeight: 700,
+              letterSpacing: '0.02em',
+              textTransform: 'uppercase',
+              padding: '0 4.2%',
+              fontFamily: 'inherit'
             }}
             maxLength={16}
+            autoCapitalize="characters"
+            autoCorrect="off"
           />
-          {error && (
-            <div style={{ color: 'red', fontSize: '14px', textAlign: 'center' }}>
-              {error}
-            </div>
-          )}
           <button
             type="submit"
             disabled={loading || nickname.trim().length < 3}
             style={{
-              padding: '12px 24px',
-              fontSize: '18px',
+              position: 'absolute',
+              left: '59.9%',
+              top: '83.5%',
+              width: '28.7%',
+              height: '5.5%',
+              border: 'none',
+              borderRadius: '14px',
+              background: 'transparent',
               cursor: loading || nickname.trim().length < 3 ? 'not-allowed' : 'pointer',
               opacity: loading || nickname.trim().length < 3 ? 0.7 : 1,
-              borderRadius: '8px',
-              border: 'none',
-              backgroundColor: '#646cff',
-              color: 'white'
+              color: 'transparent'
             }}
+            aria-label={loading ? t(language, 'onboarding.saving') : t(language, 'onboarding.saveAndContinue')}
+            title={loading ? t(language, 'onboarding.saving') : t(language, 'onboarding.saveAndContinue')}
           >
-            {loading ? t(language, 'onboarding.saving') : t(language, 'onboarding.saveAndContinue')}
+            {' '}
           </button>
+
+          {error && (
+            <div
+              style={{
+                position: 'absolute',
+                left: '8%',
+                right: '8%',
+                top: '75.8%',
+                textAlign: 'center',
+                color: '#b72929',
+                fontWeight: 700,
+                fontSize: 'clamp(12px, 2.15vw, 16px)',
+                textShadow: '0 1px 0 rgba(255,255,255,0.88)'
+              }}
+            >
+              {error}
+            </div>
+          )}
         </form>
       </div>
-    </BackgroundLayout>
+    </div>
   );
 }
